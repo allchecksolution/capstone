@@ -1,6 +1,6 @@
 # Capstone 팀 협업 가이드
 
-이 문서는 `allchecksolution/capstone`에서 팀원이 **같은 Markdown 자료를 기준으로 개발**하고, 각자의 변경을 Pull Request(PR)로 `main`에 합치는 방법을 설명합니다. 공통으로 사용할 Markdown 파일은 아직 정하지 않았습니다. 정해지면 팀이 합의한 파일의 경로와 링크를 아래 「공통 문서 지정」 항목에 기록합니다.
+이 문서는 `allchecksolution/capstone`에서 팀원이 **같은 Markdown 자료를 기준으로 개발**하고, 각자의 변경을 Pull Request(PR)로 `main`에 합치는 방법을 설명합니다. 현재 저장소의 참고 자료는 [README](README.md)에서 볼 수 있습니다. 공통으로 사용할 공식 Markdown 파일은 아직 정하지 않았습니다. 정해지면 팀이 합의한 파일의 경로와 링크를 아래 「공통 문서 지정」 항목에 기록합니다.
 
 ## 핵심 규칙
 
