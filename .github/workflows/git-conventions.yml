@@ -1,0 +1,60 @@
+name: Git conventions
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: git-conventions-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  HUSKY: '0'
+
+jobs:
+  metadata:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - check: branch
+            name: Git conventions - Branch name
+          - check: pr-title
+            name: Git conventions - PR title
+          - check: jira
+            name: Git conventions - Jira issue match
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Validate PR metadata
+        run: node scripts/git-conventions.cjs "$CHECK"
+        env:
+          CHECK: ${{ matrix.check }}
+
+  validator-tests:
+    name: Git conventions - Validator tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Install tooling without lifecycle scripts
+        run: npm ci --ignore-scripts
+      - name: Test convention validators
+        run: npm run test:git
