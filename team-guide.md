@@ -1,137 +1,176 @@
-# Capstone 팀 협업 가이드
+## 1. 최초 환경 설정 및 Husky 활성화
 
-이 문서는 `allchecksolution/capstone`에서 팀원이 **같은 Markdown 자료를 기준으로 개발**하고, 각자의 변경을 Pull Request(PR)로 `main`에 합치는 방법을 설명합니다. 현재 저장소의 참고 자료는 [README](README.md)에서 볼 수 있습니다. 공통으로 사용할 공식 Markdown 파일은 아직 정하지 않았습니다. 정해지면 팀이 합의한 파일의 경로와 링크를 아래 「공통 문서 지정」 항목에 기록합니다.
+### Git · Node.js · npm 준비
 
-## 핵심 규칙
+1. Git과 Node.js 24 이상을 설치합니다. npm은 Node.js 설치 시 함께 설치합니다.
+2. 터미널을 다시 열고 설치 여부를 확인합니다.
 
-1. `main`은 팀이 검토해 합친 기준 버전입니다. 작업은 `main`에서 새 브랜치를 만들어 진행합니다.
-2. 공통 자료는 **원본 파일 하나**를 정해 참조합니다. 개인용 복사본을 만들고 각각 수정하지 않습니다.
-3. 문서 변경도 코드 변경처럼 PR로 제안하고 검토합니다. 다른 사람의 내용을 확인 없이 덮어쓰지 않습니다.
-4. 작업 중 `main`의 공통 문서가 바뀌면 최신 내용을 확인하고, 내 코드가 여전히 맞는지 다시 점검합니다.
+```sh
+git --version
+node --version
+npm --version
+```
 
-GitHub 저장소는 실시간 공동 편집 문서가 아닙니다. 각자 브랜치에서 작업하고, PR의 변경 비교와 리뷰를 통해 하나의 `main`으로 합칩니다. 동시에 같은 파일을 수정할 수 있지만 병합 충돌이나 의미상 모순이 생길 수 있으므로 아래 절차를 따릅니다.
+***
 
-## 처음 참여하기
+### 저장소 복제 및 의존성 설치
 
-이 저장소는 비공개입니다. 팀원은 저장소 접근 권한이 필요하고, 브랜치를 올리려면 `Write` 권한이 필요합니다. 저장소 관리자는 **Settings → Collaborators & teams**에서 사람이나 팀의 권한을 확인합니다.
+저장소 접근 권한을 받은 뒤 복제합니다. 이미 복제했다면 기존 저장소 폴더로 이동합니다.
 
-각자 작업할 폴더에서 한 번만 복제합니다.
-
-```powershell
+```sh
 git clone https://github.com/allchecksolution/capstone.git
 cd capstone
+npm ci
 ```
 
-이미 복제했다면 다시 `clone`하지 않습니다. 이후에는 `git pull`로 갱신합니다. Git 명령을 처음 쓰는 팀원은 GitHub Desktop을 사용해도 되지만, 브랜치 → 커밋 → 푸시 → PR 순서는 같습니다.
+`npm ci`는 루트의 lockfile 기준으로 개발 의존성을 설치하고, `prepare` 스크립트(`node .husky/install.mjs`)를 실행해 Husky를 활성화합니다. **팀원마다 각자의 로컬
+저장소에서 실행해야 합니다.** 전역 Husky 설치나 `husky init`은 필요하지 않습니다.
 
-## 공통 문서 지정
+| 실행 시점        | 로컬 검사 내용                                 |
+|--------------|------------------------------------------|
+| `git commit` | `commit-msg` Hook이 Commitlint로 커밋 메시지 검사 |
+| `git push`   | `pre-push` Hook이 원격에 올릴 대상 브랜치명 검사       |
 
-팀이 기준으로 삼을 Markdown 파일을 정한 뒤 아래 정보를 **이 가이드의 PR에서** 채웁니다. 그 전에는 특정 파일을 공식 기준으로 간주하지 않습니다.
+PR 제목과 브랜치·PR의 Jira 키 일치 여부는 GitHub Actions에서 검사합니다.
+***
 
-| 항목 | 팀이 결정할 내용 |
-| --- | --- |
-| 공통 문서 경로 | 미정 |
-| `main`의 문서 링크 | 미정 |
-| 문서 관리 담당 또는 리뷰어 | 미정 |
-| 변경 시 함께 확인할 코드·자료 | 미정 |
+### 활성화 확인 및 복구
 
-공통 문서가 정해지면 다음처럼 사용합니다.
+```sh
+git config --get core.hooksPath
+npm run lint:branch
+```
 
-- **현재 기준**을 볼 때는 GitHub의 `main` 브랜치에 있는 원본 파일을 엽니다. 개발 시작 전 `main`을 갱신해 같은 버전을 읽습니다.
-- 코드 주석이나 다른 Markdown에서 내용을 다시 복사하지 말고 **원본으로 연결**합니다. 같은 저장소의 Markdown끼리는 `[공통 문서](상대/경로.md)`처럼 실제 위치에 맞는 상대 경로 링크를 씁니다. 링크가 현재 브랜치에서도 열리는지 확인합니다.
-- PR에서 “어느 버전을 보고 개발했는지” 고정해서 남겨야 할 때는 GitHub 파일 화면의 **Copy permalink**로 커밋에 고정된 링크를 복사합니다. `main` 파일 링크는 최신 내용을 가리키고, permalink는 당시 내용을 가리킵니다.
-- 문서 안의 항목을 가리켜야 한다면 제목 링크 또는 팀이 합의한 고유 식별자를 사용합니다. 제목을 바꾸거나 항목을 이동할 때 연결된 링크도 확인합니다.
-- 외부 자료가 원본이라면 모두가 접근 가능한 공유 링크를 공통 문서에 기록합니다. 접근할 수 없는 링크를 기준 자료로 삼지 않습니다.
+`core.hooksPath` 결과는 `.husky/_`여야 합니다. 브랜치 검사는 `main` 또는 컨벤션에 맞는 작업 브랜치에서 통과합니다.
 
-## 내 작업을 시작하는 순서
+의존성이 이미 설치되어 있고 Hook만 다시 활성화하려면 다음을 실행합니다.
 
-작업 전에 누가 같은 부분을 수정하는지 Issue나 PR 목록을 확인합니다. 같은 문단을 둘 이상 고쳐야 한다면 먼저 담당 범위와 순서를 합의합니다. 읽고 개발하는 사람은 공통 문서를 수정할 필요가 없습니다.
+```sh
+npm run prepare
+git config --get core.hooksPath
+```
 
-작업 폴더에 미완성 변경이 없다면 다음을 실행합니다. `feature/my-task`는 내 작업을 나타내는 **새 이름**으로 바꿉니다.
+설치 시 `--ignore-scripts` 또는 `--omit=dev`를 사용하지 않습니다. 로컬 환경에 `HUSKY=0`, `CI`, `NODE_ENV=production`이 설정되어 있으면 설치 스크립트가
+활성화를 건너뛰므로 해당 설정을 해제한 뒤 `npm ci`를 다시 실행합니다. 검사 실패 시 출력된 규칙을 확인하고 수정하며 Hook을 우회하지 않습니다.
+***
 
-```powershell
+## 2. Jira 이슈 및 작업 브랜치 준비
+
+작업 전에 [브랜치명 컨벤션](docs/conventions/branch-names.md)을 확인합니다. **Jira 이슈 하나 : 작업 브랜치 하나 : PR 하나**를 유지하고, 브랜치와 PR 제목에 같은 Jira
+키를 사용합니다.
+
+1. Jira에서 작업 이슈를 발급하고 키를 확인합니다. 예: `ACK-12`.
+2. 아래 명령으로 로컬 `main`을 갱신합니다. `git status`에 미완성 변경이 있다면 먼저 커밋하거나 `git stash push -u`로 임시 보관합니다. 임시 보관한 변경은 해당 작업 브랜치로 돌아온
+   뒤 `git stash pop`으로 복원하고 충돌 여부를 확인합니다.
+
+```sh
 git status
 git switch main
-git pull origin main
-git switch -c feature/my-task
+git pull origin main --rebase
 ```
 
-`git status`에 내가 저장하지 않은 변경이 있다면 먼저 그 변경의 처리 방법을 정하고 브랜치를 전환합니다. 예시 브랜치 이름이 이미 존재하면 다른 이름을 사용합니다. 코드만 작성하는 경우 공통 문서는 읽기만 하고, 코드 변경의 근거를 PR에 연결합니다.
+3. Jira 이슈의 **브랜치 생성 기능**으로 저장소의 최신 `main`을 기준으로 브랜치를 생성합니다. 예: `feat/ACK-12-user-login`.
+4. 생성된 원격 브랜치를 로컬로 가져옵니다.
 
-## 공통 문서를 망가뜨리지 않고 수정하기
+```sh
+git fetch origin
+git switch --track origin/feat/ACK-12-user-login
+npm run lint:branch
+```
 
-공통 문서 자체를 바꿔야 할 때는 **문서의 작은 범위**를 한 PR에서 수정합니다. 파일 전체를 다시 만들거나 자동 정렬해서 관계없는 줄까지 바꾸지 않습니다.
+이미 로컬에 있는 작업 브랜치에서 이어서 작업한다면 다음을 사용합니다.
 
-1. `main`의 최신 문서를 읽고, 바꿀 부분이 다른 사람의 PR에서 이미 작업 중인지 확인합니다.
-2. 내 브랜치에서 필요한 문단만 수정합니다. 기존 합의나 설명을 삭제한다면 PR 본문에 이유와 대체 내용을 적습니다.
-3. `git diff`로 삭제·변경된 줄을 검토합니다. 잘못 지운 내용이 없는지, 상대 경로 링크와 이미지가 열리는지 확인합니다.
-4. 문서가 코드 동작의 기준을 바꾼다면 관련 코드도 같은 PR에서 수정하거나, 이어서 수정할 Issue/PR을 명시합니다. 기준과 구현이 서로 어긋난 채 합쳐지지 않도록 리뷰어에게 알립니다.
-5. 공통 문서 담당자 또는 해당 내용을 아는 팀원의 리뷰를 받습니다. PR의 **Files changed**에서 문서 변경을 한 줄씩 확인한 뒤 병합합니다.
+```sh
+git switch feat/ACK-12-user-login
+git pull --rebase
+```
 
-변경 전 파일을 따로 복사해 저장할 필요는 없습니다. Git이 이전 커밋의 내용을 보관하므로 변경 이력과 PR에서 비교할 수 있습니다. 다만 Git의 이력은 실수 방지 절차를 대신하지 않으므로 리뷰를 거칩니다.
+이 문서의 브랜치명과 Jira 키는 실제 작업에 맞게 바꿉니다. 같은 영역을 수정하는 이슈·PR이 있는지도 확인합니다.
+***
 
-## 커밋하고 브랜치 올리기
+## 3. 작업 및 커밋
 
-수정 후 변경 파일을 확인합니다. 아래 명령의 `git add .`는 현재 폴더 아래의 변경을 모두 추가하므로, **반드시** `git status`와 `git diff --cached`로 포함된 파일을 확인합니다.
+코드나 문서를 수정한 뒤 변경 사항을 검토하고 필요한 테스트를 실행합니다. 커밋 메시지는 [커밋 메시지 컨벤션](docs/conventions/commit-messages.md)을 따릅니다.
 
-```powershell
+```sh
 git status
 git diff
-git add .
-git diff --cached
-git commit -m "작업 내용을 설명하는 짧은 문장"
-git push -u origin feature/my-task
 ```
 
-`git push`의 브랜치 이름도 실제 내 브랜치 이름으로 바꿉니다. 비밀번호, API 키, 개인 정보, 로컬 설정 파일은 커밋하지 않습니다. 이미 올린 브랜치에 수정 내용을 더할 때는 다시 커밋한 뒤 `git push`를 실행합니다.
+의도한 파일만 스테이징합니다. 아래 경로는 실제 변경한 파일 경로로 바꿉니다.
 
-## `main`으로 Pull Request 보내기
-
-1. GitHub에서 `allchecksolution/capstone` 저장소를 엽니다.
-2. 푸시 직후 보이는 **Compare & pull request**를 누릅니다. 보이지 않으면 **Pull requests → New pull request**를 누릅니다.
-3. **base: `main`**, **compare: 내 작업 브랜치**인지 확인합니다. 방향이 반대면 변경 비교가 달라집니다.
-4. **Files changed**를 열어 의도하지 않은 파일, 공통 문서의 대량 삭제, 깨진 링크가 없는지 확인합니다.
-5. 제목과 본문을 작성합니다. 본문에는 **왜 바꿨는지, 무엇을 바꿨는지, 어떻게 확인했는지, 참고한 공통 문서의 링크 또는 버전, 문서와 코드가 함께 바뀌었는지**를 적습니다. 관련 Issue가 있다면 연결합니다.
-6. 작업 중임을 먼저 알릴 때는 **Draft pull request**, 검토를 받을 준비가 됐다면 **Create pull request**를 선택합니다. 리뷰어를 지정하고 의견을 반영합니다.
-7. 수정 요청을 받으면 **같은 브랜치**에서 수정 → 커밋 → 푸시합니다. 기존 PR이 자동으로 갱신됩니다. 검토가 끝나고 충돌이 없을 때 `main`에 병합합니다.
-
-PR 본문 예시:
-
-```text
-목적: 이 작업이 필요한 이유
-변경: 수정한 코드와 문서의 핵심 내용
-공통 문서: 원본 링크 또는 확인한 버전의 permalink (정해진 뒤 기입)
-확인: 실행한 테스트, 화면 확인, 링크 확인 등
-함께 검토할 점: 문서 변경이 다른 작업에 미치는 영향
+```sh
+git add <변경한-파일-경로>
+git diff --staged
+git commit -m "feat(auth): 로그인 기능 구현"
 ```
 
-브라우저에서 Markdown만 고치는 경우에도 `main`에서 바로 저장하기보다 파일 편집 화면에서 **새 브랜치에 커밋**을 선택하고 PR을 만듭니다.
+커밋 시 Husky가 메시지를 검사합니다. 실패하면 메시지를 수정해 다시 커밋합니다. 비밀번호, API 키, 개인 로컬 설정이 포함되지 않았는지 확인합니다.
 
-## 다른 사람이 먼저 변경했을 때
+***
 
-PR을 여는 동안 다른 PR이 `main`에 합쳐졌다면 최신 기준을 확인합니다. GitHub PR 화면에서 **Update branch**가 제공되고 충돌이 없다면 이를 이용할 수 있습니다. 로컬에서 갱신하려면 **내 작업 브랜치에 있는 상태에서** 다음을 실행합니다.
+## 4. 최신 main 반영 및 Rebase 충돌 해결
 
-```powershell
-git fetch origin
-git merge origin/main
+PR을 생성하기 전 반드시 main의 최신 사항을 반영 , 충돌을 해결합니다
+
+```sh
+git status
+git pull origin main --rebase
 ```
 
-충돌이 나면 Git이 표시한 파일을 열어 두 사람의 의도를 비교하고, 최종 문장을 팀원과 결정합니다. `<<<<<<<`, `=======`, `>>>>>>>` 표시를 제거한 뒤 파일 내용·링크·코드 동작을 확인하고 커밋·푸시합니다. 상대의 내용을 무조건 삭제하거나 `git push --force`로 덮어쓰지 않습니다. **Git이 자동 병합해도 의미가 충돌할 수 있으므로**, 공통 문서와 코드가 여전히 같은 기준을 따르는지 PR에서 검토합니다.
+***
 
-병합 후 다음 작업을 시작할 때는 로컬 `main`을 갱신합니다.
+## 5. Push 및 PR 생성
 
-```powershell
+원격에 처음 올리는 로컬 브랜치는 다음을 사용합니다.
+
+```sh
+git push -u origin feat/ACK-12-user-login
+```
+
+Jira에서 생성한 원격 브랜치를 추적 중이거나 이미 올린 브랜치는 `git push`로 갱신합니다. Push 시 Husky가 대상 브랜치명을 검사합니다.
+
+이미 원격에 올린 커밋을 rebase하면 이력이 바뀌어 일반 push가 거절될 수 있습니다. **본인 작업 브랜치에 한해**, 다른 팀원이 원격에 추가한 변경이 없는지 확인한 후 실행합니다.
+
+```sh
+git push --force-with-lease
+```
+
+`--force-with-lease`가 거절되면 원격 변경을 먼저 확인하고 반영합니다. `--force`로 덮어쓰지 않으며, `main`에는 강제 push하지 않습니다. 다른 팀원이 함께 쓰는 브랜치의 이력 변경은
+먼저 조율합니다.
+
+PR 생성 절차는 다음과 같습니다.
+
+1. GitHub 저장소에서 **Compare & pull request** 또는 **Pull requests → New pull request**를 엽니다.
+2. **base: `main`**, **compare: 내 작업 브랜치**인지 확인합니다.
+3. [PR 제목 컨벤션](docs/conventions/pull-request-titles.md)에 맞춰 제목을 작성합니다. 예: `feat(BE): 로그인 기능 구현 [ACK-12]`.
+4. 자동으로 표시되는 [PR 템플릿](.github/pull_request_template.md)에 Jira 이슈, 변경 목적·내용, 검증 방법·결과, 참고 문서 및 리뷰 시 확인할 점을 작성합니다.
+5. **Files changed**에서 의도한 변경만 포함되었는지 확인합니다.
+6. 준비 중이면 Draft PR로, 리뷰 준비가 끝났다면 일반 PR로 생성하고 리뷰어를 지정합니다.
+7. Git conventions의 **Branch name · PR title · Jira issue match · Validator tests** 결과를 확인하고 실패 원인을 수정합니다.
+
+제목을 로컬에서 미리 검사할 수도 있습니다.
+
+```sh
+npm run lint:pr -- "feat(BE): 로그인 기능 구현 [ACK-12]"
+```
+
+리뷰 수정은 **같은 작업 브랜치**에서 수정 → 커밋 → push합니다. 기존 PR이 자동으로 갱신됩니다. 리뷰 및 검사가 완료되면 기존 컨벤션에 따라 **Squash Merge**하며, 최종 커밋 제목은 검증된
+PR 제목을 유지합니다.
+
+***
+
+## 6. 병합 후 다음 작업 준비
+
+```sh
 git switch main
-git pull origin main
+git pull origin main --rebase
 ```
 
-## 저장소 관리자에게 권장하는 설정
+다음 작업은 새로운 Jira 이슈와 해당 이슈의 새 작업 브랜치에서 시작합니다.
 
-`main`에 직접 푸시하지 않고 PR을 거치도록 저장소의 브랜치 보호 규칙 또는 Ruleset을 설정할 수 있습니다. 가능하면 **PR 필수**와 **최소 1명 승인**을 적용해 공통 문서 변경이 리뷰 없이 합쳐지는 일을 줄입니다. 설정 가능 항목은 저장소의 공개 범위와 GitHub 요금제에 따라 다를 수 있습니다.
+## 관련 컨벤션
 
-## 참고 문서
-
-- [GitHub: Pull Request 만들기](https://docs.github.com/en/pull-requests/how-tos/create-pull-requests/creating-a-pull-request)
-- [GitHub: PR 브랜치를 `main`과 동기화하기](https://docs.github.com/en/pull-requests/how-tos/create-pull-requests/keeping-your-pull-request-in-sync-with-the-base-branch)
-- [GitHub: Markdown 상대 경로 링크](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-readmes#relative-links-and-image-paths)
-- [GitHub: 브랜치 보호](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)
+- [브랜치명 및 Jira 연동](docs/conventions/branch-names.md)
+- [커밋 메시지](docs/conventions/commit-messages.md)
+- [PR 제목 및 Squash Merge](docs/conventions/pull-request-titles.md)
