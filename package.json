@@ -1,0 +1,20 @@
+{
+  "name": "capstone",
+  "private": true,
+  "description": "Shared Git collaboration tooling for the monorepo",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "prepare": "node .husky/install.mjs",
+    "lint:branch": "node scripts/git-conventions.cjs branch",
+    "lint:commit": "commitlint",
+    "lint:pr": "node scripts/git-conventions.cjs pr-title",
+    "test:git": "node --test scripts/git-conventions.test.cjs"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "21.0.2",
+    "@commitlint/config-conventional": "21.0.2",
+    "husky": "9.1.7"
+  }
+}

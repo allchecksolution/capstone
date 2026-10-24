@@ -1,0 +1,44 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# 공식 설정: https://docs.coderabbit.ai/reference/configuration
+language: ko-KR
+tone_instructions: >-
+  자연어 리뷰는 한국어로 작성한다. 실제 버그, 보안 취약점, 데이터 정합성 문제를 우선하며
+  기존 심각도 분류로 중요도를 전달한다. 원인·영향·해결책을 간결히 설명하고,
+  불확실한 문제는 추측임을 명시한다. 단순 스타일·개인 취향 지적은 최소화하며
+  코드 식별자·클래스명·함수명·기술 용어는 불필요하게 번역하지 않는다.
+
+reviews:
+  # 기본값과 같더라도 유지할 팀 리뷰 정책은 명시한다.
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  # PR 본문 대신 별도 Walkthrough 댓글에 전체 요약을 표시한다.
+  high_level_summary_in_walkthrough: true
+  review_status: true
+  review_info: false
+  review_details: false
+  review_progress: false
+  # review_progress를 끈 경우의 legacy 진행 상태 표시도 끈다.
+  commit_status: false
+  in_progress_fortune: false
+  collapse_walkthrough: true
+  changed_files_summary: false
+  sequence_diagrams: false
+  estimate_code_review_effort: false
+  poem: false
+
+  auto_review:
+    # 자동 리뷰 ON, Draft OFF, 추가 리뷰 ON, 일시정지 기준 5,
+    # 제목 키워드 제외 없음은 기본값을 유지한다.
+    base_branches:
+      - ".*"
+
+  pre_merge_checks:
+    docstrings:
+      mode: "off"
+    title:
+      mode: "off"
+    description:
+      mode: "off"
+    issue_assessment:
+      mode: "off"

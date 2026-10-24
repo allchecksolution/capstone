@@ -1,31 +1,63 @@
 # Capstone
 
-팀의 코드와 프로젝트 문서를 함께 관리하는 저장소입니다. 작업을 시작하기 전에 [팀 협업 가이드](team-guide.md)를 읽어 주세요.
+> 프로젝트 포트폴리오 작성을 위한 목차입니다. 각 항목은 개발 진행에 맞춰 작성합니다.
 
-## 문서
+## 목차
 
-| 문서 | 내용 |
-| --- | --- |
-| [요구사항 분석](docs/requirements.md) | 기존 요구사항 분석 문서와 관련 첨부 자료 |
-| [ERD](docs/erd.md) | 데이터 구조 초안 |
-| [클래스 다이어그램](docs/classdiagram.md) | 클래스 구조 초안 |
+1. [Overview](#1-overview)
+2. [Key Features](#2-key-features)
+3. [Tech Stack](#3-tech-stack)
+4. [System Architecture](#4-system-architecture)
+5. [Project Structure](#5-project-structure)
+6. [Getting Started](#6-getting-started)
+7. [Documentation](#7-documentation)
+8. [Collaboration](#8-collaboration)
+9. [Team](#9-team)
 
-위 문서는 기존 자료를 가져온 것이며, 팀이 개발의 공식 기준으로 사용할 문서는 아직 결정하지 않았습니다. 결정 후 [팀 협업 가이드](team-guide.md)의 **공통 문서 지정** 항목에 경로와 리뷰어를 기록합니다.
+## 1. Overview
 
-## 폴더
+- 프로젝트 소개 및 한 줄 요약
+- 개발 배경, 해결하려는 문제 및 목표
+- 대상 사용자 및 개발 기간
 
-```text
-capstone/
-├─ README.md
-├─ team-guide.md
-├─ docs/
-│  ├─ requirements.md
-│  ├─ erd.md
-│  ├─ classdiagram.md
-│  └─ assets/             # 문서에서 참조하는 이미지와 첨부 파일
-├─ frontend/
-├─ ai/
-└─ backend/
-```
+## 2. Key Features
 
-`frontend/`, `ai/`, `backend/`는 구현을 시작할 수 있도록 만든 빈 폴더입니다.
+- 주요 기능 및 사용자별 서비스 흐름
+- 대표 화면, 데모 영상 및 시연 링크
+
+## 3. Tech Stack
+
+- 관리자 앱 · 기사 앱 · 백엔드 · AI · 인프라 사용 기술
+- 주요 기술 선정 이유 및 개발 도구
+
+## 4. System Architecture
+
+- 전체 시스템 아키텍처 다이어그램
+- 서비스 간 연동 및 주요 데이터 흐름
+
+## 5. Project Structure
+
+- 모노레포 디렉터리 구조
+- 앱 및 공통 디렉터리의 역할
+
+## 6. Getting Started
+
+- 사전 요구사항 및 환경 변수 설정
+- 의존성 설치, 로컬 실행 및 테스트 방법
+
+## 7. Documentation
+
+- 요구사항 및 서비스 설계 문서 링크
+- ERD, API 명세 및 주요 기술 의사결정 기록 링크
+- 구현 과정의 주요 문제와 해결 과정, 성능 개선 및 검증 결과
+
+## 8. Collaboration
+
+- Jira 기반 작업 관리 및 PR 리뷰 절차
+- [팀 협업 가이드](team-guide.md)
+- Git 컨벤션: [브랜치명](docs/conventions/branch-names.md) · [커밋 메시지](docs/conventions/commit-messages.md) · [PR 제목](docs/conventions/pull-request-titles.md)
+
+## 9. Team
+
+- 팀원 소개 및 프로필 링크
+- 담당 역할 및 주요 기여 내용
