@@ -1,0 +1,33 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: allcheck-postgres
+    restart: unless-stopped # 컨테이너 종료 시 자동 재시작
+
+    ports:
+      - "127.0.0.1:15432:5432" # 호스트포트:컨테이너포트 (localhost:15432로 접속)
+
+    # 컨테이너 환경 변수
+    environment:
+      TZ: Asia/Seoul # 컨테이너 타임존 설정
+
+      POSTGRES_DB: allcheck # 컨테이너 최초 실행 시 생성할 DB
+      POSTGRES_USER: allcheck # 애플리케이션 전용 계정
+      POSTGRES_PASSWORD: allcheck_local_6 # 로컬 암호
+
+      # PostgreSQL 데이터 디렉터리
+      PGDATA: /var/lib/postgresql/data/pgdata
+
+    volumes:
+      # PostgreSQL 데이터 영속화 (컨테이너 삭제 후에도 데이터 유지)
+      - postgres_data:/var/lib/postgresql/data
+
+    # PostgreSQL 정상 기동 여부 확인
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U allcheck -d allcheck"]
+      interval: 10s # 10초마다 체크
+      timeout: 5s # 5초 내 응답 없으면 실패
+      retries: 5 # 5회 연속 실패 시 unhealthy 처리
+
+volumes:
+  postgres_data:
