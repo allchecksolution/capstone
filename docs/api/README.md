@@ -59,6 +59,26 @@ API 후보 중 하나만 고르는 방식이 아니다. 화면에서 실제 제�
 
 OpenAPI는 호환성을 고려해 3.1.1로 작성한 초안이다. [공식 사양](https://spec.openapis.org/oas/v3.1.1.html)을 참조하며 예시 서버 `api.example.invalid`는 실제 주소가 아니다.
 
+## 로컬 Swagger UI 실행
+
+처음 참여하는 팀원은 [팀원용 Swagger 로컬 실행 가이드](swagger-local-guide.md)의 설치·저장소 준비·오류 해결 절차를 따른다.
+
+아래 명령은 Windows PowerShell 기준이다. macOS에서는 같은 순서로 진행하되 Gradle 실행을 `./gradlew bootRun`으로 바꾼다. JDK 설정·진단 명령은 가이드의 macOS 절차를 따른다.
+
+JDK 21과 Docker Desktop을 준비하고 프로젝트 루트(`capstone`)의 PowerShell에서 실행한다.
+
+```powershell
+docker compose -f infra/compose/compose.local.yml up -d
+cd apps/backend
+.\gradlew.bat bootRun
+```
+
+서버 시작 로그(`Started BackendApplication...`)가 출력되면 [Swagger UI](http://localhost:8080/swagger-ui.html)에 접속한다. `bootRun`은 서버를 계속 실행하는 작업이므로 Gradle 진행률이 85% 등에 머물러 있어도 시작 로그가 출력되고 접속할 수 있으면 정상이다. 종료는 `Ctrl+C`로 한다.
+
+`application-local.yml`의 `springdoc.swagger-ui.url`은 `/openapi.yaml`을 가리킨다. Gradle의 `processResources`가 이 문서 폴더의 원본 `openapi.yaml`을 `build/resources/main/static/openapi.yaml`에 자동으로 포함한다. `src/main/resources/static`에 수동 복사본을 만들지 않는다. 원본 수정 후 `bootRun`을 종료하고 다시 실행하면 변경이 반영되며, `bootJar`로 생성하는 배포 JAR에도 같은 명세가 포함된다. 실행 중인 서버에 원본 수정이 즉시 반영되는 구성은 아니다.
+
+현재 기본 Spring Security 설정에서는 로그인 화면이 표시될 수 있다. 사용자명은 `user`, 비밀번호는 해당 실행 로그의 `Using generated security password` 값이다. Swagger UI 로그인과 명세에 정의한 API Bearer 인증은 별개다. 실제 API 호출은 백엔드 구현과 명세의 서버 주소 설정 후 검증한다.
+
 ## 검증 상태
 
 UC-04 개정 반영 후 YAML 파싱, 내부 참조 100개, 대표 작업 10개의 경로 변수·operationId 유일성, 업무 규칙 연결 33개, 요청·응답 예시 75개의 JSON Schema 적합성, 로컬 문서 링크·앵커 30개를 확인했다.

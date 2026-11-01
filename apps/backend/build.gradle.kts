@@ -73,3 +73,10 @@ allOpen {
 tasks.withType<Test> {
 	useJUnitPlatform()
 }
+
+// Package the API contract from its single source in docs/api.
+tasks.named<org.gradle.language.jvm.tasks.ProcessResources>("processResources") {
+	from(layout.projectDirectory.file("../../docs/api/openapi.yaml")) {
+		into("static")
+	}
+}

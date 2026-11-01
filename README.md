@@ -42,6 +42,7 @@
 
 ## 6. Getting Started
 
+- [팀원용 Swagger 로컬 실행 가이드](docs/api/swagger-local-guide.md): Windows·macOS의 JDK 21·Docker 준비, DB·백엔드 실행, 명세 수정·검증 및 오류 해결
 - 사전 요구사항 및 환경 변수 설정
 - 의존성 설치, 로컬 실행 및 테스트 방법
 
