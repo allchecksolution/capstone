@@ -10,7 +10,11 @@
     "lint:branch": "node scripts/git-conventions.cjs branch",
     "lint:commit": "commitlint",
     "lint:pr": "node scripts/git-conventions.cjs pr-title",
-    "test:git": "node --test scripts/git-conventions.test.cjs"
+    "test:git": "node --test scripts/git-conventions.test.cjs",
+    "docs:up": "docker compose -f infra/compose/compose.docs.yml up -d",
+    "docs:down": "docker compose -f infra/compose/compose.docs.yml down",
+    "mock": "npx --yes @stoplight/prism-cli mock docs/api/openapi.yaml -p 4010 -h 127.0.0.1",
+    "lint:api": "npx --yes @redocly/cli lint docs/api/openapi.yaml"
   },
   "devDependencies": {
     "@commitlint/cli": "21.0.2",

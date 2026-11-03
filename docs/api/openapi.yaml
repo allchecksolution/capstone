@@ -47,6 +47,8 @@ x-uc04-inquiry-scope:
 servers:
   - url: https://api.example.invalid/api/v1
     description: 문서용 예시 주소
+  - url: http://127.0.0.1:4010
+    description: Prism Mock 서버 (구현 전 확인용. 경로에 /api/v1이 붙지 않는다)
 security:
   - bearerAuth: []
 tags:
