@@ -1,0 +1,21 @@
+spring:
+  datasource:
+    url:
+    username:
+    password:
+
+  jpa:
+    show-sql: false
+
+    properties:
+      hibernate:
+        format_sql: false
+        highlight_sql: false
+        use_sql_comments: false
+
+# Actuator
+management:
+  endpoint:
+    health:
+      show-details: never
+
