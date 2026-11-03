@@ -1,0 +1,60 @@
+
+#!/bin/sh
+set -eu
+
+# Git 저장소 루트에서 실행
+cd "$(git rev-parse --show-toplevel)"
+
+# 스테이징된 Kotlin 파일만 추출 (삭제 파일 제외)
+STAGED_FILES="$(
+    git diff --cached --name-only --diff-filter=ACMR -- apps/backend |
+        grep -E '\.kts?$' || true
+)"
+
+# Kotlin 변경 사항이 없으면 검사 생략
+if [ -z "$STAGED_FILES" ]; then
+    echo "[ktlint] 스테이징된 Kotlin 파일이 없어 검사를 건너뜁니다."
+    exit 0
+fi
+
+echo ""
+echo "========================================"
+echo " [ktlint] 커밋 전 Kotlin 스타일 검사"
+echo "========================================"
+printf '%s\n' "$STAGED_FILES"
+echo ""
+
+# 임시 디렉터리 생성
+TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/capstone-ktlint.XXXXXX")"
+
+# 종료 시 임시 파일 정리
+trap 'rm -rf "$TEMP_DIR"' EXIT
+
+# Git Index의 파일을 임시 디렉터리에 복원
+git checkout-index --all --prefix="$TEMP_DIR/"
+
+# Gradle 프로젝트 기준 상대 경로로 변환
+KOTLIN_FILES="$(printf '%s\n' "$STAGED_FILES" | sed 's|^apps/backend/||')"
+
+# 스테이징된 Kotlin 파일만 검사
+if (
+    cd "$TEMP_DIR/apps/backend"
+    ./gradlew ktlintCheck "-PinternalKtlintGitFilter=$KOTLIN_FILES"
+); then
+    echo ""
+    echo "[ktlint] PASS: 스테이징된 코드의 스타일 검사를 통과했습니다."
+else
+    echo ""
+    echo "========================================"
+    echo " [ktlint] FAIL: 코드 스타일 위반 발견"
+    echo "========================================"
+    echo "수정 방법:"
+    echo "  1. cd apps/backend"
+    echo "  2. ./gradlew ktlintFormat"
+    echo "  3. git diff로 변경 사항 확인"
+    echo "  4. git add 또는 git add -p로 수정 사항 스테이징"
+    echo "  5. 다시 커밋"
+    echo ""
+    echo "커밋이 중단되었습니다."
+    exit 1
+fi
