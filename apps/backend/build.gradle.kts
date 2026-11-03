@@ -22,9 +22,19 @@ repositories {
     mavenCentral()
 }
 
+// Spring Modulith 버전 관리
+dependencyManagement {
+    imports {
+        mavenBom("org.springframework.modulith:spring-modulith-bom:2.1.2")
+    }
+}
+
 dependencies {
     // Development
     developmentOnly("org.springframework.boot:spring-boot-devtools")
+
+    // Spring Modulith
+    implementation("org.springframework.modulith:spring-modulith-starter-core")
 
     // Web / API
     implementation("org.springframework.boot:spring-boot-starter-webmvc")
@@ -56,6 +66,7 @@ dependencies {
     testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    testImplementation("org.springframework.modulith:spring-modulith-starter-test")
 
     // redis , querydsl , swagger , jwt , websocket , retry
     // prometheus , jacoco , testcontainers
