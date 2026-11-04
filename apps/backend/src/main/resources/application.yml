@@ -6,6 +6,8 @@ spring:
     name: backend
   profiles:
     default: local # 기본 프로파일 local , 배포 환경에서는 dockerfile을 통해 prod로 변경
+  modulith:
+    detection-strategy: explicitly-annotated # @ApplicationModule이 선언된 패키지만 Spring Modulith 모듈로 인식
 
   flyway:
     enabled: true
