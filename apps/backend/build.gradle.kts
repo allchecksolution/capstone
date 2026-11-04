@@ -1,27 +1,40 @@
 plugins {
-	kotlin("jvm") version "2.3.21"
-	kotlin("plugin.spring") version "2.3.21"
-	id("org.springframework.boot") version "4.1.2"
-	id("io.spring.dependency-management") version "1.1.7"
-	kotlin("plugin.jpa") version "2.3.21"
+    kotlin("jvm") version "2.3.21"
+    kotlin("plugin.spring") version "2.3.21"
+    kotlin("plugin.jpa") version "2.3.21"
+
+    id("org.springframework.boot") version "4.1.2"
+    id("io.spring.dependency-management") version "1.1.7"
+
+    id("org.jlleitschuh.gradle.ktlint") version "14.2.0"
 }
 
 group = "com.allcheck"
 version = "0.0.1-SNAPSHOT"
 
 java {
-	toolchain {
-		languageVersion = JavaLanguageVersion.of(21)
-	}
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
 }
 
 repositories {
-	mavenCentral()
+    mavenCentral()
+}
+
+// Spring Modulith 버전 관리
+dependencyManagement {
+    imports {
+        mavenBom("org.springframework.modulith:spring-modulith-bom:2.1.2")
+    }
 }
 
 dependencies {
     // Development
     developmentOnly("org.springframework.boot:spring-boot-devtools")
+
+    // Spring Modulith
+    implementation("org.springframework.modulith:spring-modulith-starter-core")
 
     // Web / API
     implementation("org.springframework.boot:spring-boot-starter-webmvc")
@@ -53,30 +66,31 @@ dependencies {
     testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    testImplementation("org.springframework.modulith:spring-modulith-starter-test")
 
     // redis , querydsl , swagger , jwt , websocket , retry
     // prometheus , jacoco , testcontainers
 }
 
 kotlin {
-	compilerOptions {
-		freeCompilerArgs.addAll("-Xjsr305=strict", "-Xannotation-default-target=param-property")
-	}
+    compilerOptions {
+        freeCompilerArgs.addAll("-Xjsr305=strict", "-Xannotation-default-target=param-property")
+    }
 }
 
 allOpen {
-	annotation("jakarta.persistence.Entity")
-	annotation("jakarta.persistence.MappedSuperclass")
-	annotation("jakarta.persistence.Embeddable")
+    annotation("jakarta.persistence.Entity")
+    annotation("jakarta.persistence.MappedSuperclass")
+    annotation("jakarta.persistence.Embeddable")
 }
 
 tasks.withType<Test> {
-	useJUnitPlatform()
+    useJUnitPlatform()
 }
 
 // Package the API contract from its single source in docs/api.
 tasks.named<org.gradle.language.jvm.tasks.ProcessResources>("processResources") {
-	from(layout.projectDirectory.file("../../docs/api/openapi.yaml")) {
-		into("static")
-	}
+    from(layout.projectDirectory.file("../../docs/api/openapi.yaml")) {
+        into("static")
+    }
 }
