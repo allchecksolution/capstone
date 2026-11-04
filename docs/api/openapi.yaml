@@ -1793,6 +1793,19 @@ paths:
                       expiresIn: 900
                       refreshExpiresIn: 1209600
                       user: {userId: drv_02, userType: DRIVER, role: null}
+                pending:
+                  summary: 승인 대기 기사(A2). 승인 대기 안내 화면으로 이동
+                  value:
+                    accountStatus: PENDING_APPROVAL
+                    fullAccess: false
+                    rejectionReason: null
+                    tokens:
+                      accessToken: access_token_limited_example
+                      refreshToken: refresh_token_limited_example
+                      tokenType: Bearer
+                      expiresIn: 900
+                      refreshExpiresIn: 1209600
+                      user: {userId: drv_04, userType: DRIVER, role: null}
                 rejected:
                   summary: 반려 기사(A3). 반려 사유 화면으로 이동
                   value:
@@ -1827,6 +1840,7 @@ paths:
       summary: 내 가입 신청 상태 조회
       description: >-
         승인 대기 안내(UC-08 A2)와 반려 안내(A3) 화면에 쓴다. 제출한 가입 신청 정보, 사업자 검증 결과, 반려되었다면 관리자가 입력한 반려 사유를 돌려준다.
+        승인된 기사(APPROVED)도 호출할 수 있으며 rejection은 null이다. 앱은 이 응답의 accountStatus로 대기·승인·반려 화면을 나눌 수 있다.
         가입 신청을 한 적이 없는(NOT_REGISTERED) 사용자는 404다.
       tags:
         - DriverAccounts
@@ -1844,33 +1858,94 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/DriverRegistrationView"}
-              example:
-                driverId: drv_03
-                accountStatus: REJECTED
-                version: 3
-                submittedAt: "2026-11-01T10:00:00+09:00"
-                rejection: {reason: 사업자 정보를 다시 확인해 주세요., rejectedAt: "2026-11-01T15:00:00+09:00"}
-                profile:
-                  workerName: 홍길동
-                  phone: "010-1234-5678"
-                  email: driver@example.com
-                  residence: 서울시 강남구
-                  vehicleNumber: 12가3456
-                  settlementAccount: {bankName: 예시은행, accountNumber: "123-456-789012", holderName: 홍길동}
-                  taxInvoiceEmail: tax@example.com
-                  specialties: [BLOCKAGE, INTERIOR_LEAK]
-                  activityRegions: [서울 강남구, 서울 서초구]
-                  equipment: [고압세척기]
-                business:
-                  businessName: 길동설비
-                  businessRegistrationNumber: "1234567890"
-                  openedOn: "2020-01-15"
-                  businessType: 서비스업
-                  businessItem: 배관 공사
-                  representativeName: 홍길동
-                  companyPhone: "02-123-4567"
-                  companyAddress: 서울시 강남구 예시로 20
-                businessVerification: {status: VERIFIED, verifiedAt: "2026-11-01T10:00:05+09:00"}
+              examples:
+                pending:
+                  summary: 승인 대기(A2). 대기 안내 화면
+                  value:
+                    driverId: drv_03
+                    accountStatus: PENDING_APPROVAL
+                    version: 1
+                    submittedAt: "2026-11-01T10:00:00+09:00"
+                    rejection: null
+                    profile:
+                      workerName: 홍길동
+                      phone: "010-1234-5678"
+                      email: driver@example.com
+                      residence: 서울시 강남구
+                      vehicleNumber: 12가3456
+                      settlementAccount: {bankName: 예시은행, accountNumber: "123-456-789012", holderName: 홍길동}
+                      taxInvoiceEmail: tax@example.com
+                      specialties: [BLOCKAGE, INTERIOR_LEAK]
+                      activityRegions: [서울 강남구, 서울 서초구]
+                      equipment: [고압세척기]
+                    business:
+                      businessName: 길동설비
+                      businessRegistrationNumber: "1234567890"
+                      openedOn: "2020-01-15"
+                      businessType: 서비스업
+                      businessItem: 배관 공사
+                      representativeName: 홍길동
+                      companyPhone: "02-123-4567"
+                      companyAddress: 서울시 강남구 예시로 20
+                    businessVerification: {status: VERIFIED, verifiedAt: "2026-11-01T10:00:05+09:00"}
+                approved:
+                  summary: 승인됨. 정상 이용 가능
+                  value:
+                    driverId: drv_03
+                    accountStatus: APPROVED
+                    version: 2
+                    submittedAt: "2026-11-01T10:00:00+09:00"
+                    rejection: null
+                    profile:
+                      workerName: 홍길동
+                      phone: "010-1234-5678"
+                      email: driver@example.com
+                      residence: 서울시 강남구
+                      vehicleNumber: 12가3456
+                      settlementAccount: {bankName: 예시은행, accountNumber: "123-456-789012", holderName: 홍길동}
+                      taxInvoiceEmail: tax@example.com
+                      specialties: [BLOCKAGE, INTERIOR_LEAK]
+                      activityRegions: [서울 강남구, 서울 서초구]
+                      equipment: [고압세척기]
+                    business:
+                      businessName: 길동설비
+                      businessRegistrationNumber: "1234567890"
+                      openedOn: "2020-01-15"
+                      businessType: 서비스업
+                      businessItem: 배관 공사
+                      representativeName: 홍길동
+                      companyPhone: "02-123-4567"
+                      companyAddress: 서울시 강남구 예시로 20
+                    businessVerification: {status: VERIFIED, verifiedAt: "2026-11-01T10:00:05+09:00"}
+                rejected:
+                  summary: 반려(A3). 반려 사유 안내 화면
+                  value:
+                    driverId: drv_03
+                    accountStatus: REJECTED
+                    version: 3
+                    submittedAt: "2026-11-01T10:00:00+09:00"
+                    rejection: {reason: 사업자 정보를 다시 확인해 주세요., rejectedAt: "2026-11-01T15:00:00+09:00"}
+                    profile:
+                      workerName: 홍길동
+                      phone: "010-1234-5678"
+                      email: driver@example.com
+                      residence: 서울시 강남구
+                      vehicleNumber: 12가3456
+                      settlementAccount: {bankName: 예시은행, accountNumber: "123-456-789012", holderName: 홍길동}
+                      taxInvoiceEmail: tax@example.com
+                      specialties: [BLOCKAGE, INTERIOR_LEAK]
+                      activityRegions: [서울 강남구, 서울 서초구]
+                      equipment: [고압세척기]
+                    business:
+                      businessName: 길동설비
+                      businessRegistrationNumber: "1234567890"
+                      openedOn: "2020-01-15"
+                      businessType: 서비스업
+                      businessItem: 배관 공사
+                      representativeName: 홍길동
+                      companyPhone: "02-123-4567"
+                      companyAddress: 서울시 강남구 예시로 20
+                    businessVerification: {status: VERIFIED, verifiedAt: "2026-11-01T10:00:05+09:00"}
         "401": {$ref: "#/components/responses/Unauthorized"}
         "404": {$ref: "#/components/responses/NotFound"}
         "503": {$ref: "#/components/responses/ServiceUnavailable"}
