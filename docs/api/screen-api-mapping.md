@@ -1,12 +1,12 @@
 # 화면별 API 대응표
 
-검토일: 2026-11-01. 상태: **설계 초안**. 대상은 **기사 앱 ver2와 관리자 앱**이며, 접수→의뢰 등록→배차→작업→보고서 제출·의뢰 완료 및 취소·재배차 범위를 다룬다. 로그인·회원가입·프로필·채팅 등 전체 앱 기능을 모두 명세한 문서는 아니다.
+검토일: 2026-11-04(OpenAPI 0.2.0 기준). 상태: **설계 초안**. 대상은 **기사 앱 ver2와 관리자 앱**이며, 접수→의뢰 등록→배차→작업→보고서 제출·의뢰 완료 및 취소·재배차 범위를 화면별로 연결한다. 로그인·가입 심사·프로필·탈퇴·채팅 API는 OpenAPI에 추가되어 있으나 연결할 Figma 화면 ID를 아직 확인하지 않아 [화면 ID 미지정 API](#화면-id-미지정-api)에 따로 정리했다.
 
 이 표는 선택지 목록이 아니라 각 화면의 데이터·입력·버튼과 API를 연결한 목록이다. 여러 화면이 같은 API를 사용하면 [openapi.yaml](openapi.yaml)의 단일 계약을 재사용한다. 업무 조건은 [업무 규칙](business-rules.md), 문서 안내는 [README](README.md)를 참조한다.
 
-- 경로 앞에는 `/api/v1`을 붙인다. 아래 URI도 제안이며 확정된 구현 경로가 아니다.
+- OpenAPI의 경로에는 `/api/v1`이 없고 첫 번째 서버 URL(`https://api.example.invalid/api/v1`)에 포함되어 있다. 이 표의 경로는 서버 URL 뒤에 붙는 형태이며 실제 요청 주소는 `/api/v1`을 앞에 붙인다. Prism Mock 서버(`http://127.0.0.1:4010`)에는 `/api/v1`이 붙지 않는다. 아래 URI도 제안이며 확정된 구현 경로가 아니다.
 - **계약 초안**: OpenAPI에 요청·응답이 있으며 operationId를 표기했다.
-- **후속 명세**: 화면에 필요하지만 아직 상세 계약을 작성하지 않았다.
+- **후속 명세**: 화면에 필요하지만 아직 OpenAPI에 계약을 작성하지 않았다.
 - **정책 결정 후**: 선택 기능 또는 동작 정책부터 확정해야 한다.
 - 화면 ID는 [Figma 파일](https://www.figma.com/design/PfyqT7huiwtz63yKpfJzmA/)의 node ID다. 오류·완료 화면은 원래 명령의 응답을 사용하며 화면마다 새 API를 만드는 것은 아니다.
 
@@ -14,29 +14,29 @@
 
 | 화면(node ID) | 표시 데이터·입력·동작 | API 및 계약 상태 | FR/UC | 업무 규칙 |
 |---|---|---|---|---|
-| 상담 접수 목록 `2257:6779` | 접수 목록·처리 상태, 항목 선택 | `GET /receptions` — 후속 명세 | FR-02~04 / UC-02 | BR-02·04 |
-| 상담 접수 상세 `64:404` | 녹음·STT·AI 추출값 조회·원본 재생 | `GET /receptions/{receptionId}`, `GET /files/{fileId}/access` — 후속 명세 | FR-02~04 / UC-02 | BR-02·04 |
-| 접수 정보 수정 `64:482` | 작업 유형·증상·주소·희망 일정·특이사항 입력·저장 | `PATCH /receptions/{receptionId}` — 후속 명세. 접수 수정·저장은 PATCH로 수행하고 저장된 버전을 확정 명령에 전달 | FR-04 / UC-02 | BR-03·04 |
+| 상담 접수 목록 `2257:6779` | 접수 목록·처리 상태, 항목 선택 | `GET /receptions` — 계약 초안 `listReceptions` | FR-02~04 / UC-02 | BR-02·04 |
+| 상담 접수 상세 `64:404` | 녹음·STT·AI 추출값 조회·원본 재생 | `GET /receptions/{receptionId}` — 계약 초안 `getReception`; `GET /files/{fileId}/access` — 계약 초안 `getFileAccess` | FR-02~04 / UC-02 | BR-02·04 |
+| 접수 정보 수정 `64:482` | 작업 유형·증상·주소·희망 일정·특이사항 입력·저장 | `PATCH /receptions/{receptionId}` — 계약 초안 `updateReception`. 접수 수정·저장은 PATCH로 수행하고 저장된 버전을 확정 명령에 전달 | FR-04 / UC-02 | BR-03·04 |
 | 검토 완료·접수 저장 `64:561` | PATCH로 저장한 접수 정보의 필수값·최신 버전 검증 후 검토 확정 | `POST /receptions/{receptionId}/confirmation` — 계약 초안 `confirmReception`. 최종 입력값은 PATCH로 저장하며 확정 요청은 expectedVersion으로 저장된 대상을 지정 | FR-04 / UC-02 | BR-01·03·04 |
-| 분석 실패 `64:645` | 실패 단계·존재하는 자료 표시, 수동 입력 후 확정 | 접수 조회 — 후속 명세; `confirmReception` 재사용 | FR-02~04 / UC-02 E1 | BR-04 |
+| 분석 실패 `64:645` | 실패 단계·존재하는 자료 표시, 수동 입력 후 확정 | `getReception` 재사용; `confirmReception` 재사용 | FR-02~04 / UC-02 E1 | BR-04 |
 | 필수 정보 누락 `64:729` | 누락 항목 안내·보완 | 확정 API의 422 응답 사용 | FR-04 / UC-02 E2 | BR-03·04 |
 | 의뢰 등록·최종 접수 확인 `2007:1180` | 확정 접수 확인·의뢰 등록 | `POST /service-requests` — 계약 초안 `createServiceRequest` | FR-05~07 / UC-03 | BR-03·04 |
-| 의뢰 등록 완료 `2007:1271` | 의뢰·회차·기사별 요청 상태, 상세 진입 | `createServiceRequest` 응답; `GET /service-requests/{requestId}` — 후속 명세 | FR-05~07·09 / UC-03 | BR-04 |
-| 출동 가능한 기사 없음 `2007:1475` | 후보 없음·의뢰 OPEN 유지·관리자 후속 처리 대상 표시, 기존 의뢰의 후속 배차로 연결 | `GET /service-requests/{requestId}/dispatch-rounds` 및 아래 후속 배차 시작 API — 후속 명세 | FR-05·09 / UC-03 E2·A1 | BR-04·06 |
-| 전체 전달 실패 `2007:1676` | 전체 실패·기사별 결과·의뢰 OPEN 유지, 회차 종료 후 기존 의뢰의 후속 배차로 연결 | 회차 조회 및 아래 후속 배차 시작 API — 후속 명세 | FR-07·09 / UC-03 E3 | BR-04·06 |
-| 일부 전달 실패 `2254:6547` | 실패 기사·유효 요청 구분 | 회차 조회 — 후속 명세 | FR-07·09 / UC-03 E4 | BR-04 |
-| 탐색 범위 확대 `2254:6660` | 탐색 회차·확대 진행 표시 | 회차 조회 — 후속 명세; 정책에 따른 자동 탐색 | FR-05 / UC-03 A2 | BR-04 |
-| 관리자 수동 배차·후속 배차 시작 `2007:1558` | 배정 없이 종료된 회차의 기존 의뢰에서 후속 배차 시작. 후보 조회·대상 선택·요청의 세부 동작은 정책 결정 후 | `POST /service-requests/{requestId}/dispatch-rounds` — 후속 명세. 후속 배차 시작은 확정, 수동 직접 배정 허용 여부는 미확정 | FR-05~08 / UC-03 A1·UC-07 E1 | BR-03·04·05·06 |
-| 의뢰 현황·통계 `2015:1890` | 한 화면의 진행 중·과거 완료/취소 의뢰 목록과 조회 기간 통계. 목록 결과 없음·통계 데이터 없음·조회 실패 구분, 데이터가 없어도 접근 가능 | `GET /service-requests`, `GET /work-statistics?from=&to=` — 후속 명세. 두 API에 같은 조회 기간 반영 | FR-09·16 / UC-04 | BR-02·07·08 |
-| 조회 조건 설정 `2304:7237` | 조회 기간과 검색·상태·작업 유형·기사·지역 조건 조합 | 위 목록·통계 API 재사용 — 후속 명세. 필터 API 방식·검색 기준·지역 분류·통계 필터 연동은 미결정 | FR-16 / UC-04 | BR-08 |
-| 의뢰 상세·배차 진행 `2015:1969` | 접수 정보·작업 유형·현재 배차·배정 기사·최신 작업 상태·기사별 요청/전달 결과. 후보 없음·전체/일부 전달 실패 구분. 전체 거절 NO_ACCEPT·수락 없는 만료 ROUND_CLOSED 등 배정 없는 회차 종료 시 의뢰 OPEN·관리자 후속 처리 대상과 후속 배차 동작 표시. 없는 의뢰·조회 실패 안내 | `GET /service-requests/{requestId}` 및 회차 조회, 후속 배차 시작 API — 후속 명세 | FR-09 / UC-03·04 | BR-01·04·06·08 |
-| 의뢰 상세·작업 진행 `2015:2057` | 접수 정보·작업 유형·현재 배차·배정 기사·최신 작업 상태·관련 이력. 최초 보고서 제출 성공 시 작업 WORK_DONE·의뢰 COMPLETED 반영, 재방문·인계 중에는 OPEN 유지 | 의뢰 상세 조회 재사용 — 후속 명세 | FR-09·16 / UC-04 | BR-01·06·07·08 |
+| 의뢰 등록 완료 `2007:1271` | 의뢰·회차·기사별 요청 상태, 상세 진입 | `createServiceRequest` 응답; `GET /service-requests/{requestId}` — 계약 초안 `getServiceRequest` | FR-05~07·09 / UC-03 | BR-04 |
+| 출동 가능한 기사 없음 `2007:1475` | 후보 없음·의뢰 OPEN 유지·관리자 후속 처리 대상 표시, 기존 의뢰의 후속 배차로 연결 | `GET /service-requests/{requestId}/dispatch-rounds` — 계약 초안 `listDispatchRounds` 및 아래 후속 배차 시작 API `startFollowUpDispatchRound` | FR-05·09 / UC-03 E2·A1 | BR-04·06 |
+| 전체 전달 실패 `2007:1676` | 전체 실패·기사별 결과·의뢰 OPEN 유지, 회차 종료 후 기존 의뢰의 후속 배차로 연결 | `listDispatchRounds` 및 아래 후속 배차 시작 API `startFollowUpDispatchRound` | FR-07·09 / UC-03 E3 | BR-04·06 |
+| 일부 전달 실패 `2254:6547` | 실패 기사·유효 요청 구분 | `listDispatchRounds` | FR-07·09 / UC-03 E4 | BR-04 |
+| 탐색 범위 확대 `2254:6660` | 탐색 회차·확대 진행 표시 | `listDispatchRounds`; 정책에 따른 자동 탐색 | FR-05 / UC-03 A2 | BR-04 |
+| 관리자 수동 배차·후속 배차 시작 `2007:1558` | 배정 없이 종료된 회차의 기존 의뢰에서 후속 배차 시작. 후보 조회·대상 선택·요청의 세부 동작은 정책 결정 후 | `POST /service-requests/{requestId}/dispatch-rounds` — 계약 초안 `startFollowUpDispatchRound`. 후속 배차 시작은 확정, 수동 직접 배정 허용 여부는 미확정 | FR-05~08 / UC-03 A1·UC-07 E1 | BR-03·04·05·06 |
+| 의뢰 현황·통계 `2015:1890` | 한 화면의 진행 중·과거 완료/취소 의뢰 목록과 조회 기간 통계. 목록 결과 없음·통계 데이터 없음·조회 실패 구분, 데이터가 없어도 접근 가능 | `GET /service-requests` — 계약 초안 `listServiceRequests`; `GET /work-statistics?from=&to=` — 계약 초안 `getWorkStatistics`. 두 API에 같은 조회 기간 반영 | FR-09·16 / UC-04 | BR-02·07·08 |
+| 조회 조건 설정 `2304:7237` | 조회 기간과 검색·상태·작업 유형·기사·지역 조건 조합 | 위 목록·통계 API(`listServiceRequests`, `getWorkStatistics`) 재사용. 필터 API 방식·검색 기준·지역 분류·통계 필터 연동은 미결정 | FR-16 / UC-04 | BR-08 |
+| 의뢰 상세·배차 진행 `2015:1969` | 접수 정보·작업 유형·현재 배차·배정 기사·최신 작업 상태·기사별 요청/전달 결과. 후보 없음·전체/일부 전달 실패 구분. 전체 거절 NO_ACCEPT·수락 없는 만료 ROUND_CLOSED 등 배정 없는 회차 종료 시 의뢰 OPEN·관리자 후속 처리 대상과 후속 배차 동작 표시. 없는 의뢰·조회 실패 안내 | `GET /service-requests/{requestId}`(`getServiceRequest`) 및 `listDispatchRounds`, 후속 배차 시작 API `startFollowUpDispatchRound` | FR-09 / UC-03·04 | BR-01·04·06·08 |
+| 의뢰 상세·작업 진행 `2015:2057` | 접수 정보·작업 유형·현재 배차·배정 기사·최신 작업 상태·관련 이력. 최초 보고서 제출 성공 시 작업 WORK_DONE·의뢰 COMPLETED 반영, 재방문·인계 중에는 OPEN 유지 | `getServiceRequest` 재사용 | FR-09·16 / UC-04 | BR-01·06·07·08 |
 | 배차·재배차 이력 `2250:6682` | 현재 배정과 과거 회차별 배정 기사·취소·해제 이력 구분 | `GET /service-requests/{requestId}/dispatch-history` — 계약 초안 `getDispatchHistory` | FR-09·12·16 / UC-04 | BR-02·06·08 |
 | 보고서 상세 `2022:2555` | 최신 유효 내용·사진·원본/이력 진입 | `GET /reports/{reportId}` — 계약 초안 `getWorkReport` | FR-11 / UC-05 | BR-02·07 |
 | 보고서 수정 `2022:2634` | 허용 항목·단일 작업 비용 수정·저장 | `POST /reports/{reportId}/revisions` — 계약 초안 `reviseWorkReport` | FR-11 / UC-05 | BR-02·03·07 |
 | 보고서 수정 이력 `2250:6715` | 최초 원본·사진·수정 전후 값·수정자·시각 | `getWorkReport`의 original·effective·revisions 재사용 | FR-11 / UC-05 | BR-07 |
-| 취소 요청 목록 `2033:4298` | 사유·해제 시각·후속 처리 상태 | `GET /dispatch-cancellations` — 후속 명세 | FR-12 / UC-07 | BR-02·06 |
-| 취소 요청 검토 `2033:4422` | 최신 의뢰·배차·사유 조회, 재배차/의뢰 취소 선택 | `GET /dispatch-cancellations/{cancellationId}` — 후속 명세 | FR-12 / UC-07 | BR-06 |
+| 취소 요청 목록 `2033:4298` | 사유·해제 시각·후속 처리 상태 | `GET /dispatch-cancellations` — 계약 초안 `listDispatchCancellations` | FR-12 / UC-07 | BR-02·06 |
+| 취소 요청 검토 `2033:4422` | 최신 의뢰·배차·사유 조회, 재배차/의뢰 취소 선택 | `GET /dispatch-cancellations/{cancellationId}` — 계약 초안 `getDispatchCancellation` | FR-12 / UC-07 | BR-06 |
 | 재배차 확인 `2033:4505` | 재배차 결정 확정. 이후 배정 없이 회차가 종료되면 기존 의뢰의 후속 배차로 연결 | `POST /dispatch-cancellations/{cancellationId}/resolution` — 계약 초안 `resolveCancellation`, REDISPATCH. 결정 후 실패한 회차의 후속 배차는 별도 회차 생성 API 사용, 같은 취소 결정 재처리 금지 | FR-12 / UC-07 | BR-03·04·06 |
 | 의뢰 취소 확인 `2033:4872` | 고객 의뢰 취소 결정 확정 | `resolveCancellation` 재사용, CANCEL_REQUEST | FR-12 / UC-07 A1 | BR-03·06 |
 | 관리자 결정 상태 충돌 `2258:6794` | 다른 관리자 처리 결과·최신 상태 안내 | `resolveCancellation`의 409 응답 사용 | FR-12 / UC-07 E2·E3 | BR-03·06 |
@@ -45,19 +45,19 @@
 
 | 화면(node ID) | 표시 데이터·입력·동작 | API 및 계약 상태 | FR/UC | 업무 규칙 |
 |---|---|---|---|---|
-| 홈·작업 가능 상태 `2237:1075` | `READY`(대기)/`VACANT`(휴식) 조회·변경. 완료된 작업의 POSSIBLE 배정은 신규 수락 차단 사유가 아님 | `PATCH /drivers/me/availability` — 후속 명세 | FR-10 / UC-09 | BR-01·02 |
-| 본인 상세·배정/작업 목록 (화면 ID 미지정) | 로그인한 기사 본인의 배정·작업 목록 조회, 항목 선택 시 배정/작업 상세 진입. 배정 유효성과 작업 완료 상태를 구분 | `GET /drivers/me/assignments` — 후속 명세·경로 제안. 작업 정보를 포함한 본인 배정 목록 조회, 상세는 `GET /assignments/{assignmentId}` 재사용 | FR-09 / UC-11 | BR-01·02·06·07 |
-| 위치 권한 요청 `2262:1259` | OS 위치 권한·현재 위치·갱신 | 권한 획득은 OS 동작; `PUT /drivers/me/location` — 후속 명세 | FR-06 / UC-09 | BR-02·04 |
-| 배차 요청 목록 `2262:1384` | 본인 요청 목록·유효 상태 | `GET /drivers/me/dispatch-offers` — 후속 명세 | FR-07 / UC-10 | BR-02·05 |
-| 배차 요청 상세 `2237:1342` | 증상·희망 시간·대략 주소·거리·남은 시간, 수락/거절 | `GET /dispatch-offers/{offerId}` — 후속 명세; `POST /dispatch-offers/{offerId}/response` — 계약 초안 `respondToDispatchOffer` | FR-07·08 / UC-10 | BR-02·03·05 |
-| 배차 확정 `2237:1408` | 확정 배정·작업 상세 진입 | 수락 응답 사용; `GET /assignments/{assignmentId}` — 후속 명세 | FR-08·09 / UC-10 | BR-02·05 |
+| 홈·작업 가능 상태 `2237:1075` | `READY`(대기)/`VACANT`(휴식) 조회·변경. 완료된 작업의 POSSIBLE 배정은 신규 수락 차단 사유가 아님 | `PATCH /drivers/me/availability` — 계약 초안 `updateMyAvailability`. 현재 상태 조회는 `GET /drivers/me/availability`(`getMyAvailability`) | FR-10 / UC-09 | BR-01·02 |
+| 본인 상세·배정/작업 목록 (화면 ID 미지정) | 로그인한 기사 본인의 배정·작업 목록 조회, 항목 선택 시 배정/작업 상세 진입. 배정 유효성과 작업 완료 상태를 구분 | `GET /drivers/me/assignments` — 계약 초안 `listMyAssignments`(경로 제안). 작업 정보를 포함한 본인 배정 목록 조회, 상세는 `GET /assignments/{assignmentId}`(`getAssignment`) 재사용 | FR-09 / UC-11 | BR-01·02·06·07 |
+| 위치 권한 요청 `2262:1259` | OS 위치 권한·현재 위치·갱신 | 권한 획득은 OS 동작; `PUT /drivers/me/location` — 계약 초안 `updateMyLocation`(위치 전송 또는 위치 수집 문제 보고) | FR-06 / UC-09 | BR-02·04 |
+| 배차 요청 목록 `2262:1384` | 본인 요청 목록·유효 상태 | `GET /drivers/me/dispatch-offers` — 계약 초안 `listMyDispatchOffers` | FR-07 / UC-10 | BR-02·05 |
+| 배차 요청 상세 `2237:1342` | 증상·희망 시간·대략 주소·거리·남은 시간, 수락/거절 | `GET /dispatch-offers/{offerId}` — 계약 초안 `getDispatchOffer`; `POST /dispatch-offers/{offerId}/response` — 계약 초안 `respondToDispatchOffer` | FR-07·08 / UC-10 | BR-02·03·05 |
+| 배차 확정 `2237:1408` | 확정 배정·작업 상세 진입 | 수락 응답 사용; `GET /assignments/{assignmentId}` — 계약 초안 `getAssignment` | FR-08·09 / UC-10 | BR-02·05 |
 | 요청 마감 `2237:1440`·만료 `2237:1456` | 수락 불가 사유 | `respondToDispatchOffer`의 409 응답 사용 | FR-08 / UC-10 E1·E2 | BR-03·05 |
-| 작업 상세·이동 중 `2237:1612` | 본인 배정·작업 정보, 도착/취소 동작 | 배정 조회 — 후속 명세; `POST /assignments/{assignmentId}/work-transitions` — 계약 초안 `transitionWork` | FR-09 / UC-11 | BR-01·02·06 |
+| 작업 상세·이동 중 `2237:1612` | 본인 배정·작업 정보, 도착/취소 동작 | `getAssignment`; `POST /assignments/{assignmentId}/work-transitions` — 계약 초안 `transitionWork` | FR-09 / UC-11 | BR-01·02·06 |
 | 현장 도착 `2237:1659` | 도착 상태·작업 시작 | `transitionWork` 재사용 | FR-09 / UC-11 | BR-01·06 |
 | 작업 중 `2237:1708` | 작업 진행·완료 선택 시 보고서 작성으로 이동. 최초 제출 성공 시 작업 WORK_DONE·의뢰 COMPLETED 확정. 버튼 선택·작성 화면 진입만으로 완료하지 않음 | 진행 변경은 `transitionWork`; 작업·의뢰 완료 확정은 `submitWorkReport` | FR-09·11 / UC-11·12 | BR-01·06·07 |
 | 재방문 필요 입력 `2237:1817` | 사유 입력·재방문 처리. 같은 담당자는 같은 작업에서 이동·도착 재진행. 담당자 변경 정책은 BR-01을 따르되 인계 실행 화면은 아직 없음 | 동일 담당자 전이는 `transitionWork` 재사용; 인계 실행 화면·실행 주체·후속 API 및 이전 기록 조회 연결은 추후 보완 | FR-09 / UC-11 A1 | BR-01·02·06 |
 | 배정 해제된 의뢰 `2237:1923` | 변경 권한 종료·목록 이동 | 작업 변경 API의 403 응답 사용 | FR-09·12 / UC-11 E4 | BR-02·06 |
-| 보고서 작성 `2239:1117`·입력 완료 `2239:1168` | 전후 사진·작업 내용·진단·비용·제출 | 파일 업로드 — 후속 명세; `POST /assignments/{assignmentId}/report` — 계약 초안 `submitWorkReport` | FR-11 / UC-12 | BR-02·03·07 |
+| 보고서 작성 `2239:1117`·입력 완료 `2239:1168` | 전후 사진·작업 내용·진단·비용·제출 | `POST /files` — 계약 초안 `uploadFile`(작업 사진 업로드); `POST /assignments/{assignmentId}/report` — 계약 초안 `submitWorkReport` | FR-11 / UC-12 | BR-02·03·07 |
 | 보고서 제출 완료 `2239:1225`·중복 `2239:1439` | 제출 성공과 작업 WORK_DONE·의뢰 COMPLETED 안내. 중복 요청은 기존 보고서 안내, 신규 완료·중복 집계 없음 | `submitWorkReport`의 성공/중복 응답 사용. 미제출·저장 실패 시 작업·의뢰 완료 처리 금지 | FR-09·11 / UC-11·12 E5 | BR-01·03·07 |
 | 보고서 임시 저장 `2239:1239` | 작성 중 데이터 저장·복구 | 정책 결정 후. 최초 제출 API와 분리 | FR-11 / UC-12 A1 | BR-07 |
 | 취소 사유 입력 `2239:1560` | 사유 코드·상세 입력·요청 | `POST /assignments/{assignmentId}/cancellations` — 계약 초안 `cancelAssignment` | FR-12 / UC-13 | BR-02·03·06 |
@@ -70,6 +70,26 @@
 최초 보고서 정상 제출 시 보고서 저장·작업 `WORK_DONE`·의뢰 `COMPLETED`를 함께 확정한다(BR-01·07). 관리자 현황·상세에도 의뢰 완료를 반영한다. 배정의 자동 `FINISHED` 전환을 의미하지 않으며 배정 종료 시점은 미결정이다. 관리자 보고서 수정은 최신 유효 내용만 갱신하고 완료를 중복 처리하지 않는다.
 
 UC-04 조회는 기존 의뢰 데이터를 변경하지 않는다. 보고서 기반 조회·통계는 최신 유효 수정 내용 반영과 중복 방지 기준(BR-07)을, 기사 탈퇴 관련 데이터는 UC-15 정책을 따른다. 통계 지표·계산 방식·집계 주기·집계 기준은 미결정이며, 외부 형식 내보내기(UC-04 A2)는 선택 기능으로 정책 결정 후 명세한다.
+
+## 화면 ID 미지정 API
+
+OpenAPI에 계약 초안이 있으나 연결할 Figma 화면 ID를 아직 확인하지 않은 API다. 화면과 연결할 때 위 표로 옮기고 FR/UC·업무 규칙을 채운다. 아래 필드와 경로는 모두 제안이다.
+
+| 구분 | API (operationId) | 용도 |
+|---|---|---|
+| 관리자 인증 | `POST /admin/auth/login` (`adminLogin`) | 1차 인증(아이디·비밀번호) |
+| 관리자 인증 | `POST /admin/auth/mfa/verify` (`adminVerifyMfa`) | MFA(TOTP) 인증 코드 확인 |
+| 관리자 인증 | `POST /admin/auth/mfa/enrollment` (`adminStartMfaEnrollment`), `POST /admin/auth/mfa/enrollment/confirm` (`adminConfirmMfaEnrollment`) | 최초 로그인 TOTP 등록 시작·완료 |
+| 기사 인증 | `POST /driver/auth/kakao` (`driverKakaoLogin`) | 기사 카카오 로그인 |
+| 공통 인증 | `POST /auth/token/refresh` (`refreshToken`), `POST /auth/logout` (`logout`) | 액세스 토큰 갱신, 리프레시 토큰 폐기 |
+| 기사 가입(기사 앱) | `GET /drivers/me/registration` (`getMyRegistration`), `POST` (`submitDriverRegistration`), `POST /drivers/me/registration/resubmission` (`resubmitDriverRegistration`) | 가입 신청 상태 조회·신규 신청·반려 후 재신청 |
+| 기사 가입 심사(관리자 앱) | `GET /drivers` (`listDrivers`), `GET /drivers/{driverId}` (`getDriver`), `POST /drivers/{driverId}/approval` (`decideDriverRegistration`) | 기사 목록·상세 조회, 가입 승인 또는 반려 |
+| 보고서 | `GET /reports` (`listWorkReports`) | 작업 보고서 목록 조회. 보고서 상세·수정 화면 진입에 사용하는지는 확인 필요 |
+| 기사 프로필(기사 앱) | `GET`·`PATCH /drivers/me/profile` (`getMyProfile`, `updateMyProfile`), `POST /drivers/me/withdrawal` (`withdrawMyAccount`) | 개인정보·환경 설정 조회·수정, 회원 탈퇴 |
+| 채팅(기사 앱) | `GET`·`POST /drivers/me/chat/messages` (`listMyChatMessages`, `sendMyChatMessage`), `PUT /drivers/me/chat/read` (`markMyChatRead`) | 관리자와의 채팅 이력 조회·전송·읽음 처리 |
+| 채팅(관리자 앱) | `GET /chat-rooms` (`listChatRooms`), `GET`·`POST /chat-rooms/{driverId}/messages` (`listChatMessages`, `sendChatMessage`), `PUT /chat-rooms/{driverId}/read` (`markChatRead`) | 기사별 채팅방 목록, 이력 조회·전송·읽음 처리 |
+
+실시간 채팅(WebSocket)과 푸시 알림 계약은 OpenAPI에서도 정책 결정 후 명세하는 항목이다. 위 채팅 API는 이력 조회·전송·읽음 처리만 다룬다.
 
 ## Figma 대조 근거와 보완 사항
 
@@ -86,7 +106,7 @@ UC-04 조회는 기존 의뢰 데이터를 변경하지 않는다. 보고서 기
 
 - 사용자 결정(2026-11-01): 기사와 관리자 모두 단일 `작업 비용`을 다룬다. 기사 보고서 입력·관리자 수정·조회·통계는 같은 `totalCost`(KRW 정수)를 사용한다.
 - 사용자 결정(2026-11-01): 접수 수정·저장은 `PATCH /receptions/{receptionId}`로 수행하고, 검토 확정은 저장된 접수 버전을 대상으로 한다. 확정 후·의뢰 등록 후 수정의 허용 범위와 기존 배차에 미치는 영향은 별도 미결정 사항이다.
-- 사용자 결정(2026-11-01): 본인 상세 화면에서 본인 배정·작업 목록을 조회하는 API를 후속 명세한다. 화면 ID는 확인 후 연결하며 기존 작업 상세 조회 API와 연결한다.
+- 사용자 결정(2026-11-01): 본인 상세 화면에서 본인 배정·작업 목록을 조회하는 API(`listMyAssignments`)를 OpenAPI에 추가했다. 화면 ID는 확인 후 연결하며 기존 작업 상세 조회 API(`getAssignment`)와 연결한다.
 - 담당자 인계 실행 화면은 아직 없으므로 추후 보완 사항으로 남긴다. 실행 주체·진입 화면·새 담당자 확정 동작·이전 기록 조회 화면/API 연결을 함께 정리한다. 현재 재방문 입력 화면에 인계 기능이 있다고 간주하지 않는다.
 - 기사 배차 요청 상세(`2237:1342`)는 “정확한 주소는 수락 후 확인됩니다.”라고 안내한다. 기사별 요청 조회에는 지역·예상 거리만, 확정 배정 조회에는 권한 검증 후 상세 주소를 반환한다. 고객 연락처 공개 시점도 확정해야 한다.
 - 현장 도착·이동 중의 상태명은 BR-01의 설계안을 따른다. 사용자 결정(2026-11-01)에 따라 재방문에도 이동·도착 단계를 사용하고 최초 보고서 제출 성공 시 작업 WORK_DONE·의뢰 COMPLETED를 함께 확정한다. 작업 완료 버튼은 UC-11에 따라 보고서 작성으로 연결하고, 의뢰 완료의 연계 정책은 BR-01·07의 사용자 결정을 따른다. 화면 문구·전이에 이 기준을 반영해야 한다.
