@@ -1,0 +1,119 @@
+-- AI API v1.2 PostgreSQL 17 / Flyway SQL 초안. 실행하거나 적용하지 않았음.
+-- .sql.draft는 현재 기본 Flyway .sql 검색 대상이 아니다.
+-- 확정: 기존 DB 전체 운영·Flyway 마이그레이션·AI 테이블 접근 권한은 Backend가 관리한다.
+-- 확정: FastAPI는 승인된 두 AI 전용 테이블만 접근하며 Backend 소유 테이블에는 접근하지 않는다.
+-- transcript는 AI 결과 전달용 사본이며 정식 STT 원문·GPT 결과는 Backend가 관리한다.
+-- TODO: Backend 저장 확인 및 AI 사본 보관·삭제, 비동기 작업자·재시작 복구, 인증 정책.
+-- TODO: 팀 승인 후 버전 충돌, 대상 schema/search_path, 권한, 보존 정책을 재확인하고
+--       .sql로 승격한다. 기존/공유 DB에 수동 실행하지 않는다.
+-- TODO: 전역 idempotency_key UNIQUE는 요청 범위의 기본안이다.
+--       다중 호출 주체별 키를 허용하려면 승인된 복합키 설계로 변경한다.
+-- TODO: SHA-256 hex 해시 입력 정규화, 웹훅 배달 상태/이벤트 코드는 제안이다.
+
+CREATE TABLE ai_stt_jobs (
+    job_id VARCHAR(64) PRIMARY KEY,
+    idempotency_key VARCHAR(200) NOT NULL,
+    request_hash VARCHAR(64) NOT NULL,
+    reception_id VARCHAR(64) NOT NULL,
+    reception_version INTEGER NOT NULL,
+    recording_file_id VARCHAR(64) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+    transcript TEXT NULL,
+    error_code VARCHAR(64) NULL,
+    error_message TEXT NULL,
+    retry_count INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMPTZ NULL,
+    CONSTRAINT uq_ai_stt_jobs_idempotency_key UNIQUE (idempotency_key),
+    CONSTRAINT ck_ai_stt_jobs_ids CHECK (
+        char_length(job_id) >= 1
+        AND char_length(idempotency_key) >= 1
+        AND char_length(reception_id) >= 1
+        AND char_length(recording_file_id) >= 1
+    ),
+    CONSTRAINT ck_ai_stt_jobs_request_hash CHECK (request_hash ~ '^[0-9a-f]{64}$'),
+    CONSTRAINT ck_ai_stt_jobs_version CHECK (reception_version >= 1),
+    CONSTRAINT ck_ai_stt_jobs_retry_count CHECK (retry_count >= 0),
+    CONSTRAINT ck_ai_stt_jobs_status CHECK (
+        status IN ('PENDING', 'PROCESSING', 'SUCCEEDED', 'FAILED')
+    ),
+    CONSTRAINT ck_ai_stt_jobs_transcript_length CHECK (char_length(transcript) <= 100000),
+    CONSTRAINT ck_ai_stt_jobs_time_order CHECK (
+        updated_at >= created_at
+        AND (completed_at IS NULL OR (completed_at >= created_at AND completed_at <= updated_at))
+    ),
+    CONSTRAINT ck_ai_stt_jobs_result CHECK (
+        (status IN ('PENDING', 'PROCESSING') AND transcript IS NULL
+            AND error_code IS NULL AND error_message IS NULL AND completed_at IS NULL)
+        OR (status = 'SUCCEEDED' AND transcript IS NOT NULL
+            AND error_code IS NULL AND error_message IS NULL AND completed_at IS NOT NULL)
+        OR (status = 'FAILED' AND transcript IS NULL
+            AND error_code IS NOT NULL AND length(btrim(error_code)) > 0
+            AND error_message IS NOT NULL AND length(btrim(error_message)) > 0
+            AND completed_at IS NOT NULL)
+    )
+);
+
+-- 접수 버전별 작업 조회. reception_id/recording_file_id의 대상 테이블·PK는 미확정이므로
+-- 외부 FK를 임의로 생성하지 않는다. TODO: Backend 스키마 확정 후 FK 여부 결정.
+CREATE INDEX ix_ai_stt_jobs_reception_version
+    ON ai_stt_jobs (reception_id, reception_version, created_at);
+
+-- 작업자는 대기 작업을 created_at, job_id 순으로 조회·선점한다는 제안.
+CREATE INDEX ix_ai_stt_jobs_pending
+    ON ai_stt_jobs (created_at, job_id) WHERE status = 'PENDING';
+
+-- TODO: 중단된 PROCESSING 작업의 복구·lease·heartbeat 정책을 구현 전에 결정.
+CREATE INDEX ix_ai_stt_jobs_processing_updated
+    ON ai_stt_jobs (updated_at, job_id) WHERE status = 'PROCESSING';
+
+CREATE TABLE ai_webhook_deliveries (
+    delivery_id UUID PRIMARY KEY,
+    job_id VARCHAR(64) NOT NULL,
+    event_type VARCHAR(30) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    next_retry_at TIMESTAMPTZ NULL,
+    last_http_status INTEGER NULL,
+    last_error TEXT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    delivered_at TIMESTAMPTZ NULL,
+    CONSTRAINT fk_ai_webhook_deliveries_job FOREIGN KEY (job_id)
+        REFERENCES ai_stt_jobs (job_id) ON DELETE RESTRICT,
+    CONSTRAINT uq_ai_webhook_deliveries_job_event UNIQUE (job_id, event_type),
+    CONSTRAINT ck_ai_webhook_deliveries_event CHECK (
+        event_type IN ('STT_SUCCEEDED', 'STT_FAILED')
+    ),
+    CONSTRAINT ck_ai_webhook_deliveries_status CHECK (
+        status IN ('PENDING', 'PROCESSING', 'DELIVERED', 'FAILED')
+    ),
+    CONSTRAINT ck_ai_webhook_deliveries_attempt CHECK (attempt_count >= 0),
+    CONSTRAINT ck_ai_webhook_deliveries_http_status CHECK (
+        last_http_status IS NULL OR last_http_status BETWEEN 100 AND 599
+    ),
+    CONSTRAINT ck_ai_webhook_deliveries_time_order CHECK (
+        (next_retry_at IS NULL OR next_retry_at >= created_at)
+        AND (delivered_at IS NULL OR delivered_at >= created_at)
+    ),
+    CONSTRAINT ck_ai_webhook_deliveries_result CHECK (
+        (status = 'PENDING' AND delivered_at IS NULL)
+        OR (status = 'PROCESSING' AND delivered_at IS NULL AND next_retry_at IS NULL)
+        OR (status = 'DELIVERED' AND delivered_at IS NOT NULL AND next_retry_at IS NULL
+            AND last_http_status IS NOT NULL AND last_http_status BETWEEN 200 AND 299
+            AND last_error IS NULL)
+        OR (status = 'FAILED' AND delivered_at IS NULL AND next_retry_at IS NULL)
+    )
+);
+
+-- UNIQUE(job_id, event_type)가 job_id 선두 인덱스이므로 동일 FK 인덱스를 중복 생성하지 않음.
+-- 재시도 예정이 없으면 created_at을 실행 가능 시각으로 간주하는 제안.
+CREATE INDEX ix_ai_webhook_deliveries_due
+    ON ai_webhook_deliveries ((COALESCE(next_retry_at, created_at)), delivery_id)
+    WHERE status = 'PENDING';
+
+-- TODO: 결과 확정과 outbox 삽입은 한 DB 트랜잭션, 외부 HTTP 호출은 트랜잭션 밖에서 수행.
+-- TODO: CHECK/FK는 테이블 간 terminal event 일치나 상태 전이 순서를 보장하지 않는다.
+--       작업자의 조건부 UPDATE와 동시성 제어로 job/event 일치를 검증한다.
+-- TODO: 웹훅 수신 측 영속 dedup/inbox와 복구용 lease 정보는 이 두 테이블 범위 밖이다.
+-- TODO: updated_at은 애플리케이션에서 갱신한다. 자동 갱신 트리거는 추가하지 않음.
