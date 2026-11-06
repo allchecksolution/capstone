@@ -42,14 +42,13 @@
 
 ## 6. Getting Started
 
-- [팀원용 Swagger 로컬 실행 가이드](docs/api/swagger-local-guide.md): Windows·macOS의 JDK 21·Docker 준비, DB·백엔드 실행, 명세 수정·검증 및 오류 해결
 - 사전 요구사항 및 환경 변수 설정
 - 의존성 설치, 로컬 실행 및 테스트 방법
 
 ## 7. Documentation
 
 - 요구사항 및 서비스 설계 문서 링크
-- [API 문서 안내](docs/api/README.md): 화면별 API 대응표 · 업무 규칙 · OpenAPI 상세 명세
+- API 문서: [업무 규칙](docs/api/business-rules.md) · [OpenAPI 명세](docs/api/openapi.yaml)
 - ERD, API 명세 및 주요 기술 의사결정 기록 링크
 - 구현 과정의 주요 문제와 해결 과정, 성능 개선 및 검증 결과
 

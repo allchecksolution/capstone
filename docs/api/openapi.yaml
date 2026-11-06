@@ -7,7 +7,7 @@ info:
     identifier: LicenseRef-Proprietary
   description: >-
     2026-10-31 FR/UC 및 Figma 비교에 따른 설계 제안. 10개 대표 작업만 포함하며 전체 API 또는 구현 완료 명세가 아니다. URI, 상태 enum, HTTP 코드와 세부
-    정책은 제안이다. 문서 안내는 README.md, 화면 대응은 screen-api-mapping.md, 업무 규칙과 미결정 사항은 business-rules.md 참조. 모든 변경 요청은 인증 주체+method+정규화 경로+Idempotency-Key 범위에서
+    정책은 제안이다. 업무 규칙과 미결정 사항은 business-rules.md 참조. 모든 변경 요청은 인증 주체+method+정규화 경로+Idempotency-Key 범위에서
     처리한다. 동일 키/본문 성공 재시도는 최초 응답 재현, 다른 본문은 409 IDEMPOTENCY_KEY_REUSED, 처리 중은 409 OPERATION_IN_PROGRESS. DB 업무
     유일성 제약은 키 보존 기간과 무관하게 유지한다. 키 보존 기간은 미확정.
     인증 API(로그인·MFA·토큰 갱신·로그아웃)와, 같은 값을 다시 보내도 결과가 같은 상태 설정 API(작업 가능 상태·위치·채팅 읽음)는 Idempotency-Key를 받지 않는다.
