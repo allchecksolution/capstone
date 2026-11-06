@@ -1,0 +1,252 @@
+openapi: 3.1.1
+info:
+  title: Capstone Backend AI 작업 콜백 v1.2 초안
+  version: 1.2.0
+  description: 설계 초안. /health 외 기능은 미구현이며 업무·보안 정책은 ai-api-v1.2.md의 TODO 합의가 필요하다.
+servers:
+- url: http://127.0.0.1:8080
+  description: 로컬 개발용 origin. Backend 공개 API의 /api/v1을 상속하지 않는다. 배포 주소는 TODO.
+x-source-pr: https://github.com/allchecksolution/capstone/pull/7
+x-source-commit: 341a01597af2d697cd53906fb27ed8c4b7e44072
+security:
+- internalApiKey: []
+paths:
+  /internal/v1/ai/jobs/{jobId}/callback:
+    post:
+      operationId: receiveAiJobCallback
+      summary: AI STT 작업 종료 알림 수신
+      description: AI가 결과 저장을 커밋한 뒤 성공·실패 모두 알린다. Backend는 GET /internal/v1/jobs/{jobId}로 실제 결과와 receptionVersion을
+        확인한다. 경로·본문 jobId는 같아야 한다. 동일 이벤트 재전송은 안전하게 처리한다. 중복 확인과 후속 처리의 내구성 있는 예약 이후 204를 반환하는 기본안이며 수신 측 저장소·정책은
+        TODO. 콜백 성공은 분석 완료나 접수 확정을 뜻하지 않는다. 웹훅 인증은 TODO이며 현재 security 표시는 후보다. 204 응답만으로 Backend의 정식 STT 원문 저장 완료를
+        가정하지 않는다. 저장 확인·AI 사본 보관·삭제 정책은 TODO다.
+      parameters:
+      - name: jobId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Id'
+        description: 불투명 작업 ID. 본문에도 있으면 두 값이 같아야 한다.
+      - name: X-Webhook-Delivery-Id
+        in: header
+        required: true
+        description: 배달 UUID. 재시도 중 동일 ID를 유지하는 제안. 수신 측 영속 중복 처리는 TODO.
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SttCallback'
+            examples:
+              succeeded:
+                value:
+                  jobId: stt_example
+                  receptionId: rec_example
+                  recordingFileId: file_example
+                  status: SUCCEEDED
+              failed:
+                value:
+                  jobId: stt_example
+                  receptionId: rec_example
+                  recordingFileId: file_example
+                  status: FAILED
+      responses:
+        '204':
+          description: 알림 또는 동일 내용의 중복 알림을 내구성 있게 접수함. 본문 없음. 후속 결과 조회의 즉시 성공을 뜻하지 않음.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+components:
+  schemas:
+    Id:
+      type: string
+      minLength: 1
+      maxLength: 64
+      description: 불투명 식별자. 형식은 서버가 정하며 클라이언트는 해석하지 않는다.
+    DateTime:
+      type: string
+      format: date-time
+      description: 시간대가 포함된 RFC 3339.
+    WorkType:
+      type: string
+      enum:
+      - EXTERIOR_LEAK
+      - INTERIOR_LEAK
+      - BLOCKAGE
+      description: 외벽누수, 내벽누수, 막힘. 기사 전문 분야와 같은 값을 쓴다.
+    ReceptionDraftFields:
+      type: object
+      additionalProperties: false
+      description: 접수 정보. 확정 전에는 일부 값만 있을 수 있어 모든 필드가 선택이다. 확정 시점에 필수값을 검증한다.
+      properties:
+        workType:
+          $ref: '#/components/schemas/WorkType'
+        symptoms:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        address:
+          type: string
+          minLength: 1
+          maxLength: 300
+        desiredVisitFrom:
+          $ref: '#/components/schemas/DateTime'
+        desiredVisitTo:
+          $ref: '#/components/schemas/DateTime'
+        notes:
+          type: string
+          maxLength: 2000
+    Error:
+      type: object
+      additionalProperties: false
+      required:
+      - code
+      - message
+      - traceId
+      properties:
+        code:
+          type: string
+          minLength: 1
+        message:
+          type: string
+          minLength: 1
+        traceId:
+          type: string
+          minLength: 1
+        resourceId:
+          type:
+          - string
+          - 'null'
+        currentState:
+          type: object
+          additionalProperties: true
+        fieldErrors:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+            - field
+            - message
+            properties:
+              field:
+                type: string
+                minLength: 1
+              message:
+                type: string
+                minLength: 1
+    SttCallback:
+      type: object
+      additionalProperties: false
+      required:
+      - jobId
+      - receptionId
+      - recordingFileId
+      - status
+      properties:
+        jobId:
+          $ref: '#/components/schemas/Id'
+        receptionId:
+          $ref: '#/components/schemas/Id'
+        recordingFileId:
+          $ref: '#/components/schemas/Id'
+        status:
+          type: string
+          enum:
+          - SUCCEEDED
+          - FAILED
+  securitySchemes:
+    internalApiKey:
+      type: apiKey
+      in: header
+      name: X-Internal-Api-Key
+      description: 'TODO: 내부 API 및 웹훅 인증 정책은 미확정. 이 API Key 헤더와 security 적용은 검토용 후보다. 실제 키를 기록하지 않으며 방식·방향별 권한·교체·TLS
+        정책은 팀 승인 후 정한다.'
+  parameters: {}
+  responses:
+    Unauthorized:
+      description: 인증 정보가 없거나 유효하지 않음
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: UNAUTHENTICATED
+            message: 인증 정보가 없거나 유효하지 않음
+            traceId: trace_example
+    Forbidden:
+      description: 서비스 호출 권한 없음
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: FORBIDDEN
+            message: 서비스 호출 권한 없음
+            traceId: trace_example
+    NotFound:
+      description: 작업을 찾을 수 없거나 조회할 수 없음
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: NOT_FOUND
+            message: 작업을 찾을 수 없거나 조회할 수 없음
+            traceId: trace_example
+    Conflict:
+      description: 동일 키·작업·배달 식별자에 다른 입력 또는 상태 충돌
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: IDEMPOTENCY_KEY_REUSED
+            message: 동일 키·작업·배달 식별자에 다른 입력 또는 상태 충돌
+            traceId: trace_example
+    ValidationFailed:
+      description: 입력값 오류
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: VALIDATION_FAILED
+            message: 입력값 오류
+            traceId: trace_example
+    ServiceUnavailable:
+      description: 일시적 처리 장애
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: TEMPORARILY_UNAVAILABLE
+            message: 일시적 처리 장애
+            traceId: trace_example
+    InternalError:
+      description: 예상하지 못한 내부 오류
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: INTERNAL_ERROR
+            message: 예상하지 못한 내부 오류
+            traceId: trace_example
+x-auth-policy-status: 'TODO: 내부 API 및 웹훅 인증은 미확정. security와 API Key 표시는 검토용 후보이며 운영 확정안이 아니다.'
+x-responsibilities:
+  backend: 기존 PostgreSQL 운영·Flyway·AI 테이블 권한 관리, 녹음 저장 후 multipart 전송, 접수·정식 STT 원문·GPT 결과·전체 흐름 관리
+  fastapi: STT·GPT 실행, AI 작업 및 웹훅 발송 상태 관리. Backend 소유 테이블 직접 접근 금지
+  todo: STT 비동기 작업자·재시작 복구, 웹훅/내부 인증, Backend 결과 저장 확인과 AI 사본 보관·삭제

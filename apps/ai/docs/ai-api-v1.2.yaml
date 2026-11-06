@@ -1,0 +1,587 @@
+openapi: 3.1.1
+info:
+  title: Capstone AI 내부 API v1.2 초안
+  version: 1.2.0
+  description: 설계 초안. /health 외 기능은 미구현이며 업무·보안 정책은 ai-api-v1.2.md의 TODO 합의가 필요하다.
+servers:
+- url: http://127.0.0.1:8000
+  description: 로컬 개발용 origin. Backend 공개 API의 /api/v1을 상속하지 않는다. 배포 주소는 TODO.
+x-source-pr: https://github.com/allchecksolution/capstone/pull/7
+x-source-commit: 341a01597af2d697cd53906fb27ed8c4b7e44072
+security:
+- internalApiKey: []
+paths:
+  /health:
+    get:
+      operationId: getAiHealth
+      summary: 기존 AI 서비스 상태 확인
+      security: []
+      responses:
+        '200':
+          description: 서비스 응답 가능
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: ok
+  /internal/v1/transcribe:
+    post:
+      operationId: submitAiTranscription
+      summary: STT 작업 비동기 접수
+      description: Backend가 녹음 파일을 저장한 뒤 파일 바이너리를 multipart로 전달한다. FastAPI는 STT 실행·작업 상태만 관리하고 Backend 소유 테이블에 직접
+        접근하지 않는다. Backend 작업자가 jobId를 발급해 요청한다. 작업 저장·처리 예약 이후에만 202를 반환한다. 같은 키·같은 입력의 성공 재요청은 최초 202와 PENDING
+        접수 응답을 재현하며 최신 상태는 GET으로 조회한다. 같은 키 다른 입력은 409. jobId가 이미 다른 입력에 사용된 경우도 409. 키 범위·해시 규칙·작업 재시작 정책은 TODO.
+        STT 비동기 작업자 구현 및 재시작 복구 방식은 TODO다.
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TranscribeRequest'
+      responses:
+        '202':
+          description: 작업 접수 완료. STT 완료를 의미하지 않는다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranscribeAccepted'
+              example:
+                jobId: stt_example
+                receptionId: rec_example
+                status: PENDING
+          headers:
+            Location:
+              description: 현재 상태 조회 URI
+              schema:
+                type: string
+                format: uri-reference
+              example: /internal/v1/jobs/stt_example
+            Idempotency-Replayed:
+              description: 최초 응답 재현 여부
+              schema:
+                type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          description: 파일 크기 제한 초과. 상한은 TODO.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: PAYLOAD_TOO_LARGE
+                message: 파일 크기 제한 초과. 상한은 TODO.
+                traceId: trace_example
+        '415':
+          description: 지원하지 않는 녹음 형식. 허용 목록은 TODO.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: UNSUPPORTED_MEDIA_TYPE
+                message: 지원하지 않는 녹음 형식. 허용 목록은 TODO.
+                traceId: trace_example
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /internal/v1/jobs/{jobId}:
+    get:
+      operationId: getAiTranscriptionJob
+      summary: STT 작업 상태·결과 조회
+      description: 저장된 작업이 FAILED여도 조회 자체가 성공하면 200이다. 상태 전이와 오류의 원래 traceId 보존·조회 시 traceId 생성 정책은 TODO. 원문은 개인정보이므로
+        응답·로그·보존 접근 정책을 별도로 합의한다. 정식 STT 원문은 Backend가 저장·관리하며 AI 작업 테이블 결과는 전달용 사본이다. Backend 저장 확인과 사본 보관·삭제 정책은
+        TODO다.
+      parameters:
+      - name: jobId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Id'
+        description: 불투명 작업 ID. 본문에도 있으면 두 값이 같아야 한다.
+      responses:
+        '200':
+          description: 작업 리소스 조회 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SttJobView'
+              examples:
+                pending:
+                  value:
+                    jobId: stt_example
+                    receptionId: rec_example
+                    receptionVersion: 1
+                    recordingFileId: file_example
+                    status: PENDING
+                processing:
+                  value:
+                    jobId: stt_example
+                    receptionId: rec_example
+                    receptionVersion: 1
+                    recordingFileId: file_example
+                    status: PROCESSING
+                succeeded:
+                  value:
+                    jobId: stt_example
+                    receptionId: rec_example
+                    receptionVersion: 1
+                    recordingFileId: file_example
+                    status: SUCCEEDED
+                    transcript: 싱크대 물이 내려가지 않습니다.
+                failed:
+                  value:
+                    jobId: stt_example
+                    receptionId: rec_example
+                    receptionVersion: 1
+                    recordingFileId: file_example
+                    status: FAILED
+                    error:
+                      code: STT_PROCESSING_FAILED
+                      message: 전사 처리에 실패했습니다.
+                      traceId: trace_example
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /internal/v1/analyze:
+    post:
+      operationId: analyzeAiTranscript
+      summary: Backend 작업자의 동기 GPT 분석 요청
+      description: jobId는 연결된 STT 작업 ID다. Backend가 읽은 원문·입력 버전을 전달하며 AI는 접수 확정이나 DB finalData 변경을 수행하지 않는다. 식별자·버전과
+        STT 작업의 일치 검증 책임, 재호출 비용·재분석 정책·모델은 TODO. transcript가 10만 자 안이어도 모델 한도를 초과할 수 있으므로 토큰 정책을 합의한다. GPT 분석 결과의
+        정식 저장 및 전체 후속 흐름은 Backend 책임이다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnalyzeRequest'
+            example:
+              jobId: stt_example
+              receptionId: rec_example
+              receptionVersion: 1
+              transcript: 싱크대 물이 내려가지 않습니다. 방문 전에 연락해 주세요.
+              referenceTime: '2026-11-06T14:00:00+09:00'
+              timeZone: Asia/Seoul
+      responses:
+        '200':
+          description: 분석 완료. 관리자 검토 대상이며 접수 확정을 의미하지 않는다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyzeSucceeded'
+              example:
+                jobId: stt_example
+                receptionId: rec_example
+                receptionVersion: 1
+                status: SUCCEEDED
+                aiOriginal:
+                  workType: BLOCKAGE
+                  symptoms: 싱크대 배수 불가
+                  notes: 방문 전 연락
+                missingFields:
+                - address
+                - desiredVisitFrom
+                - desiredVisitTo
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+components:
+  schemas:
+    Id:
+      type: string
+      minLength: 1
+      maxLength: 64
+      description: 불투명 식별자. 형식은 서버가 정하며 클라이언트는 해석하지 않는다.
+    DateTime:
+      type: string
+      format: date-time
+      description: 시간대가 포함된 RFC 3339.
+    WorkType:
+      type: string
+      enum:
+      - EXTERIOR_LEAK
+      - INTERIOR_LEAK
+      - BLOCKAGE
+      description: 외벽누수, 내벽누수, 막힘. 기사 전문 분야와 같은 값을 쓴다.
+    ReceptionDraftFields:
+      type: object
+      additionalProperties: false
+      description: 접수 정보. 확정 전에는 일부 값만 있을 수 있어 모든 필드가 선택이다. 확정 시점에 필수값을 검증한다.
+      properties:
+        workType:
+          $ref: '#/components/schemas/WorkType'
+        symptoms:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        address:
+          type: string
+          minLength: 1
+          maxLength: 300
+        desiredVisitFrom:
+          $ref: '#/components/schemas/DateTime'
+        desiredVisitTo:
+          $ref: '#/components/schemas/DateTime'
+        notes:
+          type: string
+          maxLength: 2000
+    Error:
+      type: object
+      additionalProperties: false
+      required:
+      - code
+      - message
+      - traceId
+      properties:
+        code:
+          type: string
+          minLength: 1
+        message:
+          type: string
+          minLength: 1
+        traceId:
+          type: string
+          minLength: 1
+        resourceId:
+          type:
+          - string
+          - 'null'
+        currentState:
+          type: object
+          additionalProperties: true
+        fieldErrors:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+            - field
+            - message
+            properties:
+              field:
+                type: string
+                minLength: 1
+              message:
+                type: string
+                minLength: 1
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - status
+      properties:
+        status:
+          type: string
+          const: ok
+    SttJobStatus:
+      type: string
+      enum:
+      - PENDING
+      - PROCESSING
+      - SUCCEEDED
+      - FAILED
+      description: 작업이 존재할 때의 상태. Backend ProcessingStatus와 별도이며 NOT_AVAILABLE은 Backend에서 작업 불가를 표현한다.
+    TranscribeRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - jobId
+      - receptionId
+      - receptionVersion
+      - recordingFileId
+      - file
+      properties:
+        jobId:
+          $ref: '#/components/schemas/Id'
+        receptionId:
+          $ref: '#/components/schemas/Id'
+        receptionVersion:
+          type: integer
+          minimum: 1
+        recordingFileId:
+          $ref: '#/components/schemas/Id'
+        file:
+          type: string
+          format: binary
+          description: 녹음 바이너리. MIME·크기·최대 길이·무음 처리 정책은 TODO.
+    TranscribeAccepted:
+      type: object
+      additionalProperties: false
+      required:
+      - jobId
+      - receptionId
+      - status
+      properties:
+        jobId:
+          $ref: '#/components/schemas/Id'
+        receptionId:
+          $ref: '#/components/schemas/Id'
+        status:
+          type: string
+          const: PENDING
+    SttJobInProgress:
+      type: object
+      additionalProperties: false
+      required:
+      - jobId
+      - receptionId
+      - receptionVersion
+      - recordingFileId
+      - status
+      properties:
+        jobId:
+          $ref: '#/components/schemas/Id'
+        receptionId:
+          $ref: '#/components/schemas/Id'
+        receptionVersion:
+          type: integer
+          minimum: 1
+        recordingFileId:
+          $ref: '#/components/schemas/Id'
+        status:
+          type: string
+          enum:
+          - PENDING
+          - PROCESSING
+    SttJobSucceeded:
+      type: object
+      additionalProperties: false
+      required:
+      - jobId
+      - receptionId
+      - receptionVersion
+      - recordingFileId
+      - status
+      - transcript
+      properties:
+        jobId:
+          $ref: '#/components/schemas/Id'
+        receptionId:
+          $ref: '#/components/schemas/Id'
+        receptionVersion:
+          type: integer
+          minimum: 1
+        recordingFileId:
+          $ref: '#/components/schemas/Id'
+        status:
+          type: string
+          const: SUCCEEDED
+        transcript:
+          type: string
+          maxLength: 100000
+    SttJobFailed:
+      type: object
+      additionalProperties: false
+      required:
+      - jobId
+      - receptionId
+      - receptionVersion
+      - recordingFileId
+      - status
+      - error
+      properties:
+        jobId:
+          $ref: '#/components/schemas/Id'
+        receptionId:
+          $ref: '#/components/schemas/Id'
+        receptionVersion:
+          type: integer
+          minimum: 1
+        recordingFileId:
+          $ref: '#/components/schemas/Id'
+        status:
+          type: string
+          const: FAILED
+        error:
+          $ref: '#/components/schemas/Error'
+    SttJobView:
+      oneOf:
+      - $ref: '#/components/schemas/SttJobInProgress'
+      - $ref: '#/components/schemas/SttJobSucceeded'
+      - $ref: '#/components/schemas/SttJobFailed'
+      description: 상태별 배타적 구조. 처리 중 transcript/error 생략, 성공에는 transcript만, 실패에는 error만 필수. null 대체 금지.
+    AnalyzeRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - jobId
+      - receptionId
+      - receptionVersion
+      - transcript
+      - referenceTime
+      - timeZone
+      properties:
+        jobId:
+          $ref: '#/components/schemas/Id'
+        receptionId:
+          $ref: '#/components/schemas/Id'
+        receptionVersion:
+          type: integer
+          minimum: 1
+        transcript:
+          type: string
+          maxLength: 100000
+        referenceTime:
+          $ref: '#/components/schemas/DateTime'
+        timeZone:
+          type: string
+          minLength: 1
+          description: 'IANA 시간대 식별자. 예: Asia/Seoul. 기준 시각과 불일치하는 경우 및 상대 날짜 해석 정책은 TODO.'
+    AnalyzeSucceeded:
+      type: object
+      additionalProperties: false
+      required:
+      - jobId
+      - receptionId
+      - receptionVersion
+      - status
+      - aiOriginal
+      - missingFields
+      properties:
+        jobId:
+          $ref: '#/components/schemas/Id'
+        receptionId:
+          $ref: '#/components/schemas/Id'
+        receptionVersion:
+          type: integer
+          minimum: 1
+        status:
+          type: string
+          const: SUCCEEDED
+        aiOriginal:
+          $ref: '#/components/schemas/ReceptionDraftFields'
+        missingFields:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+            - workType
+            - symptoms
+            - address
+            - desiredVisitFrom
+            - desiredVisitTo
+          description: 확정 필수 필드 5개 중 aiOriginal에 없는 필드의 목록. notes는 포함하지 않는다. 결과와 목록의 교차 검증은 구현에서 수행한다.
+  securitySchemes:
+    internalApiKey:
+      type: apiKey
+      in: header
+      name: X-Internal-Api-Key
+      description: 'TODO: 내부 API 및 웹훅 인증 정책은 미확정. 이 API Key 헤더와 security 적용은 검토용 후보다. 실제 키를 기록하지 않으며 방식·방향별 권한·교체·TLS
+        정책은 팀 승인 후 정한다.'
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: 동일 업무의 재시도 동안 유지. 같은 키 다른 본문은 409. 키 보존 기간은 추후 확정.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 200
+      example: client-operation-001
+  responses:
+    Unauthorized:
+      description: 인증 정보가 없거나 유효하지 않음
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: UNAUTHENTICATED
+            message: 인증 정보가 없거나 유효하지 않음
+            traceId: trace_example
+    Forbidden:
+      description: 서비스 호출 권한 없음
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: FORBIDDEN
+            message: 서비스 호출 권한 없음
+            traceId: trace_example
+    NotFound:
+      description: 작업을 찾을 수 없거나 조회할 수 없음
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: NOT_FOUND
+            message: 작업을 찾을 수 없거나 조회할 수 없음
+            traceId: trace_example
+    Conflict:
+      description: 동일 키·작업·배달 식별자에 다른 입력 또는 상태 충돌
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: IDEMPOTENCY_KEY_REUSED
+            message: 동일 키·작업·배달 식별자에 다른 입력 또는 상태 충돌
+            traceId: trace_example
+    ValidationFailed:
+      description: 입력값 오류
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: VALIDATION_FAILED
+            message: 입력값 오류
+            traceId: trace_example
+    ServiceUnavailable:
+      description: 일시적 처리 장애
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: TEMPORARILY_UNAVAILABLE
+            message: 일시적 처리 장애
+            traceId: trace_example
+    InternalError:
+      description: 예상하지 못한 내부 오류
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: INTERNAL_ERROR
+            message: 예상하지 못한 내부 오류
+            traceId: trace_example
+x-auth-policy-status: 'TODO: 내부 API 및 웹훅 인증은 미확정. security와 API Key 표시는 검토용 후보이며 운영 확정안이 아니다.'
+x-responsibilities:
+  backend: 기존 PostgreSQL 운영·Flyway·AI 테이블 권한 관리, 녹음 저장 후 multipart 전송, 접수·정식 STT 원문·GPT 결과·전체 흐름 관리
+  fastapi: STT·GPT 실행, AI 작업 및 웹훅 발송 상태 관리. Backend 소유 테이블 직접 접근 금지
+  todo: STT 비동기 작업자·재시작 복구, 웹훅/내부 인증, Backend 결과 저장 확인과 AI 사본 보관·삭제
