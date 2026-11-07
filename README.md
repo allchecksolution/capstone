@@ -48,6 +48,7 @@
 ## 7. Documentation
 
 - 요구사항 및 서비스 설계 문서 링크
+- API 문서: [업무 규칙](docs/api/business-rules.md) · [OpenAPI 명세](docs/api/openapi.yaml)
 - ERD, API 명세 및 주요 기술 의사결정 기록 링크
 - 구현 과정의 주요 문제와 해결 과정, 성능 개선 및 검증 결과
 
