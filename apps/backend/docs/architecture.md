@@ -95,7 +95,7 @@ com.allcheck
 
 ### Package Rules
 
-- Implement new features in the corresponding business domain package.
+- Implement new features in the owning bounded context and module defined in [Domain Design](domain-design.md).
 - Before creating a new top-level domain package, check whether it belongs within an existing domain boundary.
 - Create a package only when code for that layer is actually needed.
 - Expose inter-module APIs through the module's root package, and use Spring Modulith Named Interfaces when additional packages need to be exposed.
