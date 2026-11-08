@@ -1,7 +1,3 @@
-springdoc:
-  swagger-ui:
-    url: /openapi.yaml
-
 spring:
   datasource:
     url: jdbc:postgresql://localhost:15432/allcheck
@@ -25,3 +21,12 @@ spring:
 logging:
   level:
     com.allcheck: DEBUG
+
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha

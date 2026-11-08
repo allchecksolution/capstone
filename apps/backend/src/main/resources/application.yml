@@ -19,6 +19,12 @@ spring:
       ddl-auto: validate # 스키마 검증만 수행, 수정은 flyway 마이그레이션을 통해 수행
     open-in-view: false # Spring OSIV 비활성화
 
+springdoc:
+   api-docs:
+     enabled: false
+   swagger-ui:
+     enabled: false
+
 # Actuator
 management:
   endpoints:
