@@ -1,7 +1,7 @@
 # DDD Domain Design
 
 ALLCHECK consists of five Bounded Contexts and one integrated query module.<br>
-detailed business policies follow [Business Rules](../../../docs/api/business-rules.md).
+Detailed business policies and state transitions follow [Business Rules](business-rules.md). This document owns context boundaries, aggregate structure, and data ownership.
 
 ## 1. Bounded Contexts and Data Ownership
 
@@ -10,7 +10,7 @@ detailed business policies follow [Business Rules](../../../docs/api/business-ru
 | BC | Identity and Access Management — `identity` | Administrator accounts, credentials, roles, and MFA; driver Kakao authentication identifiers and account links; authentication sessions and tokens | [FR-01], [FR-13] authentication / [UC-01], [UC-08] authentication |
 | BC | Consultation Intake — `reception` | Consultation cases; recordings, STT and AI analysis results and processing statuses; manual entry; administrator review and finalized intake information | [FR-02], [FR-03], [FR-04] / [UC-02] |
 | BC | Driver Management — `driver` | Driver personal and business information and verification results; registration applications and review history; approval, rejection, reapplication, and withdrawal; specialties, service areas, equipment, preferences, standby/rest status, and latest location | [FR-06], [FR-10], [FR-13] membership management, [FR-14] / [UC-06], [UC-08] membership management, [UC-09], [UC-14], [UC-15] |
-| BC | Service Request Fulfillment — `operations` | Customer service requests; dispatch candidate selection, offers, responses, and delivery results; assignments, release, redispatch, and cancellation follow-up decisions; driver work commitments; work progress and revisits; original reports and revision history | [FR-05], [FR-07], [FR-08], [FR-09], [FR-11], [FR-12], [FR-16] history retention / [UC-03], [UC-05], [UC-07], [UC-10], [UC-11], [UC-12], [UC-13] |
+| BC | Service Request Fulfillment — `operations` | Customer service requests; dispatch candidate selection, offers, responses, and delivery results; work ownership, cancellation, redispatch, and administrator follow-up decisions; work progress and revisits; original reports and revision history | [FR-05], [FR-07], [FR-08], [FR-09], [FR-11], [FR-12], [FR-16] history retention / [UC-03], [UC-05], [UC-07], [UC-10], [UC-11], [UC-12], [UC-13] |
 | BC | Administrator–Driver Chat — `chat` | Ongoing conversations for each driver, messages, transmission processing results, and conversation access relationships | [FR-15] / [UC-16] |
 | Query module | Status, History, and Statistics — `dashboard` | Service request and work status, history, and statistics by period, combining information from each BC | [FR-09], [FR-16] / [UC-04] |
 
@@ -26,7 +26,7 @@ com.allcheck
 ├── driver
 ├── operations
 │   ├── request       # Service request management
-│   ├── dispatch      # Dispatch and assignment management
+│   ├── dispatch      # Dispatch rounds and offers
 │   └── work          # Work execution and reporting
 ├── chat
 ├── dashboard         # Integrated query module
@@ -46,11 +46,9 @@ The following is the initial design of the key Aggregates.
 | `reception` | `Reception` | Manages consultation materials and analysis results separately from intake information finalized by administrators. |
 | `driver` | `Driver` | Manages driver membership information, business registration verification, application and review history, service eligibility, and dispatch preferences. |
 | `driver` | `DriverLocation` | Manages each driver's latest location and update timestamp separately from profile and review information. |
-| `operations.request` | `ServiceRequest` | Manages the service request lifecycle, the snapshot of finalized intake information, and identifiers for the current dispatch and work. |
+| `operations.request` | `ServiceRequest` | Manages the service request lifecycle, the snapshot of finalized intake information, identifiers for the current dispatch and work, and administrator follow-up decision history linked to cancellation records or closed rounds. |
 | `operations.dispatch` | `DispatchRound` | Manages dispatch attempts by round and offers, responses, and delivery results for each driver. |
-| `operations.dispatch` | `Assignment` | Manages the assignment relationship between a driver and a service request/work unit, assignment release, cancellation requests and reasons, and administrator follow-up decisions. |
-| `operations.dispatch` | `DriverWorkload` | Tracks each driver's unfinished work commitments separately from the standby/rest status the driver selects. |
-| `operations.work` | `WorkOrder` | Manages units of work, progress states, revisits, and handover links. `Assignment` owns the authoritative assignment state. |
+| `operations.work` | `WorkOrder` | Owns the request-to-driver relationship through `requestId` and `driverId`, work progress, revisits, cancellation reason and timestamp, and previous-work links. Historical work records retain their original driver; redispatch creates a new work record. Driver workload is derived from unfinished, non-cancelled work rather than a separate aggregate. |
 | `operations.work` | `WorkReport` | Manages the originally submitted report and photos, administrator revision history, and the latest effective content. |
 | `chat` | `Conversation` | Manages each driver's ongoing conversation relationship independently of individual service requests. |
 | `chat` | `ChatMessage` | Manages message content, senders, transmission identifiers, and processing results separately from the conversation. |

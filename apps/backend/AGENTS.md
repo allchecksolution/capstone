@@ -12,12 +12,12 @@ These definitions apply to all backend convention documents:
 - **SHOULD:** Follow the rule unless there is a specific reason not to.
 - **MAY:** Apply the rule selectively depending on the situation.
 
-## Conventions: read by task
+## Documentation: read by task
 
 Identify the task's scope and consult only the relevant documents below.
 For substantive Kotlin code changes, include `code-conventions.md` alongside task-specific conventions.
 Read additional documents only when responsibilities overlap.
-Do not load all conventions by default or reread documents already available in the current context.
+Do not load all documents by default or reread documents already available in the current context.
 The linked documents are authoritative; consult the relevant source when checking specific rules.
 
 
@@ -25,6 +25,7 @@ The linked documents are authoritative; consult the relevant source when checkin
 |---------------------------------------------------------------|------------------------------------------------------------------------------------------------|
 | [architecture.md](docs/architecture.md)                       | Architectural design, DDD, module boundaries, package structure, or inter-module dependencies. |
 | [domain-design.md](docs/domain-design.md)                     | Adding business features, assigning data ownership, designing aggregates, or creating/moving domain packages and application modules. |
+| [business-rules.md](docs/business-rules.md)                   | Adding, changing, or reviewing business behavior, state transitions, access rules, or business invariants. |
 | [code-conventions.md](docs/code-conventions.md)               | Kotlin style, naming, readability, or general coding practices.                                |
 | [exception-conventions.md](docs/exception-conventions.md)     | Exceptions, error codes, or exception handling.                                                |
 | [persistence-conventions.md](docs/persistence-conventions.md) | JPA, repositories, entity persistence, transactions, or data access.                           |
@@ -33,6 +34,11 @@ The linked documents are authoritative; consult the relevant source when checkin
 | [api-conventions.md](docs/api-conventions.md)                 | REST APIs, controllers, requests, responses, or API contracts.                                 |
 | [security-conventions.md](docs/security-conventions.md)       | Authentication, authorization, or security implementation.                                     |
 | [logging-conventions.md](docs/logging-conventions.md)         | Application logging, log levels, or sensitive information in logs.                             |
+
+## Documentation Maintenance
+
+- Treat `docs/business-rules.md` as the current implementation baseline. When an intentional behavior or design change affects a documented rule, update the affected sections alongside the implementation.
+- Resolve code–document discrepancies against task requirements and agreed design decisions. Clarify ambiguous business policy before changing its meaning.
 
 ## Development and verification
 

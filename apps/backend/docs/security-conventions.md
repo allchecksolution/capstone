@@ -2,26 +2,23 @@
 
 ## Goal
 
-Security in ALLCHECK Backend aims to ensure **secure authentication and authorization, least privilege, sensitive data protection, and prevention of major security vulnerabilities**.
-
-Manage security using Spring Security and JWT, and verify authentication and authorization information on the server without trusting the client.
+Manage authentication and authorization using Spring Security and JWT.
 
 ---
 
 ## Authentication & Token Security
 
-- **MUST — Secure Authentication:** Authenticate all protected APIs on the server, and issue application-specific authentication credentials only after validating the identity provider's tokens and user information for social login.
+- **MUST — Trusted Authentication:** Authenticate protected APIs on the server and resolve the acting principal from the authenticated context. Validate external identity-provider credentials before issuing application credentials.
 - **MUST — JWT Validation:** Validate JWT signatures, expiration times, allowed algorithms, and required issuer and audience information.
 - **MUST — Token Lifecycle:** Separate the purposes of Access Tokens and Refresh Tokens, and apply appropriate expiration periods and Refresh Token reissuance and revocation policies.
-- **MUST — Credential Protection:** Store administrator passwords using secure hashing algorithms, and do not expose JWT signing keys or authentication secrets in source code or repositories.
+- **MUST — Credential Protection:** Store passwords using secure hashing algorithms, and do not expose JWT signing keys or authentication secrets in source code or repositories.
 
 ---
 
 ## Authorization
 
-- **MUST — Least Privilege:** Grant only the minimum permissions required for `ADMIN` and `DRIVER` roles, and deny access unless explicitly permitted.
-- **MUST — Resource-Level Authorization:** Verify resource ownership and accessible states on the server, in addition to roles, to prevent IDOR/BOLA vulnerabilities.
-- **SHOULD — Centralized Authorization:** Manage common authentication and authorization policies in Spring Security, and verify detailed business permissions in the appropriate layers.
+- **MUST — Least Privilege:** Grant only the permissions required for each operation, and deny access unless explicitly permitted.
+- **MUST — Resource-Level Authorization:** Verify resource ownership and operation-specific permissions against current server-side state, beyond role or token claims. Replayed responses require current access to the stored result.
 
 ---
 
@@ -36,4 +33,4 @@ Manage security using Spring Security and JWT, and verify authentication and aut
 
 ## Sensitive Data Protection
 
-- **MUST — Sensitive Data Protection:** Collect, process, and disclose personal information, such as phone numbers and GPS location data, only to the extent necessary, and prevent unauthorized access and unnecessary exposure.
+- **MUST — Sensitive Data Protection:** Collect, process, and disclose sensitive data only to the extent necessary. Keep sensitive files private and serve them through authorized access.
