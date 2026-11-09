@@ -62,7 +62,8 @@ com.allcheck
 │   ├── ModuleMetadata.kt             # Required @ApplicationModule & @PackageInfo
 │   │
 │   ├── presentation/
-│   │   ├── {Domain}Controller.kt
+│   │   ├── api/
+│   │   ├── {Resource}Controller.kt
 │   │   └── dto/
 │   │       ├── request/
 │   │       │   └── {UseCase}Request.kt
