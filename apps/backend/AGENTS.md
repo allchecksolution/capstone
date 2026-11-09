@@ -12,26 +12,43 @@ These definitions apply to all backend convention documents:
 - **SHOULD:** Follow the rule unless there is a specific reason not to.
 - **MAY:** Apply the rule selectively depending on the situation.
 
-## Conventions: read by task
+## Documentation: read by task
 
-Identify the task's scope and consult only the relevant documents below.
-For substantive Kotlin code changes, include `code-conventions.md` alongside task-specific conventions.
-Read additional documents only when responsibilities overlap.
-Do not load all conventions by default or reread documents already available in the current context.
-The linked documents are authoritative; consult the relevant source when checking specific rules.
+Identify the task's scope and consult only the relevant documents below.<br>
+For substantive Kotlin code changes, include `code-conventions.md` alongside task-specific conventions.<br>
+Read additional documents only when responsibilities overlap.<br>
+Do not load all documents by default or reread documents already available in the current context.<br>
+The linked convention documents are authoritative; consult the relevant source when checking specific rules.
+
+## Task Execution
+
+- Follow the relevant documentation and existing agreed design decisions when performing tasks.
+- When requirements, policies, or design decisions remain unresolved after consulting the relevant documentation and available context,
+**MUST ask the user for clarification and wait for their response before proceeding with the affected work.**
+Do not independently assume or finalize unresolved decisions.
 
 
-| Document                                                      | Read when the task involves                                                                    |
-|---------------------------------------------------------------|------------------------------------------------------------------------------------------------|
-| [architecture.md](docs/architecture.md)                       | Architectural design, DDD, module boundaries, package structure, or inter-module dependencies. |
-| [code-conventions.md](docs/code-conventions.md)               | Kotlin style, naming, readability, or general coding practices.                                |
-| [exception-conventions.md](docs/exception-conventions.md)     | Exceptions, error codes, or exception handling.                                                |
-| [persistence-conventions.md](docs/persistence-conventions.md) | JPA, repositories, entity persistence, transactions, or data access.                           |
-| [flyway-conventions.md](docs/flyway-conventions.md)           | Database schema migrations or Flyway.                                                          |
-| [test-conventions.md](docs/test-conventions.md)               | Unit, integration, security, persistence, or architecture tests.                               |
-| [api-conventions.md](docs/api-conventions.md)                 | REST APIs, controllers, requests, responses, or API contracts.                                 |
-| [security-conventions.md](docs/security-conventions.md)       | Authentication, authorization, or security implementation.                                     |
-| [logging-conventions.md](docs/logging-conventions.md)         | Application logging, log levels, or sensitive information in logs.                             |
+| Document                                                      | Read when the task involves                                                                                                                              |
+|---------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------|
+| [architecture.md](docs/architecture.md)                       | Architectural design, DDD, module boundaries, package structure, or inter-module dependencies.                                                           |
+| [domain-design.md](docs/domain-design.md)                     | Adding business features, assigning data ownership, designing aggregates, or creating/moving domain packages and application modules.                    |
+| [business-specification.md](docs/business-specification.md)   | Adding, changing, or reviewing business behavior, state transitions, access rules, or business invariants.                                               |
+| [code-conventions.md](docs/code-conventions.md)               | Kotlin style, naming, readability, or general coding practices.                                                                                          |
+| [exception-conventions.md](docs/exception-conventions.md)     | Exceptions, error codes, or exception handling.                                                                                                          |
+| [persistence-conventions.md](docs/persistence-conventions.md) | JPA, repositories, entity persistence, transactions, or data access.                                                                                     |
+| [flyway-conventions.md](docs/flyway-conventions.md)           | Database schema migrations or Flyway.                                                                                                                    |
+| [test-conventions.md](docs/test-conventions.md)               | Unit, integration, security, persistence, or architecture tests.                                                                                         |
+| [api-conventions.md](docs/api-conventions.md)                 | REST APIs, controllers, requests, responses, or API contracts.                                                                                           |
+| [openapi.yaml](../../docs/api/openapi.yaml)                   | Initial API implementation or API design review. Treat as a preliminary draft for reference only, not as a finalized or authoritative API specification. |
+| [security-conventions.md](docs/security-conventions.md)       | Authentication, authorization, or security implementation.                                                                                               |
+| [logging-conventions.md](docs/logging-conventions.md)         | Application logging, log levels, or sensitive information in logs.                                                                                       |
+
+
+## Documentation Maintenance
+
+- Treat all documents referenced in this `AGENTS.md` as living documentation. Continuously consider improvements and updates to relevant documents while performing tasks.
+- When implementation changes or agreed design decisions affect documented rules, update the affected documents alongside the implementation.
+- Resolve code–document discrepancies against task requirements and agreed design decisions.
 
 ## Development and verification
 
