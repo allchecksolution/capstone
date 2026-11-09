@@ -1,7 +1,8 @@
 # DDD Domain Design
 
 ALLCHECK consists of five Bounded Contexts and one integrated query module.<br>
-Detailed business policies and state transitions follow [Business Rules](business-rules.md). This document owns context boundaries, aggregate structure, and data ownership.
+Detailed business policies and state transitions follow [Business Specification](business-specification.md).<br>
+This document owns context boundaries, aggregate structure, and data ownership.
 
 ## 1. Bounded Contexts and Data Ownership
 
