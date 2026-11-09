@@ -11,7 +11,8 @@ Defines the current design baseline for backend business logic supporting the dr
 | [Domain Design](domain-design.md) | Domain boundaries, aggregate structure, and data ownership |
 | [Security Conventions](security-conventions.md) | Authentication and authorization mechanisms, and sensitive data protection principles |
 | [Persistence Conventions](persistence-conventions.md) | Transaction, idempotency, concurrency control, and event publication implementation |
-| [OpenAPI](../../../docs/api/openapi.yaml) | Paths, request/response fields, status codes, and retry contracts |
+| [Initial API Design](../../../docs/api/openapi.yaml) | Initial design reference for paths, request/response fields, status codes, and retry contracts |
+| springdoc-generated OpenAPI / Swagger UI | Current contracts of implemented APIs, generated from backend code and documentation annotations |
 | [Test Conventions](test-conventions.md) | Test design and verification methods |
 
 Each rule uses its designated document above as the single source of truth. Other documents reference rules without redefining them.
@@ -222,5 +223,5 @@ Administrator access to retained records after driver withdrawal, and personal d
 
 - Query features and user flows follow [FR-16](../../../docs/requirements/functional-requirements/fr-16-work-history-and-statistics-management.md) and [UC-04](../../../docs/requirements/use-cases/uc-04-dispatch-status-inquiry.md). Lists and statistics use the same query period; queries do not change source business states.
 - Distinguish current service request, round, work, and driver information from historical records. Derive the need for administrator follow-up from `request.status=FOLLOW_UP_REQUIRED`.
-- Distinguish an empty list, no statistics for the period, a missing selected service request, and query failure. Do not turn query failures into empty results. Define representations and response codes in [OpenAPI](../../../docs/api/openapi.yaml).
+- Distinguish an empty list, no statistics for the period, a missing selected service request, and query failure. Do not turn query failures into empty results. Response representations and status codes for implemented APIs are documented in the springdoc-generated OpenAPI.
 - Report-based queries and statistics use the latest effective revisions, but count completion only once per service request. Do not count cancelled work or report revisions as additional completions.
