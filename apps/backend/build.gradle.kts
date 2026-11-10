@@ -49,6 +49,9 @@ dependencies {
 
     // Security / Authentication
     implementation("org.springframework.boot:spring-boot-starter-security")
+    implementation("io.jsonwebtoken:jjwt-api:0.13.0")
+    runtimeOnly("io.jsonwebtoken:jjwt-impl:0.13.0")
+    runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.13.0")
 
     // Monitoring / Observability
     implementation("org.springframework.boot:spring-boot-starter-actuator")
@@ -68,7 +71,7 @@ dependencies {
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testImplementation("org.springframework.modulith:spring-modulith-starter-test")
 
-    // redis , querydsl , swagger , jwt , websocket , retry
+    // redis , querydsl , websocket , retry
     // prometheus , jacoco , testcontainers
 }
 
