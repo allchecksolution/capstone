@@ -1,4 +1,20 @@
 services:
+  backend:
+    profiles: [backend]
+    image: allcheck-backend:local
+    build:
+      context: ../../apps/backend
+      target: runtime
+    ports:
+      - "127.0.0.1:8080:8080"
+    env_file:
+      - ../../apps/backend/.env
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/allcheck
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   postgres:
     image: postgres:17
     container_name: allcheck-postgres
