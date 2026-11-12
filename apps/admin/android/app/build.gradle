@@ -1,0 +1,23 @@
+plugins { id 'com.android.application' }
+
+android {
+    buildFeatures { buildConfig true }
+    namespace 'kr.allcheck.admin'
+    compileSdk 36
+    defaultConfig {
+        applicationId 'kr.allcheck.admin'
+        minSdk 26
+        targetSdk 36
+        versionCode 2
+        versionName '0.2.0'
+    }
+    sourceSets { main { assets.srcDir layout.buildDirectory.dir('generated/adminAssets') } }
+}
+
+tasks.register('syncAdminAssets', Copy) {
+    from('../..') { include 'index.html', 'style.css', 'app.js', 'operations.js', 'flow-catalog.js', 'exporter.js', 'assets/**' }
+    into layout.buildDirectory.dir('generated/adminAssets/www')
+}
+tasks.named('preBuild').configure { dependsOn 'syncAdminAssets' }
+
+dependencies { implementation 'androidx.webkit:webkit:1.14.0' }
