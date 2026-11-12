@@ -15,6 +15,15 @@ services:
       postgres:
         condition: service_healthy
 
+  ai:
+    profiles: [ai]
+    image: allcheck-ai:local
+    build:
+      context: ../../apps/ai
+      target: runtime
+    ports:
+      - "127.0.0.1:8000:8000"
+
   postgres:
     image: postgres:17
     container_name: allcheck-postgres
