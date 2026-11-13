@@ -8,3 +8,5 @@ android {
 }
 kotlin { compilerOptions { jvmTarget=org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17 } }
 flutter { source="../.." }
+
+if(file("google-services.json").exists()) { apply(plugin="com.google.gms.google-services") }

@@ -1,3 +1,5 @@
 #include "Generated.xcconfig"
 
 #include "Kakao.xcconfig"
+
+APS_ENVIRONMENT = development

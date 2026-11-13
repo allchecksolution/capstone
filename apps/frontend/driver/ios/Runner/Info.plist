@@ -2,10 +2,13 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+<key>FirebaseMessagingAutoInitEnabled</key><false/>
+<key>UIBackgroundModes</key><array><string>remote-notification</string><string>location</string></array>
 <key>LSApplicationQueriesSchemes</key><array><string>kakaokompassauth</string></array>
 <key>CFBundleURLTypes</key><array><dict><key>CFBundleURLSchemes</key><array><string>kakao$(KAKAO_NATIVE_APP_KEY)</string></array></dict></array>
 <key>FlutterDeepLinkingEnabled</key><false/>
-<key>NSLocationWhenInUseUsageDescription</key><string>배차 위치 확인을 위해 현재 위치를 사용합니다. 백그라운드 위치는 수집하지 않습니다.</string>
+<key>NSLocationAlwaysAndWhenInUseUsageDescription</key><string>대기 중 배차 후보 선정을 위해 위치 갱신을 켠 동안 위치를 갱신합니다. 휴식 또는 로그아웃 시 중단합니다.</string>
+<key>NSLocationWhenInUseUsageDescription</key><string>배차 위치 확인을 위해 현재 위치를 사용합니다. 대기 중 위치 갱신을 켜면 백그라운드에서도 갱신할 수 있습니다.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
