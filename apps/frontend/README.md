@@ -24,16 +24,16 @@ Flutter 3.50 이상, Dart 3.10 이상을 사용할 수 있는 개발 환경이 �
 아래 명령은 저장소 루트에서 실행합니다.
 
 ```powershell
-./apps/flutter/scripts/bootstrap.ps1 -Flutter flutter
-./apps/flutter/scripts/check.ps1 -Flutter flutter
-cd apps/flutter/admin
+./apps/frontend/scripts/bootstrap.ps1 -Flutter flutter
+./apps/frontend/scripts/check.ps1 -Flutter flutter
+cd apps/frontend/admin
 flutter run
 ```
 
-기사 앱은 `apps/flutter/driver`에서 `flutter run`을 실행합니다. 웹 실행은 각 앱에서 `flutter run -d chrome`을 사용합니다. Android 디버그 APK는 저장소 루트에서 다음 명령으로 생성합니다.
+기사 앱은 `apps/frontend/driver`에서 `flutter run`을 실행합니다. 웹 실행은 각 앱에서 `flutter run -d chrome`을 사용합니다. Android 디버그 APK는 저장소 루트에서 다음 명령으로 생성합니다.
 
 ```powershell
-./apps/flutter/scripts/build-apks.ps1 -Flutter flutter
+./apps/frontend/scripts/build-apks.ps1 -Flutter flutter
 ```
 
 `bootstrap.ps1`은 패키지 의존성과 로컬 SDK 경로를 준비합니다. `check.ps1`은 공유 패키지 분석/테스트 및 두 앱의 분석/웹 빌드를 수행합니다. 최초 성공 후 생성되는 앱별 `pubspec.lock`도 검토하여 커밋해야 합니다.

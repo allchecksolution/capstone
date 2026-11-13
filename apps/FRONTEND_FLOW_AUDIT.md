@@ -1,6 +1,6 @@
 # 프론트 흐름 대조 및 보완
 
-이 문서는 제거된 웹뷰 구현의 과거 대조·검증 기록입니다. 현재 앱 소스와 실행 방법은 [Flutter 안내](flutter/README.md), 현재 연동 상태는 [ACK-22 인계 문서](flutter/ACK-22-HANDOFF.md)를 기준으로 확인하세요. 아래의 웹뷰 실행 결과는 Flutter 검증 결과가 아닙니다.
+이 문서는 제거된 웹뷰 구현의 과거 대조·검증 기록입니다. 현재 앱 소스와 실행 방법은 [Flutter 안내](frontend/README.md), 현재 연동 상태는 [ACK-22 인계 문서](frontend/ACK-22-HANDOFF.md)를 기준으로 확인하세요. 아래의 웹뷰 실행 결과는 Flutter 검증 결과가 아닙니다.
 
 Figma 원본: https://www.figma.com/design/PfyqT7huiwtz63yKpfJzmA/
 

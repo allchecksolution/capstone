@@ -16,7 +16,7 @@
 구조 점검은 다음 명령으로 재현합니다.
 
 ```powershell
-node apps/flutter/scripts/check-structure.mjs
+node apps/frontend/scripts/check-structure.mjs
 ```
 
 이 검사는 Dart 문법이나 패키지 API 호환성, 네이티브 빌드 성공을 보증하지 않습니다. 보안 정책이 허용하는 환경에서 README의 bootstrap/check/build 명령을 실행하고 발견되는 오류를 수정해야 합니다. iOS는 별도로 macOS에서 빌드/서명 및 플러그인 검증이 필요합니다.

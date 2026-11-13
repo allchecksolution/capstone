@@ -14,7 +14,7 @@ flutter run --debug --dart-define=ALLCHECK_DEV_ACCESS=true
 
 개발 진입 검증은 공유 패키지에서 `flutter test test/development_access_test.dart`와 `flutter test --dart-define=ALLCHECK_DEV_ACCESS=true test/development_access_test.dart`를 각각 실행합니다. 현재 PC의 Device Guard 차단으로 이 테스트는 실행하지 못했습니다.
 
-앱 소스는 `apps/flutter`의 Flutter 구현으로 통일했습니다. 중복된 기존 웹/Java WebView 앱 두 폴더는 제거했습니다. 이전에 생성한 WebView APK에는 이번 변경이 적용되지 않으므로 Flutter 소스로 새로 빌드해야 합니다.
+앱 소스는 `apps/frontend`의 Flutter 구현으로 통일했습니다. 중복된 기존 웹/Java WebView 앱 두 폴더는 제거했습니다. 이전에 생성한 WebView APK에는 이번 변경이 적용되지 않으므로 Flutter 소스로 새로 빌드해야 합니다.
 
 ## 기사앱
 
@@ -53,8 +53,8 @@ iOS에서는 macOS에서 `driver/ios/Flutter/Kakao.local.xcconfig.example`을 �
 
 ## 검증
 
-2026-11-13: `node apps/flutter/scripts/check-structure.mjs`, Android manifest와 iOS plist XML 파싱, `git diff --check` 확인. 구조 검사는 Dart 문법이나 SDK 호환성을 보증하지 않습니다.
+2026-11-13: `node apps/frontend/scripts/check-structure.mjs`, Android manifest와 iOS plist XML 파싱, `git diff --check` 확인. 구조 검사는 Dart 문법이나 SDK 호환성을 보증하지 않습니다.
 
 이 PC에서는 Dart 실행이 조직 Device Guard에 차단됩니다. 패키지 설치, 분석, 위젯 테스트, APK/iOS 빌드와 실제 카카오 인증은 검증하지 못했습니다. 실제 앱 키도 제공받지 않았습니다. 추가한 `shared/test/auth_test.dart`에는 취소·중복 요청·실패·로컬 승인 우회 방지·서버 승인 대기·로그아웃 테스트가 있으며, 실행 가능한 환경에서 반드시 실행해야 합니다.
 
-팀원 환경에서 저장소 루트의 `apps/flutter/scripts/bootstrap.ps1`, `apps/flutter/scripts/check.ps1`로 검증하고 생성된 앱별 lockfile을 검토해 커밋하세요. Android에서는 카카오톡 설치/미설치, 취소, 재로그인, 네트워크 실패, 계정 전환, 로그아웃을 실기기에서 확인하세요. iOS는 별도로 빌드와 동일한 인증 흐름 확인이 필요합니다.
+팀원 환경에서 저장소 루트의 `apps/frontend/scripts/bootstrap.ps1`, `apps/frontend/scripts/check.ps1`로 검증하고 생성된 앱별 lockfile을 검토해 커밋하세요. Android에서는 카카오톡 설치/미설치, 취소, 재로그인, 네트워크 실패, 계정 전환, 로그아웃을 실기기에서 확인하세요. iOS는 별도로 빌드와 동일한 인증 흐름 확인이 필요합니다.
