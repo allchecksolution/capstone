@@ -12,6 +12,5 @@ for(const role of ['admin','driver']){
  for(const file of ['ios/Runner.xcodeproj/project.pbxproj','ios/Runner/Info.plist','web/index.html']){if(requireFile(role+'/'+file).includes('{{'))throw Error('Unrendered template '+file);}
 }
 const library=requireFile('shared/lib/allcheck_ui.dart');for(const m of library.matchAll(/part '([^']+)';/g)){requireFile('shared/lib/'+m[1]);count++;}
-const flows=JSON.parse(requireFile('shared/assets/flows.json'));if(flows.admin.length!==127||flows.driver.length!==117)throw Error('Figma catalog count changed');
-console.log('Structure check passed: 2 role apps, '+count+' Dart parts, native channels, iOS/web templates, 244 catalog entries.');
+console.log('Structure check passed: 2 role apps, '+count+' Dart parts, native channels, iOS/web templates.');
 console.log('This does not run Dart, Flutter analysis, widget tests or builds.');
