@@ -19,7 +19,9 @@ avoid unnecessary database access and complex persistence abstractions, and appl
 
 ## JPA Entity Management
 
-- **SHOULD — Entity Relationships:** Define relationships only when required by business needs, and avoid unnecessary bidirectional relationships.
+- **MUST — Cross-Aggregate Entity References:** Reference Entities in other Aggregates by ID rather than JPA relationships, even within the same Application Module.
+- **SHOULD — Entity Relationships:** Within an Aggregate, define JPA relationships only when required by business needs, and avoid unnecessary bidirectional relationships.
+- **MUST — Schema Mapping Consistency:** Explicitly declare column constraints supported by JPA, such as nullability, length, and uniqueness, in Entity mapping annotations consistently with the [Flyway-managed schema](flyway-conventions.md#migration-lifecycle).
 - **SHOULD — Lazy Loading:** Prefer lazy loading for Entity relationships, and explicitly fetch the required data according to the purpose of the query.
 - **SHOULD — Persistence Context Awareness:** Consider the persistence context lifecycle and Entity state, and do not rely on lazy loading outside transactions.
 

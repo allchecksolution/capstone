@@ -33,10 +33,17 @@ Business domains are organized into cohesive application modules, with clearly s
 ### Modular Architecture
 
 - **MUST — Modular Monolith:** Structure the backend as a modular monolith, organizing business functionality into cohesive domain-oriented modules within a single Spring Boot application.
-- **MUST — Module Boundaries:** Define clear responsibilities and boundaries for each module, and prevent direct access to other modules' internal implementations.
+- **MUST — Module Boundaries:** Define clear responsibilities and boundaries for each module, and prevent direct access to other modules' internal implementations. For JPA references, follow [Persistence Conventions](persistence-conventions.md#jpa-entity-management).
 - **MUST — Module Dependencies:** Allow inter-module dependencies only through explicitly exposed APIs, and prevent circular dependencies between modules.
 - **SHOULD — Module Communication:** Use explicit module APIs for direct collaboration, and prefer application events for loosely coupled business reactions when appropriate.
 - **SHOULD — Module Documentation:** Generate and maintain application module diagrams and documentation using Spring Modulith's `Documenter`.
+
+---
+
+### Multi-Instance Readiness
+
+- **MUST — Multi-Instance Readiness:** Maintain business consistency across multiple application instances, without relying solely on local process memory for persistent state or business concurrency control.
+- **MAY — Additional Infrastructure:** Consider additional infrastructure, such as distributed locks or message queues, only when actual requirements arise.
 
 ---
 

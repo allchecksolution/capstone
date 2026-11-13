@@ -20,7 +20,7 @@ Version database changes through Flyway, and apply the same migrations reproduci
 ## Migration Lifecycle
 
 - **MUST — Immutable Applied Migrations:** Do not modify, delete, or rename Versioned Migrations applied to shared or deployed environments; write additional changes as new migrations.
-- **MUST — Flyway as Schema Source of Truth:** Manage schema changes through Flyway, and prohibit arbitrary manual changes to shared or production databases and Hibernate's automatic schema changes (`create`, `create-drop`, `update`).
+- **MUST — Flyway as Schema Source of Truth:** Manage schema changes through Flyway, and prohibit arbitrary manual changes to shared or production databases and Hibernate's automatic schema changes (`create`, `create-drop`, `update`). Include corresponding Entity mapping updates in the same PR as schema changes.
 
 ---
 

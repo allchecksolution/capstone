@@ -44,16 +44,17 @@ Write tests with the characteristics of Kotlin and Spring Boot in mind, and veri
 - **SHOULD — Test Authentication Setup:** In tests where authentication and authorization are not under verification, use Spring Security's testing support to set up the required authentication context and focus on verifying core business behavior.
 - **MUST — Security Test Coverage:** In tests where authentication and authorization are under verification, retain the security configuration and verify key security scenarios such as unauthenticated access, insufficient permissions, and resource access restrictions.
 - **SHOULD — Module Integration Testing:** Use Spring Modulith's `@ApplicationModuleTest` to verify module behavior and interactions when module-level integration testing is appropriate.
+- **SHOULD — Module Boundary Tests:** Use architecture tests to verify the [module boundary rules](architecture.md#modular-architecture) and [Entity reference rules](persistence-conventions.md#jpa-entity-management).
 
 ---
 
 ## Persistence Testing
 
 - **MUST — Transaction Tests:** For critical transactional use cases, verify data consistency across successful execution and failure scenarios.
-- **SHOULD — Repository Tests:** Test complex queries and Entity relationships with actual database behavior in mind.
+- **SHOULD — Repository Tests:** Test complex queries, Entity mappings and relationships, and database constraints against a schema created by Flyway.
 - **SHOULD — Production-Like Database:** Run tests that depend on constraints, locking, queries, and transaction behavior against the same database engine as production whenever possible.
 - **SHOULD — Transaction Boundary Verification:** When verifying commits and rollbacks, ensure that the test's own automatic rollback through `@Transactional` does not obscure actual behavior.
-- **SHOULD — Concurrency Tests:** For concurrency-sensitive use cases, test concurrent execution and verify that duplicate processing and data inconsistencies are prevented.
+- **SHOULD — Concurrency Tests:** For concurrency-sensitive use cases, test concurrent execution in independent transactions against the same database, and verify that duplicate processing and data inconsistencies are prevented without relying on shared local locks.
 - **SHOULD — Query Verification:** For performance-critical queries, check the actual SQL generated and the number of query executions.
 
 ---
