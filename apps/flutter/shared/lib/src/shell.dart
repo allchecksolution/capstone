@@ -1,18 +1,20 @@
 part of '../allcheck_ui.dart';
 class WorkflowShell extends StatefulWidget {
-  const WorkflowShell({super.key, required this.role, required this.store});
+  const WorkflowShell({super.key, required this.role, required this.store, this.driverAuth, this.onKakaoAuthenticated});
   final AppRole role; final AppStore store;
+  final DriverAuth? driverAuth;
+  final Future<Json?> Function(KakaoIdentity)? onKakaoAuthenticated;
   @override State<WorkflowShell> createState()=>_WorkflowShellState();
 }
 class _WorkflowShellState extends State<WorkflowShell> {
   AppStore get s=>widget.store; bool get admin=>widget.role==AppRole.admin;
-  String page='login', id='', outcomeTitle='', outcomeText='', outcomeTarget='home', outcomeId='', fault='', search='', statusFilter='', typeFilter='', driverFilter='', regionFilter='', requestFilter='대기', jobFilter='진행 중', month='';
+  String page='login', id='', outcomeTitle='', outcomeText='', outcomeTarget='home', outcomeId='', search='', statusFilter='', typeFilter='', driverFilter='', regionFilter='', requestFilter='대기', jobFilter='진행 중', month='';
   int registrationStep=1,period=30;DateTime? fromDate,toDate,mfaAt;
   bool signedIn=false,busy=false,expanded=false,readonly=false,folderConnected=false;
-  String adminName='';Json? reportDraft;String draftReportId='';List<Json> catalog=<Json>[];
+  String adminName='';Json? reportDraft;String draftReportId='';KakaoIdentity? kakaoIdentity;
+  late final DriverAuth driverAuth=widget.driverAuth??KakaoDriverAuth();
   final formKey=GlobalKey<FormState>();final fields=<String,TextEditingController>{};final selections=<String,Set<String>>{};final history=<Json>[];Timer? clock;
-  @override void initState(){super.initState();month=nowIso().substring(0,7);s.addListener(_changed);_catalog();clock=Timer.periodic(const Duration(seconds:1),(_){if(mounted&&page=='request')setState((){});});}
-  Future<void> _catalog()async{try{final raw=await rootBundle.loadString('packages/allcheck_ui/assets/flows.json');final all=jsonDecode(raw) as Json;if(mounted)setState(()=>catalog=records(all[widget.role.name]));}catch(_){if(mounted)setState(()=>s.startupWarning='화면 대조 목록을 불러오지 못했습니다.');}}
+  @override void initState(){super.initState();month=nowIso().substring(0,7);s.addListener(_changed);clock=Timer.periodic(const Duration(seconds:1),(_){if(mounted&&page=='request')setState((){});});}
   void refresh(void Function() change){if(mounted)setState(change);}
   void _changed(){if(mounted)setState((){});}
   @override void dispose(){clock?.cancel();s.removeListener(_changed);for(final c in fields.values){c.dispose();}super.dispose();}
@@ -25,13 +27,13 @@ class _WorkflowShellState extends State<WorkflowShell> {
   void message(String text){if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(text)));}
   Future<bool> act(void Function() update,{String operation=''})async{
     if(busy)return false;setState(()=>busy=true);
-    try{if(operation.isNotEmpty&&fault==operation){fault='';throw StateError('처리에 실패했습니다. 입력값을 유지하고 다시 시도해 주세요.');}await s.change(update);return true;}
+    try{await s.change(update);return true;}
     catch(e){message(e.toString().replaceFirst('Bad state: ',''));return false;}
     finally{if(mounted)setState(()=>busy=false);}
   }
   Future<bool> submit(void Function() update,{String operation=''})async{if(!(formKey.currentState?.validate()??false))return false;return act(update,operation:operation);}
   Future<bool> confirm(String title)async=>await showDialog<bool>(context:context,builder:(context)=>AlertDialog(title:Text(title),actions:[TextButton(onPressed:()=>Navigator.pop(context,false),child:const Text('취소')),FilledButton(onPressed:()=>Navigator.pop(context,true),child:const Text('확인'))]))??false;
-  void result(String title,{String description='현재 기기에 처리 결과를 저장했습니다.',String target='home',String item=''}){outcomeTitle=title;outcomeText=description;outcomeTarget=target;outcomeId=item;go('result');}
+  void result(String title,{String description='처리 결과를 확인해 주세요.',String target='home',String item=''}){outcomeTitle=title;outcomeText=description;outcomeTarget=target;outcomeId=item;go('result');}
   Widget heading(String title)=>Text(title,style:const TextStyle(fontSize:18,fontWeight:FontWeight.w700));
   Widget small(String text)=>Text(text,style:const TextStyle(fontSize:12,color:Color(0xff788399),height:1.5));
   Widget notice(String text,{bool error=false})=>Container(width:double.infinity,padding:const EdgeInsets.all(14),decoration:BoxDecoration(color:error?const Color(0xfffdebf0):const Color(0xffe8f7fd),borderRadius:BorderRadius.circular(10)),child:Text(text,style:TextStyle(color:error?const Color(0xffbe324b):const Color(0xff258ea2),fontSize:13,height:1.5)));
@@ -49,27 +51,47 @@ class _WorkflowShellState extends State<WorkflowShell> {
   Widget pill(String label)=>Chip(label:Text(label,style:const TextStyle(fontSize:11)),backgroundColor:const Color(0xffe8f7fd),side:BorderSide.none);
   Widget jobCard(Json j)=>box([Row(children:[pill(text(j,'type')),const Spacer(),small(text(j,'status'))]),heading(text(j,'title',text(j,'symptom','작업 의뢰'))),small(text(j,'area',text(j,'address'))),link('상세 보기',j['status']=='응답 대기'?'request':'detail',item:text(j,'id'))]);
   Widget tabs(List<String> options,String selected,void Function(String) change)=>Wrap(spacing:6,runSpacing:6,children:options.map((v)=>ChoiceChip(label:Text(v),selected:v==selected,onSelected:busy?null:(_)=>setState(()=>change(v)))).toList());
-  String get title=>({'login':admin?'관리자 로그인':'올체크 기사','mfa':'추가 인증','enroll':'인증 앱 등록','home':admin?'작업 이력 및 통계':'홈','jobs':'작업목록','chat':'관리자 문의','more':'더보기','register':'가입 정보 등록','detail':'작업 상세','report':'작업 보고서','receptions':'상담 접수','reception':'접수 상세','dispatch':'배차 요청','drivers':'기사 관리','driver':'기사 정보','reports':'작업 보고서','report-edit':'보고서 수정','report-history':'원본 및 수정 이력','cancellations':'배차 취소 요청','cancellation':'취소 요청 검토','scenarios':'동작 흐름 대조','scenario':'상태 안내','stats':'나의 작업 통계','result':'처리 결과','settings':'설정','requests':'배차 요청 내역','request':'배차 요청','cancel':'취소 사유','revisit':'재방문 사유','withdraw':'회원 탈퇴','recordings':'Softphone 녹음 연결','export':'조회 결과 내보내기','notifications':'알림'})[page]??'올체크';
+  String get title=>({'login':admin?'관리자앱':'기사앱','kakao-connected':'기사앱','mfa':'추가 인증','enroll':'인증 앱 등록','home':admin?'작업 이력 및 통계':'홈','jobs':'작업목록','chat':'관리자 문의','more':'더보기','register':'가입 정보 등록','detail':'작업 상세','report':'작업 보고서','receptions':'상담 접수','reception':'접수 상세','dispatch':'배차 요청','drivers':'기사 관리','driver':'기사 정보','reports':'작업 보고서','report-edit':'보고서 수정','report-history':'원본 및 수정 이력','cancellations':'배차 취소 요청','cancellation':'취소 요청 검토','stats':'나의 작업 통계','result':'처리 결과','settings':'설정','requests':'배차 요청 내역','request':'배차 요청','cancel':'취소 사유','revisit':'재방문 사유','withdraw':'회원 탈퇴','recordings':'Softphone 녹음 연결','export':'조회 결과 내보내기','notifications':'알림'})[page]??'올체크';
   Widget publicPage(){
-    if(page=='enroll')return stack([heading('인증 앱(TOTP) 등록'),notice('실제 QR 코드와 등록 키는 인증 서버 연결 후 제공됩니다.'),const Icon(Icons.qr_code_2,size:100),button('등록 완료 · 인증 코드 입력',(){mfaAt=DateTime.now();go('mfa');})]);
-    if(page=='mfa')return form([heading('6자리 인증 코드를 입력해 주세요.'),field('code','인증 코드',number:true),notice('인증 서버 연결 전입니다. 화면 확인 코드는 123456입니다.'),button('인증하고 시작하기',()async{if(!(formKey.currentState?.validate()??false))return;if(mfaAt==null||DateTime.now().difference(mfaAt!).inSeconds>120){message('인증 코드가 만료되었습니다.');return;}if(value('code')!='123456'){message('인증 코드가 올바르지 않습니다.');return;}setState(()=>signedIn=true);go('home',replace:true);}),button('인증 코드 다시 입력',(){setState(()=>mfaAt=DateTime.now());controller('code').clear();},secondary:true)]);
+    if(page=='enroll'||page=='mfa')return notice('인증 서비스를 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.');
     if(!admin&&page=='register')return this.driverRegistration();
-    if(page=='terms'||page=='privacy')return notice('이용약관 및 개인정보 처리방침은 준비 중입니다. 입력 정보는 이 기기에만 저장됩니다.');
-    if(admin)return form([const SizedBox(height:32),heading('올체크 관리자'),field('username','아이디'),field('password','비밀번호'),notice('인증 서버 연결 전입니다. 실제 비밀번호는 입력하지 마세요.'),button('로그인',(){if(!(formKey.currentState?.validate()??false))return;adminName=value('username');mfaAt=DateTime.now();go('mfa');}),link('최초 인증 앱 등록','enroll')]);
-    return stack([const SizedBox(height:100),const Center(child:Text('ALLCHECK',style:TextStyle(fontSize:34,fontWeight:FontWeight.bold))),Center(child:small('빠르고 간편한 기사 업무 관리')),const SizedBox(height:100),button('카카오로 시작하기',(){if(s.account?['status']=='탈퇴'){message('탈퇴한 계정은 로그인할 수 없습니다.');return;}if(s.account!=null){signedIn=true;go('home');return;}registrationStep=1;go('register');}),notice('카카오 계정 연결 준비 중입니다.'),button('Apple로 시작하기',()=>message('Apple 로그인은 서비스 연결 후 이용할 수 있습니다.'),secondary:true),button('기사 화면 보기',()async{if(s.account?['status']=='탈퇴'){message('탈퇴한 계정입니다. 가입 화면에서 다시 시작해 주세요.');return;}if(await act(()=>s.data['account']=<String,dynamic>{'status':'활성','profile':<String,dynamic>{...s.profile,'name':text(s.profile,'name','김기사'),'phone':text(s.profile,'phone','010-0000-0000')}})){signedIn=true;go('home',replace:true);}},secondary:true),if(s.account!=null)button('이 기기의 가입 상태로 계속',(){signedIn=true;go('home');},secondary:true),Wrap(spacing:12,children:[TextButton(onPressed:()=>go('terms'),child:const Text('이용약관')),TextButton(onPressed:()=>go('privacy'),child:const Text('개인정보 처리방침'))])]);
+    if(page=='terms'||page=='privacy')return notice('문서를 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.');
+    if(admin)return form([const SizedBox(height:32),heading('관리자앱'),field('username','아이디'),field('password','비밀번호'),button('로그인',(){if(!(formKey.currentState?.validate()??false))return;message('로그인 서비스를 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.');})]);
+    if(page=='kakao-connected')return stack([const SizedBox(height:60),const Icon(Icons.check_circle_outline,size:76),heading('카카오 계정이 확인되었습니다.'),if(kakaoIdentity?.nickname!=null)Text(kakaoIdentity!.nickname!),button('계속',completeKakaoSignIn),button('로그아웃',logout,secondary:true)]);
+    return stack([const SizedBox(height:100),const Center(child:Text('기사앱',style:TextStyle(fontSize:34,fontWeight:FontWeight.bold))),Center(child:small('빠르고 간편한 기사 업무 관리')),const SizedBox(height:100),FilledButton(style:FilledButton.styleFrom(backgroundColor:const Color(0xfffee500),foregroundColor:Colors.black),onPressed:busy?null:signInWithKakao,child:const Text('카카오 로그인')),Wrap(spacing:12,children:[TextButton(onPressed:()=>go('terms'),child:const Text('이용약관')),TextButton(onPressed:()=>go('privacy'),child:const Text('개인정보 처리방침'))])]);
   }
-  Widget gated(){final rejected=s.account?['status']=='반려';return stack([const SizedBox(height:40),const Icon(Icons.schedule,size:70),heading(rejected?'가입 신청이 반려되었습니다.':'가입 상태를 확인해 주세요.'),notice(rejected?text(s.account!,'reason','정보 보완이 필요합니다.'):s.account?['status']=='탈퇴'?'탈퇴 처리된 계정입니다.':'관리자 검토가 진행 중입니다.'),if(rejected)button('다시 신청하기',()async{if(await act(()=>s.data['draft']=jsonDecode(jsonEncode(s.profile)) as Json)){registrationStep=1;go('register');}}),if(s.account?['status']!='탈퇴')...<Widget>[button('승인 상태 미리보기',()async{if(await act(()=>s.account!['status']='활성'))go('home');},secondary:true),button('반려 상태 미리보기',()=>act(()=>s.account!.addAll({'status':'반려','reason':'입력 정보를 다시 확인해 주세요.'})),secondary:true)],button('로그아웃',logout,secondary:true)]);}
-  Future<void> logout()async{if(await confirm('로그아웃할까요?')){signedIn=false;history.clear();go('login',replace:true);}}
+  Future<void> signInWithKakao()async{
+    if(busy)return;setState((){busy=true;kakaoIdentity=null;});
+    try{final identity=await driverAuth.signIn();if(!mounted||identity==null)return;kakaoIdentity=identity;history.clear();go('kakao-connected',replace:true);}
+    catch(e){message(e.toString().replaceFirst('Bad state: ',''));}
+    finally{if(mounted)setState(()=>busy=false);}
+  }
+  Future<void> completeKakaoSignIn()async{
+    final identity=kakaoIdentity;if(identity==null||busy)return;
+    final resolve=widget.onKakaoAuthenticated;
+    if(resolve==null){message('로그인 서비스를 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.');return;}
+    setState(()=>busy=true);
+    try{
+      final account=await resolve(identity);if(!mounted)return;
+      // Drop device-only workflow data: it is never a server session or approval.
+      await s.change((){s.data=AppStore.empty(AppRole.driver);s.data['account']=account;});
+      if(!mounted)return;for(final c in fields.values){c.dispose();}fields.clear();selections.clear();history.clear();
+      if(account==null){registrationStep=1;go('register',replace:true);}
+      else{signedIn=true;go('home',replace:true);}
+    }catch(_){message('로그인에 실패했습니다. 잠시 후 다시 시도해 주세요.');}
+    finally{if(mounted)setState(()=>busy=false);}
+  }
+
+  Widget gated(){final rejected=s.account?['status']=='반려';return stack([const SizedBox(height:40),const Icon(Icons.schedule,size:70),heading(rejected?'가입 신청이 반려되었습니다.':'가입 상태를 확인해 주세요.'),notice(rejected?text(s.account!,'reason','정보 보완이 필요합니다.'):s.account?['status']=='탈퇴'?'탈퇴 처리된 계정입니다.':'관리자 검토가 진행 중입니다.'),if(rejected)button('다시 신청하기',()async{if(await act(()=>s.data['draft']=jsonDecode(jsonEncode(s.profile)) as Json)){registrationStep=1;go('register');}}),button('로그아웃',logout,secondary:true)]);}
+  Future<void> logout()async{if(!await confirm('로그아웃할까요?'))return;await platformTask(()async{if(!admin)await driverAuth.signOut();if(!mounted)return;kakaoIdentity=null;signedIn=false;for(final c in fields.values){c.dispose();}fields.clear();selections.clear();history.clear();go('login',replace:true);});}
   Widget commonPage(){
     if(page=='result')return stack([const SizedBox(height:60),const Icon(Icons.check_circle_outline,size:76,color:Color(0xff55bbcc)),heading(outcomeTitle),small(outcomeText),link('계속',outcomeTarget,item:outcomeId),link('홈으로 이동','home')]);
-    if(page=='scenarios')return stack([notice('ver2 우선 · 기존 고유 흐름 유지. 서버 응답은 공통 상태 화면으로 미리 확인합니다.'),for(final f in catalog)menu(text(f,'name'),'scenario',item:text(f,'id'),subtitle:f['legacy']==true?'기존':'현재 설계')]);
-    if(page=='scenario'){final f=catalog.firstWhere((f)=>f['id']==id,orElse:()=> <String,dynamic>{'name':'상태 안내'});return stack([heading(text(f,'name')),notice(f['exception']==true?'현재 상태에서는 처리를 완료할 수 없습니다. 입력 정보·권한·최신 상태를 확인하고 다시 시도해 주세요.':'해당 업무 화면에서 동작 흐름을 확인할 수 있습니다.',error:f['exception']==true),small('Figma $id'),dropdown('failure','다음 처리에서 확인할 실패 상태',['review','dispatch','report','approval','cancellation','register','work','settings','chat'],initial:admin?'review':'work'),button('실패 한 번 재현 후 업무로 이동',(){fault=value('failure');go(admin?'more':'jobs');}),link('목록으로','scenarios')]);}
     return const SizedBox.shrink();
   }
   @override Widget build(BuildContext context){
     final allowed=signedIn&&(admin||s.account?['status']=='활성');
-    final content=page=='result'?commonPage():!signedIn||page=='register'?publicPage():!allowed?gated():['result','scenarios','scenario'].contains(page)?commonPage():admin?this.adminPage():this.driverPage();
-    final navPages=['home','jobs','chat','more'];final index=page=='chat'?2:['more','settings','scenarios','scenario','recordings','drivers','driver','cancellations','cancellation'].contains(page)?3:['home','stats','notifications'].contains(page)?0:1;final showNav=allowed&&!['register','mfa','login'].contains(page);
+    final content=page=='result'?commonPage():!signedIn||page=='register'?publicPage():!allowed?gated():page=='result'?commonPage():admin?this.adminPage():this.driverPage();
+    final navPages=['home','jobs','chat','more'];final index=page=='chat'?2:['more','settings','recordings','drivers','driver','cancellations','cancellation'].contains(page)?3:['home','stats','notifications'].contains(page)?0:1;final showNav=allowed&&!['register','mfa','login'].contains(page);
     final wide=admin&&showNav&&MediaQuery.sizeOf(context).width>900;
     final scroll=Align(alignment:Alignment.topCenter,child:ConstrainedBox(constraints:BoxConstraints(maxWidth:admin?1100:520),child:SingleChildScrollView(padding:const EdgeInsets.all(24),child:stack([if(s.startupWarning.isNotEmpty)notice(s.startupWarning,error:true),content]))));
     return PopScope(canPop:false,onPopInvokedWithResult:(didPop,result){if(!didPop)back();},child:Scaffold(appBar:AppBar(title:Text(title),leading:history.isNotEmpty?IconButton(icon:const Icon(Icons.chevron_left),onPressed:back):null,actions:[if(busy)const Padding(padding:EdgeInsets.all(16),child:SizedBox(width:22,height:22,child:CircularProgressIndicator(strokeWidth:2)))]),body:SafeArea(top:false,child:LayoutBuilder(builder:(context,constraints)=>admin&&showNav&&constraints.maxWidth>900?Row(children:[NavigationRail(selectedIndex:index,onDestinationSelected:(i)=>go(navPages[i]),labelType:NavigationRailLabelType.all,destinations:const [NavigationRailDestination(icon:Icon(Icons.home_outlined),label:Text('홈')),NavigationRailDestination(icon:Icon(Icons.assignment_outlined),label:Text('작업목록')),NavigationRailDestination(icon:Icon(Icons.chat_bubble_outline),label:Text('문의')),NavigationRailDestination(icon:Icon(Icons.more_horiz),label:Text('더보기'))]),const VerticalDivider(width:1),Expanded(child:scroll)]):scroll)),bottomNavigationBar:showNav&&!wide?SafeArea(top:false,child:NavigationBar(selectedIndex:index,onDestinationSelected:(i)=>go(navPages[i]),destinations:const [NavigationDestination(icon:Icon(Icons.home_outlined),label:'홈'),NavigationDestination(icon:Icon(Icons.assignment_outlined),label:'작업목록'),NavigationDestination(icon:Icon(Icons.chat_bubble_outline),label:'문의'),NavigationDestination(icon:Icon(Icons.more_horiz),label:'더보기')])):null));

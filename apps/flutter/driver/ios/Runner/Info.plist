@@ -2,13 +2,16 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+<key>LSApplicationQueriesSchemes</key><array><string>kakaokompassauth</string></array>
+<key>CFBundleURLTypes</key><array><dict><key>CFBundleURLSchemes</key><array><string>kakao$(KAKAO_NATIVE_APP_KEY)</string></array></dict></array>
+<key>FlutterDeepLinkingEnabled</key><false/>
 <key>NSLocationWhenInUseUsageDescription</key><string>배차 위치 확인을 위해 현재 위치를 사용합니다. 백그라운드 위치는 수집하지 않습니다.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>올체크 기사</string>
+	<string>기사앱</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
