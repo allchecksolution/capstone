@@ -1,4 +1,4 @@
-name: allcheck-docs # compose.local.yml(DB)과 프로젝트를 분리해 서로의 컨테이너를 건드리지 않게 한다.
+name: allcheck-swagger # compose.local.yml과 프로젝트를 분리해 서로의 컨테이너를 건드리지 않게 한다.
 
 services:
   swagger-ui:
