@@ -14,7 +14,7 @@ flutter run --debug --dart-define=ALLCHECK_DEV_ACCESS=true
 
 개발 진입 검증은 공유 패키지에서 `flutter test test/development_access_test.dart`와 `flutter test --dart-define=ALLCHECK_DEV_ACCESS=true test/development_access_test.dart`를 각각 실행합니다. 현재 PC의 Device Guard 차단으로 이 테스트는 실행하지 못했습니다.
 
-Flutter 소스(`apps/flutter`)에 적용했습니다. 기존 `apps/admin`, `apps/driver` 웹뷰 앱과 기존 APK에는 적용하지 않았습니다.
+앱 소스는 `apps/flutter`의 Flutter 구현으로 통일했습니다. 중복된 기존 웹/Java WebView 앱 두 폴더는 제거했습니다. 이전에 생성한 WebView APK에는 이번 변경이 적용되지 않으므로 Flutter 소스로 새로 빌드해야 합니다.
 
 ## 기사앱
 

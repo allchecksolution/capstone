@@ -15,3 +15,7 @@ Thumbs.db
 ############################
 .env.*
 .env
+
+# Removed WebView apps: exclude leftover local APKs and Gradle caches.
+/apps/admin/
+/apps/driver/

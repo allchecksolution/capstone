@@ -1,6 +1,6 @@
 # ALLCHECK Flutter 프론트
 
-관리자와 기사 앱을 Dart/Flutter 위젯으로 구현한 소스입니다. 기존 `apps/admin`, `apps/driver` 웹 및 WebView 앱은 보존했습니다. 백엔드와 AI 소스는 수정하지 않습니다.
+관리자앱과 기사앱의 Dart/Flutter 소스입니다. 앱 프론트는 이 폴더의 Flutter 구현만 사용합니다. 중복된 웹 및 Java WebView 구현은 제거했습니다. Android 실행에 필요한 Flutter 네이티브 호스트 코드는 포함합니다.
 
 ## 현재 상태
 
