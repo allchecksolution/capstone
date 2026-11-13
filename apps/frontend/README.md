@@ -39,4 +39,4 @@ Android APK는 저장소 루트에서 `./apps/frontend/scripts/build-apks.ps1 -F
 
 ## 검증 상태
 
-Node 구조 점검과 XML 파싱은 통과했습니다. 이 PC에서는 조직의 애플리케이션 제어 정책이 Dart 실행을 차단합니다. 의존성 설치, Dart 분석, 테스트, 새 APK/iOS 빌드 및 실제 서버·푸시 동작은 검증하지 못했습니다. [검증 기록](VERIFICATION.md)을 참고하세요.
+Node 구조 점검, XML 파싱 및 Dart formatter 문법 검사는 통과했습니다. Dart 실행 차단은 해제됐으나 실행 환경에서 pub.dev에 연결하지 못해 의존성을 설치하지 못했습니다. Dart 분석, 테스트, 새 APK/iOS 빌드 및 실제 서버·푸시 동작은 검증하지 못했습니다. [검증 기록](VERIFICATION.md)을 참고하세요.

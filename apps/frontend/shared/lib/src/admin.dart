@@ -20,7 +20,22 @@ extension AdminScreens on _WorkflowShellState {
     return stack([reportPhotos(r),box([for(final key in ['content','diagnosis','result','travelCost','materialCost','laborCost','cost'])kv({'content':'작업 내용','diagnosis':'진단 결과','result':'작업 결과','travelCost':'출장비','materialCost':'자재비','laborCost':'인건비','cost':'합계'}[key]!,current[key])]),link('보고서 수정','report-edit',item:id),link('최초 원본 · 수정 이력','report-history',item:id)]);
   }
   Widget adminCancellations()=>stack([for(final c in s.cancellations)box([menu(text(c,'jobId'),'cancellation',item:text(c,'id'),subtitle:'${c['decision']==null?'검토 대기':'처리 완료'} · ${c['reason']}')]),if(s.cancellations.isEmpty)empty('취소 요청이 없습니다.')]);
-  Widget adminCancellation(){final c=s.find(s.cancellations,id);return stack([box([kv('의뢰번호',c['jobId']),kv('취소 사유',c['reason']),notice('기사 배정은 이미 해제되었습니다. 고객 의뢰의 재배차 또는 취소를 결정합니다.'),if(c['decision']!=null)kv('처리 결과',c['decision'])else ...<Widget>[button('재배차 진행',()async{if(!await confirm('재배차를 진행할까요?'))return;String next='';if(await command('cancellations/resolve',{'id':id,'redispatch':true},()=>next=s.resolveCancellation(id,true)))go('dispatch',item:next.isEmpty?lastResourceId:next);}),button('의뢰 취소',()async{if(await confirm('고객 의뢰를 취소할까요?'))await command('cancellations/resolve',{'id':id,'redispatch':false},()=>s.resolveCancellation(id,false));},danger:true)])]);}
+  Widget adminCancellation(){
+    final c=s.find(s.cancellations,id);
+    return stack([box([
+      kv('의뢰번호',c['jobId']),kv('취소 사유',c['reason']),
+      notice('기사 배정은 이미 해제되었습니다. 고객 의뢰의 재배차 또는 취소를 결정합니다.'),
+      if(c['decision']!=null)kv('처리 결과',c['decision'])else ...<Widget>[
+        button('재배차 진행',()async{
+          if(!await confirm('재배차를 진행할까요?'))return;String next='';
+          if(await command('cancellations/resolve',{'id':id,'redispatch':true},()=>next=s.resolveCancellation(id,true)))go('dispatch',item:next.isEmpty?lastResourceId:next);
+        }),
+        button('의뢰 취소',()async{
+          if(await confirm('고객 의뢰를 취소할까요?'))await command('cancellations/resolve',{'id':id,'redispatch':false},()=>s.resolveCancellation(id,false));
+        },danger:true),
+      ],
+    ])]);
+  }
   Widget adminMore()=>stack([box([menu('알림','notifications'),menu('상담 접수','receptions'),menu('기사 가입 심사','drivers'),menu('작업 보고서','reports'),menu('배차 취소 후속 처리','cancellations'),menu('Softphone 녹음 연결','recordings'),menu('알림 설정','settings',item:'notifications'),menu('내 계정','settings',item:'account')]),button('로그아웃',logout,secondary:true)]);
   Widget adminPage(){switch(page){case 'home':return adminHome();case 'jobs':return adminJobs();case 'new':return adminJobForm();case 'detail':return adminDetail();case 'receptions':return receptionList();case 'reception':return receptionDetail();case 'drivers':return adminDrivers();case 'driver':return adminDriver();case 'dispatch':return adminDispatch();case 'reports':return adminReports();case 'report':return adminReport();case 'report-edit':return adminReport(edit:true);case 'report-history':return adminReport(showHistory:true);case 'cancellations':return adminCancellations();case 'cancellation':return adminCancellation();case 'chat':return chatScreen();case 'recordings':return recordingSettings();case 'export':return exportScreen();case 'settings':return genericSettings();case 'more':return adminMore();default:return adminHome();}}
 }
