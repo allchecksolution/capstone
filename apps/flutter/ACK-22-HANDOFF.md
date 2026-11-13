@@ -2,6 +2,18 @@
 
 ACK-22 브랜치: `feat/ACK-22-admin-app-demo`
 
+개발 환경에서 두 앱의 화면을 확인하려면 각 앱 폴더에서 아래 명령으로 실행합니다.
+
+```powershell
+flutter run --debug --dart-define=ALLCHECK_DEV_ACCESS=true
+```
+
+로그인 화면의 ‘개발용으로 입장’을 누르면 카카오 키나 서버 없이 홈으로 이동합니다. 기사앱은 메모리 안에서만 활성 상태를 만들며, 예시 업무 데이터는 추가하지 않습니다. 개발 옵션 실행에서는 별도 메모리 저장소를 사용해 일반 실행의 저장 데이터와 분리합니다. 앱을 완전히 다시 실행하면 개발 데이터는 초기화됩니다. 로그아웃 후에는 로그인 화면으로 돌아갑니다.
+
+기본값은 비활성이고 `kDebugMode`도 검사하므로 profile/release 빌드에서는 옵션을 주어도 개발용 진입이 표시되거나 동작하지 않습니다. 기존 프로토타입·AI 안내 문구를 되살리지 않습니다. 일반 실행의 인증 제한은 그대로 유지합니다.
+
+개발 진입 검증은 공유 패키지에서 `flutter test test/development_access_test.dart`와 `flutter test --dart-define=ALLCHECK_DEV_ACCESS=true test/development_access_test.dart`를 각각 실행합니다. 현재 PC의 Device Guard 차단으로 이 테스트는 실행하지 못했습니다.
+
 Flutter 소스(`apps/flutter`)에 적용했습니다. 기존 `apps/admin`, `apps/driver` 웹뷰 앱과 기존 APK에는 적용하지 않았습니다.
 
 ## 기사앱

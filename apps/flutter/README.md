@@ -17,6 +17,8 @@
 
 ## 실행
 
+두 앱의 개발용 화면 진입은 각 앱 폴더에서 `flutter run --debug --dart-define=ALLCHECK_DEV_ACCESS=true`로 켭니다. 로그인 화면의 ‘개발용으로 입장’을 사용합니다. 일반 실행과 profile/release에는 진입 버튼이 없으며, 개발 데이터는 메모리에만 보관합니다. 자세한 내용은 [ACK-22 인계 문서](ACK-22-HANDOFF.md)를 참고하세요.
+
 Flutter 3.50 이상, Dart 3.10 이상을 사용할 수 있는 개발 환경이 필요합니다. Android에는 SDK와 JDK 17, iOS에는 macOS와 Xcode 및 서명 설정이 필요합니다. 조직 정책 차단은 관리자에게 해제를 요청해야 합니다.
 
 아래 명령은 저장소 루트에서 실행합니다.
