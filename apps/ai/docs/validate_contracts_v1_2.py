@@ -111,7 +111,7 @@ record('unique operationIds', len(ids) == len(set(ids)) == 5)
 record('health public only', ai['paths']['/health']['get']['security'] == [])
 record('202 STT response', '202' in ai['paths']['/internal/v1/transcribe']['post']['responses'])
 
-sql_path = root / 'apps/backend/src/main/resources/db/migration/V2026110601__create_ai_job_tables.sql.draft'
+sql_path = root / 'apps/backend/src/main/resources/db/migration/V1__create_ai_job_tables.sql.draft'
 sql = sql_path.read_text(encoding='utf-8')
 statements = parse_sql(sql)
 tables = [x.stmt for x in statements if isinstance(x.stmt, ast.CreateStmt)]
@@ -125,7 +125,7 @@ for table in tables:
     record('SQL columns ' + table.relation.relname,
            [x.colname for x in table.tableElts if isinstance(x, ast.ColumnDef)] == expected_columns[table.relation.relname])
 record('draft not default SQL suffix', sql_path.suffix == '.draft')
-record('draft version unique locally', not list(sql_path.parent.glob('V2026110601__*.sql')))
+record('draft version unique locally', not list(sql_path.parent.glob('V1__*.sql')))
 for document in docs_dir.glob('*.md'):
     import re
     for link in re.findall(r'\]\(([^)]+)\)', document.read_text(encoding='utf-8')):

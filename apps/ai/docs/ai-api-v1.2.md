@@ -10,7 +10,7 @@ Jira: **ACK-23**. 구현 전 계약·테이블 설계 검토용 문서다.
 - [기준 OpenAPI](https://github.com/allchecksolution/capstone/blob/341a01597af2d697cd53906fb27ed8c4b7e44072/docs/api/openapi.yaml)
 - [AI OpenAPI 3.1.1](ai-api-v1.2.yaml)
 - [Backend 웹훅 수신 OpenAPI 3.1.1](backend-callback-v1.2.yaml)
-- [SQL 초안](../../backend/src/main/resources/db/migration/V2026110601__create_ai_job_tables.sql.draft)
+- [SQL 초안](../../backend/src/main/resources/db/migration/V1__create_ai_job_tables.sql.draft)
 - [검증 결과](validation-v1.2.md)
 
 두 OpenAPI는 각각 독립된 servers를 사용한다. AI는 `http://127.0.0.1:8000`, Backend 콜백은 `http://127.0.0.1:8080`을 로컬 origin 예시로 사용하며 `/api/v1`을 붙이지 않는다. 배포 서버 주소는 TODO다. 기존 Backend OpenAPI·Swagger 설정은 변경하지 않는다. 명세 파일을 Swagger UI로 열어 확인할 수 있으나 현재 실행 서버에 내부 API가 자동 추가되는 것은 아니다.
@@ -102,7 +102,7 @@ request_hash 형식과 상태별 CHECK는 검토용 제약 제안이다. ID와 �
 
 ## Flyway 적용 전 필수 TODO
 
-1. 기준 시점 로컬·원격 main·PR #7에는 기존 SQL migration이 없었다. `V2026110601`은 충돌 없는 초안 번호이지 운영 DB 이력에 대해 예약한 버전이 아니다. 팀원 미공개 작업·flyway_schema_history는 확인하지 않았으며 승격 직전 재확인한다.
+1. 기준 시점 로컬·원격 main·PR #7에는 기존 SQL migration이 없었다. `V1`은 충돌 없는 초안 번호이지 운영 DB 이력에 대해 예약한 버전이 아니다. 팀원 미공개 작업·flyway_schema_history는 확인하지 않았으며 승격 직전 재확인한다.
 2. 중앙 위치 규칙에 따라 Backend migration 디렉터리에 두되 `.sql.draft`로 저장했다. 현재 기본 `.sql` 검색에는 포함되지 않는다. 승인 없이 이름을 바꾸거나 SQL을 실행하지 않는다.
 3. DB 전체 운영·Flyway 관리 및 AI 전용 테이블 접근 권한은 Backend 책임으로 확정됐다. 기존 Backend Flyway를 유일한 schema 변경 경로로 사용한다. 구체적인 schema/search_path·계정명·허용 권한과 삭제/보존 정책은 TODO다.
 4. 운영·공유 DB에 적용하지 말고 별도 승인된 테스트 DB에서 신규 적용 및 이전 버전 업그레이드를 검증한 뒤 반영한다. 이번 작업에서는 DB 테스트 서버도 만들지 않았다.

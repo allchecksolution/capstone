@@ -1,6 +1,6 @@
 # AI API v1.2 초안 검증
 
-검증 대상은 [AI 명세](ai-api-v1.2.yaml), [웹훅 명세](backend-callback-v1.2.yaml), [SQL 초안](../../backend/src/main/resources/db/migration/V2026110601__create_ai_job_tables.sql.draft)이다.
+검증 대상은 [AI 명세](ai-api-v1.2.yaml), [웹훅 명세](backend-callback-v1.2.yaml), [SQL 초안](../../backend/src/main/resources/db/migration/V1__create_ai_job_tables.sql.draft)이다.
 
 검증일: 2026-11-06. Python 3.13.9 / Windows에서 정적 검증했다. DB 연결·SQL 적용·FastAPI 내부 API 구현 테스트는 포함하지 않는다.
 
