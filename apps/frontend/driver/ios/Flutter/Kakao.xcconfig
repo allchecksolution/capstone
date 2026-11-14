@@ -1,0 +1,4 @@
+// Match --dart-define=KAKAO_NATIVE_APP_KEY when building on macOS.
+// Supply the actual key in the ignored Kakao.local.xcconfig file.
+KAKAO_NATIVE_APP_KEY = unconfigured
+#include? "Kakao.local.xcconfig"
