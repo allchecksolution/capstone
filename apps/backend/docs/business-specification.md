@@ -1,21 +1,85 @@
 # Business Rules
 
-Defines the current design baseline for backend business logic supporting the driver and administrator apps. Based on the initial design, this document is kept current with business behavior and design changes decided during development.
+Defines the project domain model, ownership, business rules, and project-specific integration policies supporting the driver and administrator apps. General engineering practices belong to convention documents; this document records the concrete project decisions.
 
 ## Document Responsibilities
 
 | Document | Scope |
 |---|---|
 | [Functional Requirements](../../../docs/requirements/functional-requirements/) / [Use Cases](../../../docs/requirements/use-cases/) | Features, user flows, and exception flows |
-| This document | Business states, access scopes, invariants, and atomic business change boundaries |
-| [Domain Design](domain-design.md) | Domain boundaries, aggregate structure, and data ownership |
-| [Security Conventions](security-conventions.md) | Authentication and authorization mechanisms, and sensitive data protection principles |
+| This document | Project domain model and data ownership; business states, access scopes, invariants, atomic changes, and project-specific integration policies |
+| [Domain Design Conventions](domain-design.md) | General principles for defining context boundaries, aggregates, and data ownership |
+| [Security Conventions](security-conventions.md) | General authentication, authorization, credential management, and sensitive data protection principles |
 | [Persistence Conventions](persistence-conventions.md) | Transaction, idempotency, concurrency control, and event publication implementation |
 | [Initial API Design](../../../docs/api/openapi.yaml) | Initial design reference for paths, request/response fields, status codes, and retry contracts |
 | springdoc-generated OpenAPI / Swagger UI | Current contracts of implemented APIs, generated from backend code and documentation annotations |
 | [Test Conventions](test-conventions.md) | Test design and verification methods |
 
 Each rule uses its designated document above as the single source of truth. Other documents reference rules without redefining them.
+
+<a id="project-domain-model"></a>
+
+## Project Domain Model
+
+ALLCHECK consists of five bounded contexts and one integrated query module. The project-specific ownership, module names, and initial aggregates are defined here; general design guidance follows [Domain Design Conventions](domain-design.md).
+
+### Contexts and Data Ownership
+
+| Type | Domain / Package | Owned Responsibilities and Data | Related Requirements |
+|---|---|---|---|
+| BC | Identity and Access Management — `identity` | Administrator accounts, credentials, roles, and MFA; driver Kakao authentication identifiers and account links; authentication sessions and tokens; administrator push-device registrations | [FR-01], [FR-13] authentication / [UC-01], [UC-08] authentication |
+| BC | Consultation Intake — `reception` | Consultation cases; recordings, STT and AI analysis results and processing statuses; manual entry; administrator review and finalized intake information | [FR-02], [FR-03], [FR-04] / [UC-02] |
+| BC | Driver Management — `driver` | Driver personal and business information and verification results; registration applications and review history; approval, rejection, reapplication, and withdrawal; specialties, service areas, equipment, preferences, standby/rest status, and latest location | [FR-06], [FR-10], [FR-13] membership management, [FR-14] / [UC-06], [UC-08] membership management, [UC-09], [UC-14], [UC-15] |
+| BC | Service Request Fulfillment — `operations` | Customer service requests; dispatch candidate selection, offers, responses, and delivery results; work ownership, cancellation, redispatch, and administrator follow-up decisions; work progress and revisits; original reports and revision history | [FR-05], [FR-07], [FR-08], [FR-09], [FR-11], [FR-12], [FR-16] history retention / [UC-03], [UC-05], [UC-07], [UC-10], [UC-11], [UC-12], [UC-13] |
+| BC | Administrator–Driver Chat — `chat` | Ongoing conversations for each driver, messages, transmission processing results, and conversation access relationships | [FR-15] / [UC-16] |
+| Query module | Status, History, and Statistics — `dashboard` | Service request and work status, history, and statistics by period, combining information from each BC | [FR-09], [FR-16] / [UC-04] |
+
+### Module Placement
+
+Each BC is placed in a direct subpackage of `com.allcheck` as a top-level Spring Modulith Application Module.
+`operations` remains one BC, with service request, dispatch, and work responsibilities organized into the nested Application Modules `request`, `dispatch`, and `work`.
+
+```text
+com.allcheck
+├── identity
+├── reception
+├── driver
+├── operations
+│   ├── request       # Service request management
+│   ├── dispatch      # Dispatch rounds and offers
+│   └── work          # Work execution and reporting
+├── chat
+├── dashboard         # Integrated query module
+└── global            # Shared technical code
+```
+
+`dashboard` is also managed as a top-level Application Module, but is not a separate BC and does not own source business data updates or have its own business Aggregates.
+`global` is excluded from both BCs and Application Modules.
+
+### Key Aggregates
+
+The following is the initial design of the key Aggregates.
+
+| BC / Nested Module | Aggregate Root | Owned Models and Boundaries |
+|---|---|---|
+| `identity` | `Account` | Administrator authentication accounts and driver authentication identities and external login links. Driver membership information and registration reviews belong to `driver`. |
+| `reception` | `Reception` | Manages consultation materials and analysis results separately from intake information finalized by administrators. |
+| `driver` | `Driver` | Manages driver membership information, business registration verification, application and review history, service eligibility, and dispatch preferences. |
+| `driver` | `DriverLocation` | Manages each driver's latest location and update timestamp separately from profile and review information. |
+| `operations.request` | `ServiceRequest` | Manages the service request lifecycle, the snapshot of finalized intake information, identifiers for the current dispatch and work, and administrator follow-up decision history linked to cancellation records or closed rounds. |
+| `operations.dispatch` | `DispatchRound` | Manages dispatch attempts by round and offers, responses, and delivery results for each driver. |
+| `operations.work` | `WorkOrder` | Owns the request-to-driver relationship through `requestId` and `driverId`, work progress, revisits, cancellation reason and timestamp, and previous-work links. Historical work records retain their original driver; redispatch creates a new work record. Driver workload is derived from unfinished, non-cancelled work rather than a separate aggregate. |
+| `operations.work` | `WorkReport` | Manages the originally submitted report and photos, administrator revision history, and the latest effective content. |
+| `chat` | `Conversation` | Manages each driver's ongoing conversation relationship independently of individual service requests. |
+| `chat` | `ChatMessage` | Manages message content, senders, transmission identifiers, and processing results separately from the conversation. |
+
+## Project Integration and Migration Policies
+
+| Area | Project policy |
+|---|---|
+| Internal AI authentication | Backend→AI uses `X-Internal-Api-Key` separately from user JWTs. Missing/invalid keys return 401; an authenticated service without permission receives 403. Secrets are managed through Infisical. |
+| Sensitive business data | Do not log internal keys, presigned URLs/signatures, FCM tokens, recording contents, or STT originals. Push carries resource identifiers; original contents require an authorized query. |
+| Migration versions | Begin at `V1` and allocate the next unused positive integer (`V2`, `V3`, ...). Do not use timestamp/date versions or renumber an applied migration. |
 
 ## Rule Index
 
@@ -27,6 +91,7 @@ Each rule uses its designated document above as the single source of truth. Othe
 | [BR-06](#br-06) | Work cancellation and follow-up |
 | [BR-07](#br-07) | Original reports and revision history |
 | [BR-08](#br-08) | Status, history, and statistics queries |
+| [BR-09](#br-09) | Recording ingestion, analysis attempts, S3 originals, and completion push |
 
 Rule IDs support cross-document references. Do not reuse BR-03 and BR-05, which were removed through consolidation or migration.
 
@@ -42,6 +107,8 @@ Rule IDs support cross-document references. Do not reuse BR-03 and BR-05, which 
 | `recordingStatus`, `sttStatus`, `analysisStatus` | `PENDING` (queued), `PROCESSING` (running), `SUCCEEDED` (successful), `FAILED` (failed), `NOT_AVAILABLE` (no source material) | Manage each stage independently. The execution flow is `PENDING → PROCESSING → SUCCEEDED`; record processing failures as `FAILED`. Distinguish missing material from processing failure. |
 
 Completed AI processing does not confirm administrator review. Administrators may confirm intake through manual entry even when recording, STT, or AI processing fails.
+
+STT execution and durable transcript storage are separate stages. The transcript storage state uses the same processing states and is exposed separately in analysis queries. Analysis attempt states and stale-result handling follow BR-09.
 
 ### Service Request `request.status`
 
@@ -171,6 +238,8 @@ Authentication and authorization mechanisms follow [Security Conventions](securi
 | Work and first report submission | Allow work progress, cancellation, and first report submission only to the driver matching `driverId` on the service request's current work. Permitted states follow BR-01. |
 | Handover records | The new driver may read previous work records linked to the same service request. Do not grant permission to modify previous work or reports. |
 | Recordings and work photos | Viewing is limited by related intake/service request/work access permissions. When attaching files, verify upload ownership and the corresponding intake/work linkage. |
+| STT originals and analysis attempts | Authorized administrators may read the related reception's original transcript and attempt history. AI services do not obtain application-user access or direct Backend database access. |
+| Administrator push devices | Administrators may register and remove only their own installation bindings. Analysis notifications target the original recording uploader's currently registered devices, with current resource access revalidated before sending. |
 
 Administrator access to retained records after driver withdrawal, and personal data retention and deletion, follow [UC-15](../../../docs/requirements/use-cases/uc-15-driver-account-withdrawal.md).
 
@@ -216,6 +285,7 @@ Administrator access to retained records after driver withdrawal, and personal d
 - Append administrator revisions as separate history containing changed fields, before/after values, editor, and timestamp. Use the latest effective content without a separate approval or rejection process.
 - Drivers and administrators use the same single work cost `totalCost` as an integer in KRW. Report revisions are not new first submissions or repeated completion of work or service requests.
 - Access, retention, and deletion of originals, revision history, and attachments follow BR-02.
+- Work photos are uploaded directly to private S3 with a phase of BEFORE, DURING, or AFTER. During photos are optional; before/after requirements remain. Validate completed upload, phase, ownership, work linkage, and duplicate IDs across the report's photo arrays at submission. Preserve all submitted original photos.
 
 <a id="br-08"></a>
 
@@ -225,3 +295,57 @@ Administrator access to retained records after driver withdrawal, and personal d
 - Distinguish current service request, round, work, and driver information from historical records. Derive the need for administrator follow-up from `request.status=FOLLOW_UP_REQUIRED`.
 - Distinguish an empty list, no statistics for the period, a missing selected service request, and query failure. Do not turn query failures into empty results. Response representations and status codes for implemented APIs are documented in the springdoc-generated OpenAPI.
 - Report-based queries and statistics use the latest effective revisions, but count completion only once per service request. Do not count cancelled work or report revisions as additional completions.
+
+<a id="br-09"></a>
+
+## BR-09 Recording Ingestion, Analysis, and Completion Push
+
+- Reserve at most one recording per reception in the MVP. Retrying an incomplete upload retains its file ID, immutable metadata, and object key. Completed recordings cannot be replaced or overwritten.
+- The administrator app uploads to private S3 through a Presigned PUT URL. Backend validates the actual object before linking the recording and accepting its first analysis automatically. No separate app request starts the first analysis.
+- Commit recording linkage, the first fixed recording-received/reference timestamp, the new reception version, analysis attempt, and durable execution intent together. Duplicate completion notifications reproduce the first acceptance and do not create another attempt, including after idempotency-key expiry.
+- Return HTTP 202 to the app after durable acceptance. Backend executes the work in the background and calls AI STT and structuring APIs sequentially through synchronous RestClient requests. AI jobs, callbacks, and automatic AI/provider retries are excluded.
+- Use one new analysisRequestId per execution flow. Send the same fixed receptionVersion and recording identity to both AI stages. Backend owns duplicate, version, stale-result, and one-time application checks.
+- Backend saves the exact STT text as a new UTF-8 original in S3 and persists the file metadata and attempt linkage before requesting structuring. Separate STT execution failure, transcript storage failure, and structuring failure. Preserve previously valid originals/results on a new attempt's failure.
+- S3 and database writes are not one atomic transaction. Use stable artifact IDs/object keys to identify partial writes and record unlinked objects for reconciliation under the retention policy. A storage failure must not trigger another AI call automatically.
+- Manage stage progress independently of the reception's optimistic version. Increment the reception version on recording reservation, first completion, explicit reanalysis acceptance, and applied final results. Capture the post-acceptance version for both AI requests.
+- Apply results only when the attempt is still current, its captured version and source linkage match, and review remains DRAFT. Administrator edits or confirmation invalidate in-flight results; mark the attempt DISCARDED and retain existing originals/finalData. Resolve the reception's progress display from retained valid material so invalidated work does not remain pending.
+- Terminal attempt states are immutable. Timeout means FAILED with an unknown remote outcome; it does not prove AI stopped. Interrupted in-flight work is not automatically rerun. A durable pending intent may still receive its first execution after restart.
+- Only an explicit administrator request can reanalyze a DRAFT reception. Reject reanalysis of CONFIRMED receptions and a second active attempt. FULL creates a new STT artifact; STRUCTURE_ONLY reuses a validated original belonging to the same reception and recording.
+- Relative dates use the first verified recording-delivery timestamp, expressed in Asia/Seoul with its matching offset. Keep it across retries/reanalysis. Actual call time interpretation is a later verification task.
+- Commit final success/failure and push publication intent together, then send FCM notifications to all currently registered devices of the original recording uploader. Check access again before sending; deduplicate the logical event and per-device delivery independently of AI execution.
+- A current DISCARDED attempt publishes a failure notification explaining non-application. Skip unsent events superseded by a newer current attempt; the app always resolves the current server state.
+- Keep notification failures separate from analysis outcomes. Provider acceptance, device receipt, and user viewing are distinct. Push contains event/reception/attempt IDs; the app retrieves authoritative current results and also refreshes on re-entry. Old or duplicate notifications cannot replace newer results.
+- File size/type/length limits, URL lifetimes, HTTP deadlines, retention/deletion schedules, and push retransmission settings remain explicit TODOs. API details belong to [Backend OpenAPI](../../../docs/api/openapi.yaml) and [AI OpenAPI](../../ai/docs/openapi.yaml).
+
+[FR-01]: ../../../docs/requirements/functional-requirements/fr-01-admin-login.md
+[FR-02]: ../../../docs/requirements/functional-requirements/fr-02-call-recording-collection-and-stt-transcription.md
+[FR-03]: ../../../docs/requirements/functional-requirements/fr-03-ai-consultation-analysis-and-structuring.md
+[FR-04]: ../../../docs/requirements/functional-requirements/fr-04-ai-analysis-result-review-and-edit.md
+[FR-05]: ../../../docs/requirements/functional-requirements/fr-05-request-registration-and-dispatch-candidate-selection.md
+[FR-06]: ../../../docs/requirements/functional-requirements/fr-06-driver-gps-location-collection-and-management.md
+[FR-07]: ../../../docs/requirements/functional-requirements/fr-07-dispatch-request-delivery-and-notification.md
+[FR-08]: ../../../docs/requirements/functional-requirements/fr-08-dispatch-request-acceptance-and-rejection.md
+[FR-09]: ../../../docs/requirements/functional-requirements/fr-09-request-and-work-status-management.md
+[FR-10]: ../../../docs/requirements/functional-requirements/fr-10-driver-availability-status-management.md
+[FR-11]: ../../../docs/requirements/functional-requirements/fr-11-work-report-registration-and-management.md
+[FR-12]: ../../../docs/requirements/functional-requirements/fr-12-dispatch-cancellation-and-redispatch-management.md
+[FR-13]: ../../../docs/requirements/functional-requirements/fr-13-driver-registration-and-authentication.md
+[FR-14]: ../../../docs/requirements/functional-requirements/fr-14-driver-profile-and-dispatch-criteria-management.md
+[FR-15]: ../../../docs/requirements/functional-requirements/fr-15-admin-driver-one-to-one-chat.md
+[FR-16]: ../../../docs/requirements/functional-requirements/fr-16-work-history-and-statistics-management.md
+[UC-01]: ../../../docs/requirements/use-cases/uc-01-admin-login.md
+[UC-02]: ../../../docs/requirements/use-cases/uc-02-ai-reception-review.md
+[UC-03]: ../../../docs/requirements/use-cases/uc-03-dispatch-request.md
+[UC-04]: ../../../docs/requirements/use-cases/uc-04-dispatch-status-inquiry.md
+[UC-05]: ../../../docs/requirements/use-cases/uc-05-work-report-review.md
+[UC-06]: ../../../docs/requirements/use-cases/uc-06-driver-registration-approval.md
+[UC-07]: ../../../docs/requirements/use-cases/uc-07-dispatch-cancellation-review.md
+[UC-08]: ../../../docs/requirements/use-cases/uc-08-driver-registration.md
+[UC-09]: ../../../docs/requirements/use-cases/uc-09-driver-availability-management.md
+[UC-10]: ../../../docs/requirements/use-cases/uc-10-dispatch-request-response.md
+[UC-11]: ../../../docs/requirements/use-cases/uc-11-work-status-update.md
+[UC-12]: ../../../docs/requirements/use-cases/uc-12-work-report-submission.md
+[UC-13]: ../../../docs/requirements/use-cases/uc-13-dispatch-cancellation-request.md
+[UC-14]: ../../../docs/requirements/use-cases/uc-14-driver-profile-settings.md
+[UC-15]: ../../../docs/requirements/use-cases/uc-15-driver-account-withdrawal.md
+[UC-16]: ../../../docs/requirements/use-cases/uc-16-admin-driver-chat.md

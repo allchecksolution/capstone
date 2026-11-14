@@ -1,0 +1,506 @@
+openapi: 3.1.1
+info:
+  title: Capstone AI 내부 API 초안
+  version: 1.3.0
+  description: S3 URL 기반 동기 STT 및 별도 구조화 계약. /health 외 미구현. 앱 계약은 docs/api/openapi.yaml,
+    업무 상태·버전·재분석·푸시 정책은 apps/backend/docs/business-specification.md의 BR-09를 따른다.
+    STT 제공자·구조화 모델·모델 입력 한도는 후속 결정 사항이다.
+servers:
+- url: http://127.0.0.1:8000
+  description: 로컬 origin. 배포 주소 TODO. Backend /api/v1을 상속하지 않는다.
+security:
+- internalApiKey: []
+tags:
+- name: Internal AI
+  description: Backend 전용 동기 AI 호출
+paths:
+  /health:
+    get:
+      operationId: getAiHealth
+      summary: 기존 AI 서비스 상태 확인
+      security: []
+      responses:
+        '200':
+          description: 서비스 응답 가능.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: ok
+  /internal/v1/transcribe:
+    post:
+      operationId: transcribeAiRecording
+      summary: S3 녹음 원본 동기 STT 변환
+      description: Backend 작업자가 녹음 GET URL과 고정된 식별자·버전을 보낸다. AI는 허용된 S3 원본을 다운로드하고 크기·실제 형식·SHA256을 검증해 STT를 끝낸
+        뒤 같은 HTTP 응답으로 원문을 반환한다. 완료 전에 202를 반환하지 않는다. 파일 바이트·multipart·AI 작업 조회·콜백을 사용하지 않는다. 식별자는 불투명하게 그대로 반환하며
+        Backend DB를 조회하거나 버전·중복을 판단하지 않는다. SDK·HTTP·제공자 자동 재시도를 비활성화한다. URL 만료/접근 오류는 502 RECORDING_ACCESS_FAILED,
+        체크섬 불일치는 422 RECORDING_CHECKSUM_MISMATCH. 제한 수치·무음/빈 원문 정책은 TODO.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TranscribeRequest'
+            example:
+              analysisRequestId: anl_01
+              receptionId: rec_01
+              receptionVersion: 3
+              recordingFileId: file_rec_01
+              recording:
+                downloadUrl: https://example-bucket.s3.ap-northeast-2.amazonaws.com/example?X-Amz-Signature=example
+                expiresAt: '2026-11-13T14:15:00+09:00'
+                contentType: audio/mp4
+                sizeBytes: 1048576
+                checksum:
+                  algorithm: SHA256
+                  value: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      responses:
+        '200':
+          description: 전사 완료. Backend의 S3 저장 완료를 의미하지 않는다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranscribeSucceeded'
+              example:
+                analysisRequestId: anl_01
+                receptionId: rec_01
+                receptionVersion: 3
+                recordingFileId: file_rec_01
+                status: SUCCEEDED
+                transcript: 싱크대 물이 내려가지 않습니다. 내일 오후에 방문해 주세요.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '502':
+          $ref: '#/components/responses/UpstreamFailed'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+        '413':
+          description: 원격 녹음 크기·길이 제한 초과. 상한 TODO.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: RECORDING_TOO_LARGE
+                message: 녹음 제한을 초과했습니다.
+                traceId: trace_example_01
+        '415':
+          description: 지원하지 않는 녹음 형식. 허용 목록 TODO.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: UNSUPPORTED_MEDIA_TYPE
+                message: 지원하지 않는 녹음 형식입니다.
+                traceId: trace_example_01
+      tags:
+      - Internal AI
+  /internal/v1/analyze:
+    post:
+      operationId: analyzeAiTranscript
+      summary: 저장된 STT 원문 동기 구조화 분석
+      description: Backend가 정식 원문을 S3에 저장한 뒤 동일 텍스트와 transcriptFileId를 보낸다. AI는 구조화 JSON을 생성해 같은 HTTP 응답으로 반환한다.
+        원문을 재다운로드하거나 S3·Backend DB에 쓰지 않는다. 버전·현재 유효 시도·원문 연결·결과 반영은 Backend 책임이다. 미확인 값은 null 대신 생략하고 모든 값이 미확인이면
+        빈 객체를 반환한다. 원문·aiOriginal·finalData를 구분하며 관리자 최종값은 변경하지 않는다. referenceTime은 최초 녹음 전달 시각이고 timeZone은 Asia/Seoul이다.
+        실제 오프셋 불일치는 422 TIME_ZONE_OFFSET_MISMATCH. 상대 날짜와 방문 구간 순서·missingFields 일치 검증을 수행한다. 자동 재시도는 없다. 추출한 desiredVisitFrom/desiredVisitTo는
+        Asia/Seoul +09:00으로 정규화한다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnalyzeRequest'
+            example:
+              analysisRequestId: anl_01
+              receptionId: rec_01
+              receptionVersion: 3
+              recordingFileId: file_rec_01
+              transcriptFileId: file_stt_01
+              transcript: 싱크대 물이 내려가지 않습니다. 내일 오후에 방문해 주세요.
+              referenceTime: '2026-11-13T14:00:00+09:00'
+              timeZone: Asia/Seoul
+      responses:
+        '200':
+          description: 구조화 완료. 접수 확정은 관리자 업무다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyzeSucceeded'
+              example:
+                analysisRequestId: anl_01
+                receptionId: rec_01
+                receptionVersion: 3
+                recordingFileId: file_rec_01
+                transcriptFileId: file_stt_01
+                status: SUCCEEDED
+                aiOriginal:
+                  workType: BLOCKAGE
+                  symptoms: 싱크대 배수 불가
+                missingFields:
+                - address
+                - desiredVisitFrom
+                - desiredVisitTo
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '502':
+          $ref: '#/components/responses/UpstreamFailed'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+      tags:
+      - Internal AI
+components:
+  schemas:
+    Id:
+      type: string
+      minLength: 1
+      maxLength: 64
+      description: 불투명 식별자. 형식은 서버가 정하며 클라이언트는 해석하지 않는다.
+    DateTime:
+      type: string
+      format: date-time
+      description: 시간대가 포함된 RFC 3339.
+    WorkType:
+      type: string
+      enum:
+      - EXTERIOR_LEAK
+      - INTERIOR_LEAK
+      - BLOCKAGE
+      description: 외벽누수, 내벽누수, 막힘. 기사 전문 분야와 같은 값을 쓴다.
+    ReceptionDraftFields:
+      type: object
+      additionalProperties: false
+      description: 접수 정보. 확정 전에는 일부 값만 있을 수 있어 모든 필드가 선택이다. 확정 시점에 필수값을 검증한다.
+      properties:
+        workType:
+          $ref: '#/components/schemas/WorkType'
+        symptoms:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        address:
+          type: string
+          minLength: 1
+          maxLength: 300
+        desiredVisitFrom:
+          $ref: '#/components/schemas/DateTime'
+        desiredVisitTo:
+          $ref: '#/components/schemas/DateTime'
+        notes:
+          type: string
+          maxLength: 2000
+    Error:
+      type: object
+      additionalProperties: false
+      required:
+      - code
+      - message
+      - traceId
+      properties:
+        code:
+          type: string
+          minLength: 1
+        message:
+          type: string
+          minLength: 1
+        traceId:
+          type: string
+          minLength: 1
+        resourceId:
+          type:
+          - string
+          - 'null'
+        currentState:
+          type: object
+          additionalProperties: true
+        fieldErrors:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+            - field
+            - message
+            properties:
+              field:
+                type: string
+                minLength: 1
+              message:
+                type: string
+                minLength: 1
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - status
+      properties:
+        status:
+          type: string
+          const: ok
+    FileChecksum:
+      type: object
+      additionalProperties: false
+      required:
+      - algorithm
+      - value
+      properties:
+        algorithm:
+          type: string
+          const: SHA256
+        value:
+          type: string
+          pattern: ^[A-Za-z0-9+/]{43}=$
+          minLength: 44
+          maxLength: 44
+          description: 파일 전체 SHA-256 digest 32바이트의 Base64 표현. hex 문자열이 아니다.
+    RecordingSource:
+      type: object
+      additionalProperties: false
+      required:
+      - downloadUrl
+      - expiresAt
+      - contentType
+      - sizeBytes
+      - checksum
+      properties:
+        downloadUrl:
+          type: string
+          format: uri
+          pattern: ^https://
+          description: Backend가 발급한 허용된 S3 호스트·객체의 Presigned GET URL. 리디렉션·임의 호스트 접근 금지.
+        expiresAt:
+          $ref: '#/components/schemas/DateTime'
+        contentType:
+          type: string
+          minLength: 1
+          maxLength: 100
+        sizeBytes:
+          type: integer
+          minimum: 1
+        checksum:
+          $ref: '#/components/schemas/FileChecksum'
+    TranscribeRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - analysisRequestId
+      - receptionId
+      - receptionVersion
+      - recordingFileId
+      - recording
+      properties:
+        analysisRequestId:
+          $ref: '#/components/schemas/Id'
+        receptionId:
+          $ref: '#/components/schemas/Id'
+        receptionVersion:
+          type: integer
+          minimum: 1
+        recordingFileId:
+          $ref: '#/components/schemas/Id'
+        recording:
+          $ref: '#/components/schemas/RecordingSource'
+    TranscribeSucceeded:
+      type: object
+      additionalProperties: false
+      required:
+      - analysisRequestId
+      - receptionId
+      - receptionVersion
+      - recordingFileId
+      - status
+      - transcript
+      properties:
+        analysisRequestId:
+          $ref: '#/components/schemas/Id'
+        receptionId:
+          $ref: '#/components/schemas/Id'
+        receptionVersion:
+          type: integer
+          minimum: 1
+        recordingFileId:
+          $ref: '#/components/schemas/Id'
+        status:
+          type: string
+          const: SUCCEEDED
+        transcript:
+          type: string
+          maxLength: 100000
+          description: STT 원문. Backend는 trim·요약·치환·줄바꿈 정규화 없이 반환된 문자열을 그대로 UTF-8 txt로 S3에 저장한다.
+    ReferenceTime:
+      type: string
+      format: date-time
+      pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?\+09:00$
+      description: 최초 녹음 전달 기준 시각. Asia/Seoul 오프셋과 불일치하면 422. 재분석에서도 같은 값을 사용한다.
+    AnalyzeRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - analysisRequestId
+      - receptionId
+      - receptionVersion
+      - recordingFileId
+      - transcriptFileId
+      - transcript
+      - referenceTime
+      - timeZone
+      properties:
+        analysisRequestId:
+          $ref: '#/components/schemas/Id'
+        receptionId:
+          $ref: '#/components/schemas/Id'
+        receptionVersion:
+          type: integer
+          minimum: 1
+        recordingFileId:
+          $ref: '#/components/schemas/Id'
+        transcriptFileId:
+          $ref: '#/components/schemas/Id'
+        transcript:
+          type: string
+          maxLength: 100000
+          description: 저장된 STT 원문. 모델별 토큰 한도·분할 정책은 제공자 선정 후 결정한다.
+        referenceTime:
+          $ref: '#/components/schemas/ReferenceTime'
+        timeZone:
+          type: string
+          const: Asia/Seoul
+    AnalyzeSucceeded:
+      type: object
+      additionalProperties: false
+      required:
+      - analysisRequestId
+      - receptionId
+      - receptionVersion
+      - recordingFileId
+      - transcriptFileId
+      - status
+      - aiOriginal
+      - missingFields
+      properties:
+        analysisRequestId:
+          $ref: '#/components/schemas/Id'
+        receptionId:
+          $ref: '#/components/schemas/Id'
+        receptionVersion:
+          type: integer
+          minimum: 1
+        recordingFileId:
+          $ref: '#/components/schemas/Id'
+        transcriptFileId:
+          $ref: '#/components/schemas/Id'
+        status:
+          type: string
+          const: SUCCEEDED
+        aiOriginal:
+          $ref: '#/components/schemas/ReceptionDraftFields'
+        missingFields:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+            - workType
+            - symptoms
+            - address
+            - desiredVisitFrom
+            - desiredVisitTo
+          description: aiOriginal에 없는 확정 필수 필드만 열거하며 notes는 제외한다. 결과와의 교차 검증은 AI에서 수행한다.
+  securitySchemes:
+    internalApiKey:
+      type: apiKey
+      in: header
+      name: X-Internal-Api-Key
+      description: Backend→AI 내부 인증. 누락·오류 401, 인증 후 권한 부족 403. 비밀키는 Infisical에서 관리하고 저장소·로그에 기록하지 않는다.
+  responses:
+    Unauthorized:
+      description: 내부 API Key가 없거나 올바르지 않습니다.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: UNAUTHENTICATED
+            message: 내부 API Key가 없거나 올바르지 않습니다.
+            traceId: trace_example_01
+    Forbidden:
+      description: 인증된 호출 주체의 권한이 부족합니다.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: FORBIDDEN
+            message: 인증된 호출 주체의 권한이 부족합니다.
+            traceId: trace_example_01
+    ValidationFailed:
+      description: 입력값을 확인해 주세요. 시간대·기준 시각 불일치도 422입니다.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: VALIDATION_FAILED
+            message: 입력값을 확인해 주세요. 시간대·기준 시각 불일치도 422입니다.
+            traceId: trace_example_01
+    UpstreamFailed:
+      description: 파일 접근 또는 AI 제공자 처리에 실패했습니다.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: AI_PROVIDER_FAILED
+            message: 파일 접근 또는 AI 제공자 처리에 실패했습니다.
+            traceId: trace_example_01
+    Timeout:
+      description: 제한 시간 안에 처리를 완료하지 못했습니다.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: AI_TIMEOUT
+            message: 제한 시간 안에 처리를 완료하지 못했습니다.
+            traceId: trace_example_01
+    InternalError:
+      description: 예상하지 못한 내부 오류입니다.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: INTERNAL_ERROR
+            message: 예상하지 못한 내부 오류입니다.
+            traceId: trace_example_01
+    ServiceUnavailable:
+      description: 일시적으로 처리할 수 없습니다.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: TEMPORARILY_UNAVAILABLE
+            message: 일시적으로 처리할 수 없습니다.
+            traceId: trace_example_01
+x-responsibilities:
+  backend: S3·파일 메타데이터·접수·분석 시도·버전/중복/stale 검증·정식 STT 원문·구조화 결과·관리자 푸시·DB/Flyway 운영
+  fastapi: 허용된 녹음 GET URL 다운로드·STT·구조화 모델 호출 및 식별자/버전 그대로 반환. Backend DB 접근 금지.
+  execution: 앱→Backend는 202 및 FCM, Backend→AI는 단계별 RestClient 동기. AI 비동기 작업·웹훅·자동 재시도 없음.
