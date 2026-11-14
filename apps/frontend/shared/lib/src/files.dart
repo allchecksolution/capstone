@@ -8,6 +8,19 @@ extension PlatformScreens on _WorkflowShellState {
   Widget photoSection(String key,Json report,{bool editable=true,VoidCallback? beforePick}){report.putIfAbsent(key,()=> <Json>[]);final photos=records(report[key]);return stack([heading('${key=='before'?'작업 전':'작업 후'} 사진 *'),photoThumbnails(photos),if(editable)...<Widget>[Wrap(spacing:8,children:[for(var i=0;i<photos.length;i++)TextButton(onPressed:()=>refresh(()=>photos.removeAt(i)),child:Text('${i+1}번 사진 삭제'))]),button('＋ 사진 추가하기',()=>platformTask(()async{beforePick?.call();const types=XTypeGroup(label:'사진',extensions:['jpg','jpeg','png','webp'],mimeTypes:['image/jpeg','image/png','image/webp'],uniformTypeIdentifiers:['public.jpeg','public.png','org.webmproject.webp']);final files=await openFiles(acceptedTypeGroups:const [types]);if(files.length+photos.length>3)throw StateError('항목당 사진은 3장까지 선택할 수 있습니다.');final loaded=<Json>[];for(final file in files){final bytes=await file.readAsBytes();if(bytes.length>3*1024*1024)throw StateError('사진은 장당 3MB 이하로 선택해 주세요.');loaded.add(<String,dynamic>{'name':file.name,'base64':base64Encode(bytes)});}if(mounted)refresh(()=>photos.addAll(loaded));}),secondary:true)]]);}
   Widget genericSettings(){if(admin){if(id=='account')return box([heading('내 계정'),kv('아이디',adminName),]);return notificationSettings();}
     final p=s.profile;
+    if(id=='profile'&&sdkOnlySession)return form([
+      heading('표시 이름 설정'),
+      small('이 앱에서 사용할 이름입니다. 카카오 계정의 닉네임은 바뀌지 않습니다.'),
+      field('name','이름',initial:text(p,'name')),
+      button('저장',()async{
+        if(!(formKey.currentState?.validate()??false))return;
+        final name=value('name');
+        if(name.length>30){message('이름은 30자 이내로 입력해 주세요.');return;}
+        if(await act((){s.profile['name']=name;s.displayNames[text(s.account!,'userId')]=name;})){
+          if(!mounted)return;go('more');message('이름을 저장했습니다.');
+        }
+      }),
+    ]);
     if(id=='notifications')return notificationSettings();
     if(id=='business')return box([for(final key in ['businessNumber','company','owner','companyPhone','businessType','businessItem','companyAddress'])kv(key,p[key]),notice('사업자 정보 변경은 관리자 확인 후 반영됩니다.')]);
     final keys=id=='profile'?['name','phone','email','address','vehicle']:id=='bank'?['bank','bankAccount','bankOwner','taxEmail']:id=='work'?['otherRegion']:['otherEquipment'];

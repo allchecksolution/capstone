@@ -97,7 +97,8 @@ extension BackendScreens on _WorkflowShellState {
     await locationSubscription?.cancel();locationSubscription=null;
     try{await detachDevice();}catch(_){}
     widget.backend?.clearSession();alerts.clear();seenAlerts.clear();retryKeys.clear();
-    await s.change(()=>s.data=AppStore.empty(widget.role));
+    await s.change((){final names=Map<String,dynamic>.from(s.displayNames);s.data=AppStore.empty(widget.role);s.data['displayNames']=names;});
+    s.transientSession=false;
   }
 
   Future<void> changeAvailability(String availability)async{

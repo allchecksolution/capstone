@@ -5,6 +5,8 @@ class AppStore extends ChangeNotifier {
   final Future<void> Function(String) _save;
   Json data;
   bool saving = false;
+  bool transientSession = false;
+  Json get displayNames => data.putIfAbsent('displayNames', () => <String,dynamic>{}) as Json;
   String startupWarning = '';
   static Future<void> _noSave(String _) async {}
   static Json empty(AppRole role) => <String,dynamic>{'schema': 1, 'account': null, 'draft': <String,dynamic>{}, 'jobs': <Json>[], 'drivers': <Json>[], 'consultations': <Json>[], 'reports': <String,dynamic>{}, 'cancellations': <Json>[], 'threads': <String,dynamic>{}, 'messages': <Json>[], 'role': 'editor', 'availability': '휴식', 'notifications': <bool>[true,true,true,true], 'location': '미확인'};
@@ -29,7 +31,7 @@ class AppStore extends ChangeNotifier {
   Future<void> change(void Function() update) async {
     if (saving) throw StateError('처리 중입니다. 잠시 후 다시 시도해 주세요.');
     final previous = jsonEncode(data); saving = true;
-    try { update(); await _save(jsonEncode(data)); }
+    try { update(); if(!transientSession)await _save(jsonEncode(data)); }
     catch (_) { data = jsonDecode(previous) as Json; rethrow; }
     finally { saving = false; notifyListeners(); }
   }

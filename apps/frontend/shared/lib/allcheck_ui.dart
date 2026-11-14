@@ -28,7 +28,7 @@ part 'src/location.dart';
 
 enum AppRole { admin, driver }
 const developmentAccessEnabled = kDebugMode &&
-    bool.fromEnvironment('ALLCHECK_DEV_ACCESS', defaultValue: false);
+    bool.fromEnvironment('ALLCHECK_DEV_ACCESS', defaultValue: true);
 typedef Json = Map<String, dynamic>;
 String text(Json row, String key, [String fallback = '']) => row[key]?.toString() ?? fallback;
 List<Json> records(dynamic value) => value is List ? value.cast<Json>() : <Json>[];
@@ -46,12 +46,6 @@ Future<void> launchAllcheck(AppRole role, {
   backend??=baseUrl.isEmpty?null:HttpFrontendBackend(baseUrl);
   push??=pushEnabled?FirebaseAppPush():null;
   if (role == AppRole.driver) KakaoDriverAuth.initialize();
-  if (developmentAccessEnabled) {
-    // A separate in-memory store keeps review accounts out of normal app data.
-    runApp(AllcheckApp(role: role, store: AppStore(role), backend: backend, push: push, driverAuth: driverAuth,
-      onKakaoAuthenticated: onKakaoAuthenticated));
-    return;
-  }
   if(backend!=null){runApp(AllcheckApp(role:role,store:AppStore(role),backend:backend,push:push,driverAuth:driverAuth,onKakaoAuthenticated:onKakaoAuthenticated));return;}
   final preferences = SharedPreferencesAsync();
   final store = AppStore(role, save: (value) => preferences.setString('allcheck.flutter.${role.name}.v1', value));

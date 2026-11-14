@@ -51,9 +51,20 @@ class KakaoDriverAuth implements DriverAuth {
       } else {
         token = await kakao.UserApi.instance.loginWithKakaoAccount();
       }
-      final user = await kakao.UserApi.instance.me();
+      var user = await kakao.UserApi.instance.me();
+      if (user.kakaoAccount?.profileNicknameNeedsAgreement == true ||
+          user.kakaoAccount?.profileNeedsAgreement == true) {
+        try {
+          token = await kakao.UserApi.instance.loginWithNewScopes([
+            user.kakaoAccount?.profileNicknameNeedsAgreement == true ? 'profile_nickname' : 'profile',
+          ]);
+          user = await kakao.UserApi.instance.me();
+        } catch (_) {
+          // Nickname consent is optional; allow the user to set an app name.
+        }
+      }
       return KakaoIdentity(userId: user.id.toString(), accessToken: token.accessToken,
-        nickname: user.kakaoAccount?.profile?.nickname, email: user.kakaoAccount?.email);
+        nickname: user.kakaoAccount?.profile?.nickname ?? user.properties?['nickname'], email: user.kakaoAccount?.email);
     } catch (e) {
       if (_cancelled(e)) return null;
       // Never display SDK errors: they may contain credentials or user data.

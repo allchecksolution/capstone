@@ -83,6 +83,7 @@ class _WorkflowShellState extends State<WorkflowShell> with WidgetsBindingObserv
   }
   Future<void> enterDevelopment()async{
     if(!developmentAccessEnabled||busy)return;
+    s.transientSession=true;
     if(!await act((){
       if(!admin)s.data['account']=<String,dynamic>{'status':'활성',
         'profile':<String,dynamic>{'name':'기사','phone':''}};
@@ -98,9 +99,11 @@ class _WorkflowShellState extends State<WorkflowShell> with WidgetsBindingObserv
       setState(()=>busy=true);
       try{
         await s.change((){
+          final names=Map<String,dynamic>.from(s.displayNames);
           s.data=AppStore.empty(AppRole.driver);
-          s.data['account']=<String,dynamic>{'provider':'kakao','userId':identity.userId,'status':'카카오 인증',
-            'profile':<String,dynamic>{'name':identity.nickname??'카카오 사용자',if(identity.email!=null)'email':identity.email}};
+          s.data['displayNames']=names;
+          s.data['account']=<String,dynamic>{'provider':'kakao','userId':identity.userId,'status':'승인 대기',
+            'profile':<String,dynamic>{'name':names[identity.userId]??(identity.nickname?.trim().isNotEmpty==true?identity.nickname!.trim():'카카오 사용자'),if(identity.email!=null)'email':identity.email}};
         });
         if(!mounted)return;
         for(final c in fields.values){c.dispose();}fields.clear();selections.clear();history.clear();
@@ -138,9 +141,18 @@ class _WorkflowShellState extends State<WorkflowShell> with WidgetsBindingObserv
     if(page=='result')return stack([const SizedBox(height:60),const Icon(Icons.check_circle_outline,size:76,color:Color(0xff55bbcc)),heading(outcomeTitle),small(outcomeText),link('계속',outcomeTarget,item:outcomeId),link('홈으로 이동','home')]);
     return const SizedBox.shrink();
   }
+  Widget sdkApprovalPage()=>page=='settings'&&id=='profile'?genericSettings():stack([
+    heading('${text(s.profile,'name','카카오 사용자')}님, 안녕하세요'),
+    const Icon(Icons.schedule,size:64),
+    heading('관리자 승인 대기'),
+    notice('최초 가입자는 관리자 승인 후 업무를 이용할 수 있습니다.'),
+    small('현재 서버가 연결되지 않아 가입·승인 요청은 아직 전송되지 않았습니다. 서버 연결 후 가입 신청과 승인 상태 확인이 필요합니다.'),
+    button('내 정보 수정',()=>go('settings',item:'profile'),secondary:true),
+    button('로그아웃',logout,secondary:true),
+  ]);
   @override Widget build(BuildContext context){
-    final allowed=signedIn&&(admin||sdkOnlySession||s.account?['status']=='활성');
-    final content=page=='notifications'&&signedIn?inbox():page=='result'?commonPage():!signedIn||page=='register'?publicPage():!allowed?gated():page=='result'?commonPage():admin?this.adminPage():this.driverPage();
+    final allowed=signedIn&&(admin||!sdkOnlySession&&s.account?['status']=='활성');
+    final content=sdkOnlySession?sdkApprovalPage():page=='notifications'&&signedIn?inbox():page=='result'?commonPage():!signedIn||page=='register'?publicPage():!allowed?gated():page=='result'?commonPage():admin?this.adminPage():this.driverPage();
     final navPages=['home','jobs','chat','more'];final index=page=='chat'?2:['more','settings','recordings','drivers','driver','cancellations','cancellation'].contains(page)?3:['home','stats','notifications'].contains(page)?0:1;final showNav=allowed&&!['register','login'].contains(page);
     final wide=admin&&showNav&&MediaQuery.sizeOf(context).width>900;
     final scroll=Align(alignment:Alignment.topCenter,child:ConstrainedBox(constraints:BoxConstraints(maxWidth:admin?1100:520),child:SingleChildScrollView(padding:const EdgeInsets.all(24),child:stack([if(sdkOnlySession)notice('카카오 로그인 완료 · 배차·가입 승인 등 서버 기능은 연결 후 사용할 수 있습니다.'),if(s.startupWarning.isNotEmpty)notice(s.startupWarning,error:true),if(locationError.isNotEmpty)notice(locationError,error:true),if(developmentAccessEnabled&&page=='login')button('개발용으로 입장',enterDevelopment,secondary:true),content]))));
