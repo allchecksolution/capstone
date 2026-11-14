@@ -3,9 +3,9 @@
 
 ## Goal
 
-Database migrations in ALLCHECK Backend aim for **consistent schema change history, deployment stability, and guaranteed data integrity**.
+Database migrations aim for **consistent schema change history, deployment stability, and guaranteed data integrity**.
 
-Version database changes through Flyway, and apply the same migrations reproducibly across development, test, and production environments.
+Version database changes through Flyway and apply the same migrations reproducibly across environments.
 
 ---
 
@@ -34,6 +34,7 @@ Version database changes through Flyway, and apply the same migrations reproduci
 
 ---
 
-## Migration Verification
+## Migration Review
 
-- **MUST — Migration Verification:** Verify the application of new migrations on a test database before merging the PR, and also check the upgrade path from the previous version when an existing schema is present.
+- **MUST — Change Review:** Review migration order, schema compatibility, constraints, and data impact before deployment.
+- **SHOULD — History Validation:** Use Flyway validation to check applied migration versions and checksums before applying pending migrations.

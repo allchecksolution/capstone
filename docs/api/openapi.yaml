@@ -1,7 +1,7 @@
 openapi: 3.1.1
 info:
   title: 올체크 업무 흐름 대표 API 초안
-  version: 0.2.0
+  version: 0.3.0
   license:
     name: 내부용(비공개)
     identifier: LicenseRef-Proprietary
@@ -10,9 +10,12 @@ info:
     `apps/backend/docs/business-specification.md`를 따르고, 경로와 입출력 계약은 이 문서에서 정의한다. 모든 변경 요청은 인증 주체+method+정규화 경로+Idempotency-Key 범위에서
     처리한다. 동일 키/본문 성공 재시도는 최초 응답 재현, 다른 본문은 409 IDEMPOTENCY_KEY_REUSED, 처리 중은 409 OPERATION_IN_PROGRESS. DB 업무
     유일성 제약은 키 보존 기간과 무관하게 유지한다. 키 보존 기간은 미확정.
-    인증 API(로그인·MFA·토큰 갱신·로그아웃)와, 같은 값을 다시 보내도 결과가 같은 상태 설정 API(작업 가능 상태·위치·채팅 읽음)는 Idempotency-Key를 받지 않는다.
+    인증 API(로그인·MFA·토큰 갱신·로그아웃)와, 같은 값을 다시 보내도 결과가 같은 상태 설정 API(작업 가능 상태·위치·채팅 읽음·푸시 기기 등록/해제)는 Idempotency-Key를 받지 않는다.
     UC-01~16의 관리자 앱·기사 앱 흐름을 대상으로 한다. 세부 미확정 사항은 해당 계약 설명에 표시한다.
-    녹음 수집·STT·AI 연동, 실시간 채팅(WebSocket)·푸시 알림의 연동 계약은 별도 검토한다. 보고서 임시 저장과 조회 결과 내보내기(UC-04 A2)는 정책 결정 후 명세한다.
+    녹음·STT·AI·분석 완료 푸시의 업무 정책은 BR-09, Backend→AI 계약은 apps/ai/docs/openapi.yaml을 따른다.
+    녹음 업로드 완료를 검증하면 최초 분석을 자동 접수하고 앱에 202로 응답한다. Backend는 백그라운드에서 STT 동기 호출→원문 S3 저장→구조화 동기 호출→FCM 완료/실패 알림 순서로 처리한다.
+    기존 /files multipart·공통 접근 경로는 종류별 S3 경로로 교체했다. 실시간 채팅(WebSocket)·배차/채팅 푸시의 상세 연동과 보고서 임시 저장·조회 내보내기는 별도 검토한다.
+    실제 녹음의 단계별 소요 시간과 p95/p99·타임아웃을 측정해 제한·동시 실행 수를 정한다. 필요 시 WebClient 또는 AI 비동기 작업/웹훅 전환은 후속 검토한다.
     의뢰 현황·기간 통계·상세·회차 조회는 아래 x-uc04-inquiry-scope와 BR-08을 따른다.
 x-uc04-inquiry-scope:
   requirements:
@@ -44,6 +47,18 @@ x-uc04-inquiry-scope:
   undecided: >-
     필터 UI·API 방식, 검색 기준, 지역 분류, 통계 지표·계산 방식·집계 주기·집계 기준, 목록 필터의 통계 연동, 실시간 전송 방식은 미정.
     내보내기(UC-04 A2)는 선택 기능으로 정책 결정 후 명세한다.
+x-reception-analysis-push:
+  transport: FCM
+  recipient: 녹음 업로더인 관리자 본인의 현재 등록 기기 전체. 전송 시 현재 접수 접근 권한 재검증.
+  dataSchema:
+    $ref: '#/components/schemas/ReceptionAnalysisPushData'
+  example:
+    eventId: evt_01
+    eventType: RECEPTION_ANALYSIS_SUCCEEDED
+    receptionId: rec_01
+    analysisRequestId: anl_01
+  description: 결과와 발송 의도를 같은 DB 트랜잭션에 저장하고 커밋 뒤 발송. 푸시 실패는 AI 결과와 분리하며 재분석을 유발하지 않는다. 서비스 접수는 기기 수신·읽음을 뜻하지 않는다.
+    eventId로 중복 처리하고 재진입 시 서버 최신 상태를 조회한다.
 servers:
   - url: https://api.example.invalid/api/v1
     description: 문서용 예시 주소
@@ -69,51 +84,53 @@ tags:
   - name: Statistics
     description: 조회 기간별 의뢰·작업 통계 (UC-04)
   - name: Files
-    description: 작업 사진 업로드, 녹음·작업 사진 접근 URL 발급 (UC-02, UC-05, UC-12)
+    description: 접수 녹음·STT 원문·작업 사진의 종류별 S3 업로드 및 접근 (UC-02, UC-05, UC-12)
   - name: Chat
     description: 관리자와 기사의 1:1 채팅 (UC-16)
+  - name: Push Devices
+    description: 관리자 앱의 FCM 등록 토큰과 로그인 기기 연결
 paths:
   /receptions/{receptionId}/confirmation:
     post:
       operationId: confirmReception
       x-business-rules:
-        - BR-01
-        - BR-02
-        - BR-04
+      - BR-01
+      - BR-02
+      - BR-04
       summary: 검토한 접수 정보 확정
-      description: >-
-        AI 원본과 finalData를 분리 저장한다. 접수 수정·저장은 PATCH로 먼저 수행하고 확정 요청은 expectedVersion으로 지정한 저장값을 검증하여 확정한다. STT/AI 실패 시 수동 입력도 허용한다. 방문 종료 시각은 시작 이후여야 한다. 이미 확정된 접수의 다른 키 재확정은 409.
-        구체적인 확정 후 수정 정책은 미결정.
+      description: AI 원본과 finalData를 분리 저장한다. 접수 수정·저장은 PATCH로 먼저 수행하고 확정 요청은 expectedVersion으로 지정한 저장값을 검증하여 확정한다.
+        STT/AI 실패 시 수동 입력도 허용한다. 방문 종료 시각은 시작 이후여야 한다. 이미 확정된 접수의 다른 키 재확정은 409. 구체적인 확정 후 수정 정책은 미결정. 검토 확정은 진행 중인
+        분석을 무효화한다. 이후 늦은 AI 결과는 DISCARDED로 기록하고 확정된 정보에 적용하지 않는다(BR-09).
       tags:
-        - Receptions
+      - Receptions
       x-requirements:
-        - FR-02
-        - FR-03
-        - FR-04
-        - UC-02
+      - FR-02
+      - FR-03
+      - FR-04
+      - UC-02
       x-figma-node-ids:
-        - "64:404"
-        - "64:561"
+      - 64:404
+      - 64:561
       x-roles:
-        - ADMIN
+      - ADMIN
       parameters:
-        - name: receptionId
-          in: path
-          required: true
-          schema:
-            type: string
-            minLength: 1
-        - $ref: "#/components/parameters/IdempotencyKey"
+      - name: receptionId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ConfirmReception"
+              $ref: '#/components/schemas/ConfirmReception'
             example:
               expectedVersion: 1
       responses:
-        "200":
+        '200':
           description: 최종 접수 정보 저장 완료
           headers:
             Idempotency-Replayed:
@@ -123,55 +140,55 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ConfirmedReception"
+                $ref: '#/components/schemas/ConfirmedReception'
               example:
                 receptionId: rec_01
                 reviewStatus: CONFIRMED
                 version: 2
-                confirmedAt: "2026-10-31T09:00:00+09:00"
+                confirmedAt: '2026-10-31T09:00:00+09:00'
                 finalData:
                   workType: BLOCKAGE
                   symptoms: 싱크대 물이 내려가지 않음
                   address: 서울시 강남구 예시로 10
-                  desiredVisitFrom: "2026-10-31T14:00:00+09:00"
-                  desiredVisitTo: "2026-10-31T16:00:00+09:00"
+                  desiredVisitFrom: '2026-10-31T14:00:00+09:00'
+                  desiredVisitTo: '2026-10-31T16:00:00+09:00'
                   notes: 방문 전 연락
-        "401":
+        '401':
           description: 인증이 필요합니다.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
+                $ref: '#/components/schemas/Error'
               example:
                 code: UNAUTHENTICATED
                 message: 인증이 필요합니다.
                 traceId: trace_example_01
-        "403":
+        '403':
           description: 이 작업을 수행할 권한이 없습니다.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
+                $ref: '#/components/schemas/Error'
               example:
                 code: FORBIDDEN
                 message: 이 작업을 수행할 권한이 없습니다.
                 traceId: trace_example_01
-        "404":
+        '404':
           description: 리소스를 찾을 수 없습니다.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
+                $ref: '#/components/schemas/Error'
               example:
                 code: NOT_FOUND
                 message: 리소스를 찾을 수 없습니다.
                 traceId: trace_example_01
-        "409":
+        '409':
           description: VERSION_CONFLICT / RECEPTION_ALREADY_CONFIRMED / 멱등성 충돌
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
+                $ref: '#/components/schemas/Error'
               example:
                 code: VERSION_CONFLICT
                 message: 최신 버전과 상태를 다시 조회해 주세요.
@@ -182,22 +199,22 @@ paths:
               schema:
                 type: integer
                 minimum: 1
-        "400":
+        '400':
           description: 필수 정보 누락 또는 방문 시각 오류
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
+                $ref: '#/components/schemas/Error'
               example:
                 code: VALIDATION_FAILED
                 message: 입력값을 확인해 주세요.
                 traceId: trace_example_01
-        "503":
+        '503':
           description: 일시 장애입니다. 같은 키로 재시도해 주세요.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
+                $ref: '#/components/schemas/Error'
               example:
                 code: TEMPORARILY_UNAVAILABLE
                 message: 일시 장애입니다. 같은 키로 재시도해 주세요.
@@ -987,7 +1004,7 @@ paths:
         - BR-07
       summary: 작업 보고서 최초 제출
       description: >-
-        의뢰의 현재 담당자가 IN_PROGRESS 작업의 최초 보고서를 제출한다. expectedVersion은 작업 버전이다. 파일 소유권·작업 연결·업로드 완료를 검증하고 최초 보고서, 작업 WORK_DONE, 의뢰
+        의뢰의 현재 담당자가 IN_PROGRESS 작업의 최초 보고서를 제출한다. expectedVersion은 작업 버전이다. 사진 소유권·작업 연결·업로드 완료·BEFORE/DURING/AFTER 분류와 배열 간 중복을 검증하고 최초 보고서, 작업 WORK_DONE, 의뢰
         COMPLETED를 함께 저장한다. 저장 실패 시 일부만 완료하지 않는다. 원본·전후 사진은 보존하며 비용은 단일 totalCost(KRW 정수)를 사용한다. 작업당 최초 보고서는 한 건이고 수정은 새 제출이나 추가
         완료 집계가 아니다. 완료된 작업은 신규 배차 점유에서 제외한다(BR-01·07).
       tags:
@@ -1261,7 +1278,7 @@ paths:
       summary: 원본·최신 유효본·전체 수정 이력 조회
       description: >-
         original은 최초 제출 내용과 사진 ID, effective는 최신 수정 반영 내용이다. 전체 revision은 수정 전후/수정자/시각을 제공한다. 파일 ID는 공개 URL이
-        아니며 파일 접근 계약에서 별도로 인가한다. 탈퇴 기사 관련 데이터 접근/보존은 UC-15를 따른다.
+        아니며 GET /works/{workId}/photos/{photoFileId}/access에서 별도로 인가한다. 탈퇴 기사 관련 데이터 접근/보존은 UC-15를 따른다.
       tags:
         - Reports
       x-requirements:
@@ -2331,313 +2348,1078 @@ paths:
     get:
       operationId: listReceptions
       summary: 상담 접수 목록 조회
-      description: >-
-        관리자가 검토할 상담 접수 목록을 조회한다. 녹음·STT·AI 분석 단계별 처리 상태를 함께 보여주며, 실패한 접수도 목록에 나타나 수동 입력으로 이어갈 수 있다.
-        결과가 없으면 200과 빈 items다. 고객 전화번호는 마스킹해서 내려준다.
+      description: 관리자가 검토할 상담 접수 목록을 조회한다. 녹음·STT·AI 분석 단계별 처리 상태를 함께 보여주며, 실패한 접수도 목록에 나타나 수동 입력으로 이어갈 수 있다. 결과가
+        없으면 200과 빈 items다. 고객 전화번호는 마스킹해서 내려준다.
       tags:
-        - Receptions
+      - Receptions
       x-business-rules:
-        - BR-01
-        - BR-02
-        - BR-04
+      - BR-01
+      - BR-02
+      - BR-04
       x-requirements:
-        - FR-02
-        - FR-03
-        - FR-04
-        - UC-02
+      - FR-02
+      - FR-03
+      - FR-04
+      - UC-02
       x-figma-node-ids:
-        - "2257:6779"
+      - 2257:6779
       x-roles:
-        - ADMIN
+      - ADMIN
       parameters:
-        - name: reviewStatus
-          in: query
-          description: 검토 상태 필터. 생략하면 전체.
-          schema: {type: string, enum: [DRAFT, CONFIRMED]}
-        - $ref: "#/components/parameters/PageNumber"
-        - $ref: "#/components/parameters/PageSize"
+      - name: reviewStatus
+        in: query
+        description: 검토 상태 필터. 생략하면 전체.
+        schema:
+          type: string
+          enum:
+          - DRAFT
+          - CONFIRMED
+      - $ref: '#/components/parameters/PageNumber'
+      - $ref: '#/components/parameters/PageSize'
       responses:
-        "200":
+        '200':
           description: 접수 목록.
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/ReceptionList"}
+              schema:
+                $ref: '#/components/schemas/ReceptionList'
               example:
                 items:
-                  - receptionId: rec_01
-                    receivedAt: "2026-10-31T08:40:00+09:00"
-                    callerPhoneMasked: "010-****-1234"
-                    reviewStatus: DRAFT
-                    recordingStatus: SUCCEEDED
-                    sttStatus: SUCCEEDED
-                    analysisStatus: SUCCEEDED
-                    version: 1
-                  - receptionId: rec_02
-                    receivedAt: "2026-10-31T09:10:00+09:00"
-                    callerPhoneMasked: "010-****-5678"
-                    reviewStatus: DRAFT
-                    recordingStatus: SUCCEEDED
-                    sttStatus: FAILED
-                    analysisStatus: NOT_AVAILABLE
-                    version: 1
-                page: {page: 1, size: 20, totalElements: 2, totalPages: 1}
-        "401": {$ref: "#/components/responses/Unauthorized"}
-        "403": {$ref: "#/components/responses/Forbidden"}
-        "400": {$ref: "#/components/responses/ValidationFailed"}
-        "503": {$ref: "#/components/responses/ServiceUnavailable"}
+                - receptionId: rec_01
+                  receivedAt: '2026-10-31T08:40:00+09:00'
+                  callerPhoneMasked: 010-****-1234
+                  reviewStatus: DRAFT
+                  recordingStatus: SUCCEEDED
+                  sttStatus: SUCCEEDED
+                  analysisStatus: SUCCEEDED
+                  version: 1
+                - receptionId: rec_02
+                  receivedAt: '2026-10-31T09:10:00+09:00'
+                  callerPhoneMasked: 010-****-5678
+                  reviewStatus: DRAFT
+                  recordingStatus: SUCCEEDED
+                  sttStatus: FAILED
+                  analysisStatus: NOT_AVAILABLE
+                  version: 1
+                page:
+                  page: 1
+                  size: 20
+                  totalElements: 2
+                  totalPages: 1
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+    post:
+      operationId: createReception
+      summary: 상담 접수 생성
+      description: 관리자가 녹음 업로드 또는 수동 입력을 위한 DRAFT 접수를 생성한다. receivedAt은 Backend 수신 시각이며 녹음 전달 기준 시각과 구분한다.
+      tags:
+      - Receptions
+      x-roles:
+      - ADMIN
+      x-business-rules:
+      - BR-02
+      - BR-09
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReception'
+            example:
+              callerPhone: 010-1234-1234
+      responses:
+        '201':
+          description: 접수 생성 완료.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReceptionDetail'
+              example:
+                receptionId: rec_01
+                receivedAt: '2026-11-13T14:00:00+09:00'
+                callerPhoneMasked: 010-****-1234
+                reviewStatus: DRAFT
+                recordingStatus: NOT_AVAILABLE
+                sttStatus: NOT_AVAILABLE
+                analysisStatus: NOT_AVAILABLE
+                version: 1
+                recordingFileId: null
+                transcript: null
+                aiOriginal: null
+                finalData: {}
+                confirmedAt: null
+                requestId: null
+                transcriptFileId: null
+                latestAnalysisRequestId: null
+                recordingReceivedAt: null
+                referenceTime: null
+                timeZone: Asia/Seoul
+                transcriptStorageStatus: NOT_AVAILABLE
+          headers:
+            Idempotency-Replayed:
+              description: 최초 성공 응답 재현이면 true. 현재 상태는 조회 API로 확인한다.
+              schema:
+                type: boolean
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/VersionConflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /receptions/{receptionId}:
     get:
       operationId: getReception
       summary: 상담 접수 상세 조회
-      description: >-
-        녹음 원본, STT 결과, AI 추출값, 관리자가 저장한 최종 값을 돌려준다. 실제로 존재하는 자료만 값이 있고 없으면 null이다. 녹음·STT·AI 단계의 실패는 각 상태가
-        FAILED로 표시되며 이때도 수동 입력으로 확정할 수 있다(UC-02 E1). 응답의 version이 수정·확정 요청의 expectedVersion이다.
+      description: 녹음 원본, STT 결과, AI 추출값, 관리자가 저장한 최종 값을 돌려준다. 실제로 존재하는 자료만 값이 있고 없으면 null이다. 녹음·STT·AI 단계의 실패는 각
+        상태가 FAILED로 표시되며 이때도 수동 입력으로 확정할 수 있다(UC-02 E1). 응답의 version이 수정·확정 요청의 expectedVersion이다. transcript는 S3
+        정식 원문을 읽어 제공하며 읽기 실패는 503이다. latestAnalysisRequestId로 시도 상태를 조회한다. 진행 상태는 푸시 수신·앱 재진입 시 갱신한다. aiOriginal과
+        finalData는 분리 보존한다.
       tags:
-        - Receptions
+      - Receptions
       x-business-rules:
-        - BR-01
-        - BR-02
-        - BR-04
+      - BR-01
+      - BR-02
+      - BR-04
       x-requirements:
-        - FR-02
-        - FR-03
-        - FR-04
-        - UC-02
+      - FR-02
+      - FR-03
+      - FR-04
+      - UC-02
       x-figma-node-ids:
-        - "64:404"
-        - "64:645"
+      - 64:404
+      - 64:645
       x-roles:
-        - ADMIN
+      - ADMIN
       parameters:
-        - $ref: "#/components/parameters/ReceptionIdPath"
+      - $ref: '#/components/parameters/ReceptionIdPath'
       responses:
-        "200":
+        '200':
           description: 접수 상세.
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/ReceptionDetail"}
+              schema:
+                $ref: '#/components/schemas/ReceptionDetail'
               examples:
                 analyzed:
                   summary: AI 분석 성공
                   value:
                     receptionId: rec_01
-                    receivedAt: "2026-10-31T08:40:00+09:00"
-                    callerPhoneMasked: "010-****-1234"
+                    receivedAt: '2026-10-31T08:40:00+09:00'
+                    callerPhoneMasked: 010-****-1234
                     reviewStatus: DRAFT
                     recordingStatus: SUCCEEDED
                     sttStatus: SUCCEEDED
                     analysisStatus: SUCCEEDED
-                    version: 1
+                    version: 4
                     recordingFileId: file_rec_01
                     transcript: 싱크대 물이 안 내려가요. 오늘 오후 2시에서 4시 사이에 와 주세요.
                     aiOriginal:
                       workType: BLOCKAGE
                       symptoms: 싱크대 물이 내려가지 않음
                       address: 서울시 강남구 예시로 10
-                      desiredVisitFrom: "2026-10-31T14:00:00+09:00"
-                      desiredVisitTo: "2026-10-31T16:00:00+09:00"
+                      desiredVisitFrom: '2026-10-31T14:00:00+09:00'
+                      desiredVisitTo: '2026-10-31T16:00:00+09:00'
                     finalData:
                       workType: BLOCKAGE
                       symptoms: 싱크대 물이 내려가지 않음
                       address: 서울시 강남구 예시로 10
-                      desiredVisitFrom: "2026-10-31T14:00:00+09:00"
-                      desiredVisitTo: "2026-10-31T16:00:00+09:00"
+                      desiredVisitFrom: '2026-10-31T14:00:00+09:00'
+                      desiredVisitTo: '2026-10-31T16:00:00+09:00'
                     confirmedAt: null
                     requestId: null
+                    transcriptFileId: file_stt_01
+                    latestAnalysisRequestId: anl_01
+                    recordingReceivedAt: '2026-10-31T08:40:00+09:00'
+                    referenceTime: '2026-10-31T08:40:00+09:00'
+                    timeZone: Asia/Seoul
+                    transcriptStorageStatus: SUCCEEDED
                 sttFailed:
                   summary: STT 실패. 수동 입력 필요
                   value:
                     receptionId: rec_02
-                    receivedAt: "2026-10-31T09:10:00+09:00"
-                    callerPhoneMasked: "010-****-5678"
+                    receivedAt: '2026-10-31T09:10:00+09:00'
+                    callerPhoneMasked: 010-****-5678
                     reviewStatus: DRAFT
                     recordingStatus: SUCCEEDED
                     sttStatus: FAILED
                     analysisStatus: NOT_AVAILABLE
-                    version: 1
+                    version: 3
                     recordingFileId: file_rec_02
                     transcript: null
                     aiOriginal: null
                     finalData: {}
                     confirmedAt: null
                     requestId: null
-        "401": {$ref: "#/components/responses/Unauthorized"}
-        "403": {$ref: "#/components/responses/Forbidden"}
-        "404": {$ref: "#/components/responses/NotFound"}
-        "503": {$ref: "#/components/responses/ServiceUnavailable"}
+                    transcriptFileId: null
+                    latestAnalysisRequestId: anl_02
+                    recordingReceivedAt: '2026-10-31T09:10:00+09:00'
+                    referenceTime: '2026-10-31T09:10:00+09:00'
+                    timeZone: Asia/Seoul
+                    transcriptStorageStatus: NOT_AVAILABLE
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
     patch:
       operationId: updateReception
       summary: 접수 정보 수정·저장
-      description: >-
-        관리자가 AI 추출값을 고치거나(UC-02 기본 흐름 4) 분석 실패 시 직접 입력해서(E1) finalData를 저장한다. 보낸 항목만 바뀌고 AI 원본(aiOriginal)은 바뀌지 않는다.
-        저장하면 version이 올라가며, 확정(confirmReception)은 이 응답의 version을 expectedVersion으로 보낸다. 필수값이 비어 있어도 저장은 되고, 필수값 검증은 확정 시점에 한다.
-        방문 종료 시각이 시작 시각 이하이면 400이다. 이미 확정된 접수의 수정 정책은 미결정이라 우선 409(RECEPTION_ALREADY_CONFIRMED)로 제안한다.
+      description: 관리자가 AI 추출값을 고치거나(UC-02 기본 흐름 4) 분석 실패 시 직접 입력해서(E1) finalData를 저장한다. 보낸 항목만 바뀌고 AI 원본(aiOriginal)은
+        바뀌지 않는다. 저장하면 version이 올라가며, 확정(confirmReception)은 이 응답의 version을 expectedVersion으로 보낸다. 필수값이 비어 있어도 저장은 되고,
+        필수값 검증은 확정 시점에 한다. 방문 종료 시각이 시작 시각 이하이면 400이다. 이미 확정된 접수의 수정 정책은 미결정이라 우선 409(RECEPTION_ALREADY_CONFIRMED)로
+        제안한다. DRAFT 수정으로 진행 중 분석의 입력 버전이 바뀌면 해당 시도를 DISCARDED로 무효화하고 늦은 결과를 적용하지 않는다(BR-09).
       tags:
-        - Receptions
+      - Receptions
       x-business-rules:
-        - BR-04
+      - BR-04
       x-requirements:
-        - FR-04
-        - UC-02
+      - FR-04
+      - UC-02
       x-figma-node-ids:
-        - "64:482"
+      - 64:482
       x-roles:
-        - ADMIN
+      - ADMIN
       parameters:
-        - $ref: "#/components/parameters/ReceptionIdPath"
-        - $ref: "#/components/parameters/IdempotencyKey"
+      - $ref: '#/components/parameters/ReceptionIdPath'
+      - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
           application/json:
-            schema: {$ref: "#/components/schemas/UpdateReception"}
+            schema:
+              $ref: '#/components/schemas/UpdateReception'
             example:
               expectedVersion: 1
-              changes: {address: 서울시 강남구 예시로 12, notes: 방문 전 연락}
+              changes:
+                address: 서울시 강남구 예시로 12
+                notes: 방문 전 연락
       responses:
-        "200":
+        '200':
           description: 저장된 최종 값과 새 버전.
           headers:
             Idempotency-Replayed:
               description: 성공 응답 재현이면 true. 최초 성공은 false 또는 생략.
-              schema: {type: boolean}
+              schema:
+                type: boolean
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/ReceptionUpdated"}
+              schema:
+                $ref: '#/components/schemas/ReceptionUpdated'
               example:
                 receptionId: rec_01
                 reviewStatus: DRAFT
                 version: 2
-                updatedAt: "2026-10-31T08:55:00+09:00"
+                updatedAt: '2026-10-31T08:55:00+09:00'
                 finalData:
                   workType: BLOCKAGE
                   symptoms: 싱크대 물이 내려가지 않음
                   address: 서울시 강남구 예시로 12
-                  desiredVisitFrom: "2026-10-31T14:00:00+09:00"
-                  desiredVisitTo: "2026-10-31T16:00:00+09:00"
+                  desiredVisitFrom: '2026-10-31T14:00:00+09:00'
+                  desiredVisitTo: '2026-10-31T16:00:00+09:00'
                   notes: 방문 전 연락
-        "401": {$ref: "#/components/responses/Unauthorized"}
-        "403": {$ref: "#/components/responses/Forbidden"}
-        "404": {$ref: "#/components/responses/NotFound"}
-        "409":
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
           description: 버전 충돌(VERSION_CONFLICT), 이미 확정된 접수(RECEPTION_ALREADY_CONFIRMED), 멱등성 충돌.
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/Error"}
+              schema:
+                $ref: '#/components/schemas/Error'
               examples:
                 versionConflict:
                   summary: 다른 관리자가 먼저 저장
-                  value: {code: VERSION_CONFLICT, message: 최신 버전과 상태를 다시 조회해 주세요., traceId: trace_example_01}
+                  value:
+                    code: VERSION_CONFLICT
+                    message: 최신 버전과 상태를 다시 조회해 주세요.
+                    traceId: trace_example_01
                 alreadyConfirmed:
                   summary: 이미 확정됨
-                  value: {code: RECEPTION_ALREADY_CONFIRMED, message: 이미 확정된 접수입니다., traceId: trace_example_01}
-        "400":
+                  value:
+                    code: RECEPTION_ALREADY_CONFIRMED
+                    message: 이미 확정된 접수입니다.
+                    traceId: trace_example_01
+        '400':
           description: 방문 종료 시각이 시작보다 빠르다 등 입력 오류.
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/Error"}
+              schema:
+                $ref: '#/components/schemas/Error'
               example:
                 code: VALIDATION_FAILED
                 message: 입력값을 확인해 주세요.
                 traceId: trace_example_01
-                fieldErrors: [{field: changes.desiredVisitTo, message: 방문 종료 시각은 시작 이후여야 합니다.}]
-        "503": {$ref: "#/components/responses/ServiceUnavailable"}
-  /files/{fileId}/access:
-    get:
-      operationId: getFileAccess
-      summary: 비공개 파일 접근 URL 발급
-      description: >-
-        녹음·작업 사진의 단기 서명 URL을 발급한다. 매 요청에서 인증·역할과 관련 접수·의뢰·작업 접근 범위를 확인한다. 기사는 본인 작업 및 현재 담당 의뢰에 연결된 이전 작업의 허용된 파일을 조회할 수 있다. 인계
-        조회는 파일이나 이전 작업의 수정 권한을 부여하지 않는다. 관리자는 업무상 허용된 파일만 조회하며 보존·파기는 UC-15를 따른다. URL은 저장하거나 공유하지 않는다(BR-02).
-      tags:
-        - Files
-      x-business-rules:
-        - BR-02
-        - BR-07
-      x-requirements:
-        - FR-02
-        - FR-11
-        - UC-02
-        - UC-05
-        - UC-12
-      x-roles:
-        - ADMIN
-        - DRIVER
-      parameters:
-        - $ref: "#/components/parameters/FileIdPath"
-      responses:
-        "200":
-          description: 단기 접근 URL.
-          content:
-            application/json:
-              schema: {$ref: "#/components/schemas/FileAccess"}
-              example:
-                fileId: file_rec_01
-                url: "https://files.example.invalid/signed/file_rec_01?token=example"
-                expiresAt: "2026-10-31T09:05:00+09:00"
-                contentType: audio/mpeg
-        "401": {$ref: "#/components/responses/Unauthorized"}
-        "403": {$ref: "#/components/responses/Forbidden"}
-        "404": {$ref: "#/components/responses/NotFound"}
-        "503": {$ref: "#/components/responses/ServiceUnavailable"}
-  /files:
+                fieldErrors:
+                - field: changes.desiredVisitTo
+                  message: 방문 종료 시각은 시작 이후여야 합니다.
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /receptions/{receptionId}/recordings/upload-requests:
     post:
-      operationId: uploadFile
-      summary: 작업 사진 업로드
-      description: >-
-        기사가 보고서에 첨부할 작업 전·후 사진을 올린다. 응답의 fileId를 submitWorkReport의 beforePhotoIds·afterPhotoIds에 넣는다. 제출 시 서버가 파일의 소유자, 업로드 완료 여부,
-        해당 작업과의 연결을 검증한다. 업로드에 실패하면 재등록을 요청한다(UC-12 E2). 허용 형식과 크기 상한은 미결정이며 아래 제한은 제안이다.
+      operationId: createRecordingUploadRequest
+      summary: 접수 녹음 원본 업로드 URL 발급
+      description: DRAFT 접수에 녹음 1개를 예약하고 version을 증가시킨다. 동일 접수의 두 번째 파일은 409 RECORDING_ALREADY_EXISTS. 실패한 업로드는 같은
+        recordingFileId·객체 키·메타데이터로 URL을 재발급해 재시도한다. 파일 바이너리는 S3에 직접 PUT하며 requiredHeaders를 그대로 사용한다. 파일명·MIME·크기·SHA256은
+        발급 후 변경할 수 없다. 허용 형식·최대 크기·길이·유효기간은 TODO.
       tags:
-        - Files
-      x-business-rules:
-        - BR-02
-        - BR-07
-      x-requirements:
-        - FR-11
-        - UC-12
+      - Files
       x-roles:
-        - DRIVER
+      - ADMIN
+      x-business-rules:
+      - BR-02
+      - BR-09
       parameters:
-        - $ref: "#/components/parameters/IdempotencyKey"
+      - $ref: '#/components/parameters/ReceptionIdPath'
+      - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
-          multipart/form-data:
+          application/json:
             schema:
-              type: object
-              additionalProperties: false
-              required: [kind, file]
-              properties:
-                kind: {type: string, enum: [WORK_PHOTO]}
-                file: {type: string, format: binary, description: JPEG 또는 PNG. 크기 상한은 미결정.}
+              $ref: '#/components/schemas/RecordingUploadRequest'
+            example:
+              expectedVersion: 1
+              originalFilename: consultation.m4a
+              contentType: audio/mp4
+              sizeBytes: 1048576
+              checksum:
+                algorithm: SHA256
+                value: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
       responses:
-        "201":
-          description: 업로드 완료.
+        '201':
+          description: 파일 예약 및 업로드 URL 발급. 아직 업로드 완료가 아니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingUploadGrant'
+              example:
+                recordingFileId: file_rec_01
+                receptionId: rec_01
+                version: 2
+                fileStatus: PENDING
+                method: PUT
+                uploadUrl: https://example-bucket.s3.ap-northeast-2.amazonaws.com/example?X-Amz-Signature=example
+                requiredHeaders:
+                  Content-Type: audio/mp4
+                  If-None-Match: '*'
+                  x-amz-checksum-sha256: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+                expiresAt: '2026-11-13T14:15:00+09:00'
           headers:
             Idempotency-Replayed:
-              description: 성공 응답 재현이면 true. 최초 성공은 false 또는 생략.
-              schema: {type: boolean}
+              description: 최초 성공 응답 재현이면 true. 현재 상태는 조회 API로 확인한다.
+              schema:
+                type: boolean
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/VersionConflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /receptions/{receptionId}/recordings/{recordingFileId}/completion:
+    post:
+      operationId: completeRecordingUpload
+      summary: 녹음 원본 업로드 완료 확인 및 자동 분석 접수
+      description: 발급 기록의 소유자·접수 연결·DRAFT·expectedVersion과 S3 객체 존재·실제 크기·서명된 MIME·SHA256을 검증한다. 녹음 연결, 최초 recordingReceivedAt/referenceTime
+        고정, version 증가, analysisRequestId 발급 및 내구성 있는 실행 의도를 원자적으로 저장한 뒤 202를 반환한다. 별도 최초 분석 요청 없이 Backend 작업자가 두
+        AI API를 RestClient로 순차 동기 호출한다. referenceTime은 recordingReceivedAt을 Asia/Seoul +09:00으로 표현하며 재통보·재분석으로 바꾸지
+        않는다. 같은 파일 완료 재통보는 키 보존과 무관하게 최초 202의 동일 분석 ID를 반환하고 작업·버전·기준 시각을 중복 생성하지 않는다. 원래 업로더의 현재 권한은 재검증한다. 객체 검증
+        실패는 400 FILE_UPLOAD_NOT_VERIFIED, S3 장애는 503이며 분석을 시작하지 않는다. 동일 멱등성 키의 다른 본문은 완료 재통보라도 409 IDEMPOTENCY_KEY_REUSED다.
+        최초 완료 이후의 재통보는 신규 DRAFT/버전 조건으로 재실행하지 않고 읽기 권한 확인 후 원래 접수 응답만 재현한다.
+      tags:
+      - Files
+      x-roles:
+      - ADMIN
+      x-business-rules:
+      - BR-02
+      - BR-09
+      parameters:
+      - $ref: '#/components/parameters/ReceptionIdPath'
+      - $ref: '#/components/parameters/RecordingFileIdPath'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteRecordingUpload'
+            example:
+              expectedVersion: 2
+      responses:
+        '202':
+          description: 녹음 저장 확인 및 분석 접수 완료. 분석 완료는 아니다.
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/FileUploaded"}
-              example: {fileId: file_01, kind: WORK_PHOTO, contentType: image/jpeg, sizeBytes: 245760, uploadedAt: "2026-10-31T16:30:00+09:00"}
-        "401": {$ref: "#/components/responses/Unauthorized"}
-        "403": {$ref: "#/components/responses/Forbidden"}
-        "409": {$ref: "#/components/responses/VersionConflict"}
-        "413":
-          description: 파일이 너무 크다.
+              schema:
+                $ref: '#/components/schemas/RecordingUploadCompleted'
+              example:
+                recordingFileId: file_rec_01
+                recordingStatus: SUCCEEDED
+                recordingReceivedAt: '2026-11-13T14:00:00+09:00'
+                referenceTime: '2026-11-13T14:00:00+09:00'
+                analysis:
+                  analysisRequestId: anl_01
+                  receptionId: rec_01
+                  receptionVersion: 3
+                  recordingFileId: file_rec_01
+                  mode: FULL
+                  status: PENDING
+                  statusUrl: /api/v1/receptions/rec_01/analyses/anl_01
+          headers:
+            Idempotency-Replayed:
+              description: 최초 성공 응답 재현이면 true. 현재 상태는 조회 API로 확인한다.
+              schema:
+                type: boolean
+            Location:
+              description: Backend 분석 시도 상태 조회 경로
+              schema:
+                type: string
+                format: uri-reference
+              example: /api/v1/receptions/rec_01/analyses/anl_01
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/VersionConflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /receptions/{receptionId}/recordings/{recordingFileId}/upload-requests:
+    post:
+      operationId: renewRecordingUploadRequest
+      summary: 녹음 업로드 URL 재발급
+      description: 원래 업로더의 현재 업무 권한과 PENDING 파일만 확인해 동일 객체 키·크기·MIME·체크섬의 새 URL을 발급한다. 파일·분석을 새로 만들지 않는다. 완료된 파일은
+        409 FILE_ALREADY_UPLOADED. 같은 멱등성 키는 만료된 URL도 최초 응답을 재현하므로 새 발급 요청에는 새 키를 사용한다.
+      tags:
+      - Files
+      x-roles:
+      - ADMIN
+      x-business-rules:
+      - BR-02
+      - BR-09
+      parameters:
+      - $ref: '#/components/parameters/ReceptionIdPath'
+      - $ref: '#/components/parameters/RecordingFileIdPath'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '201':
+          description: 새 업로드 URL 발급.
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/Error"}
-              example: {code: FILE_TOO_LARGE, message: 파일이 너무 큽니다., traceId: trace_example_01}
-        "415":
-          description: 허용하지 않는 파일 형식이다.
+              schema:
+                $ref: '#/components/schemas/RecordingUploadGrant'
+              example:
+                recordingFileId: file_rec_01
+                receptionId: rec_01
+                version: 2
+                fileStatus: PENDING
+                method: PUT
+                uploadUrl: https://example-bucket.s3.ap-northeast-2.amazonaws.com/example?X-Amz-Signature=example
+                requiredHeaders:
+                  Content-Type: audio/mp4
+                  If-None-Match: '*'
+                  x-amz-checksum-sha256: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+                expiresAt: '2026-11-13T14:15:00+09:00'
+          headers:
+            Idempotency-Replayed:
+              description: 최초 성공 응답 재현이면 true. 현재 상태는 조회 API로 확인한다.
+              schema:
+                type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/VersionConflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /works/{workId}/photos/{photoFileId}/upload-requests:
+    post:
+      operationId: renewWorkPhotoUploadRequest
+      summary: 작업 사진 업로드 URL 재발급
+      description: 원래 업로더의 현재 업무 권한과 PENDING 파일만 확인해 동일 객체 키·크기·MIME·체크섬의 새 URL을 발급한다. 파일·분석을 새로 만들지 않는다. 완료된 파일은
+        409 FILE_ALREADY_UPLOADED. 같은 멱등성 키는 만료된 URL도 최초 응답을 재현하므로 새 발급 요청에는 새 키를 사용한다.
+      tags:
+      - Files
+      x-roles:
+      - DRIVER
+      x-business-rules:
+      - BR-02
+      - BR-09
+      parameters:
+      - $ref: '#/components/parameters/WorkIdPath'
+      - $ref: '#/components/parameters/PhotoFileIdPath'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '201':
+          description: 새 업로드 URL 발급.
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/Error"}
-              example: {code: UNSUPPORTED_MEDIA_TYPE, message: 지원하지 않는 파일 형식입니다., traceId: trace_example_01}
-        "400": {$ref: "#/components/responses/ValidationFailed"}
-        "503": {$ref: "#/components/responses/ServiceUnavailable"}
+              schema:
+                $ref: '#/components/schemas/WorkPhotoUploadGrant'
+              example:
+                photoFileId: file_photo_01
+                workId: work_01
+                phase: BEFORE
+                fileStatus: PENDING
+                method: PUT
+                uploadUrl: https://example-bucket.s3.ap-northeast-2.amazonaws.com/example?X-Amz-Signature=example
+                requiredHeaders:
+                  Content-Type: image/jpeg
+                  If-None-Match: '*'
+                  x-amz-checksum-sha256: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+                expiresAt: '2026-11-13T14:15:00+09:00'
+          headers:
+            Idempotency-Replayed:
+              description: 최초 성공 응답 재현이면 true. 현재 상태는 조회 API로 확인한다.
+              schema:
+                type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/VersionConflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /receptions/{receptionId}/recordings/{recordingFileId}/access:
+    get:
+      operationId: getRecordingAccess
+      summary: 접수 녹음 원본 접근 URL 발급
+      description: 인증·역할·파일 종류와 접수 연결을 확인한 뒤 녹음 원본의 Presigned GET URL을 발급한다. 관리자는 허용된 접수, 기사는 본인 작업/현재 담당 의뢰와 연결된
+        허용 녹음만 조회할 수 있다(BR-02). 인계 조회는 수정 권한을 부여하지 않는다. 보존·파기는 UC-15를 따르며 URL을 저장·공유하지 않는다. 업로드·Backend 생성 및 메타데이터
+        연결이 완료된 파일만 접근할 수 있고 준비 전은 409 FILE_NOT_READY다.
+      tags:
+      - Files
+      x-roles:
+      - ADMIN
+      - DRIVER
+      x-business-rules:
+      - BR-02
+      - BR-09
+      parameters:
+      - $ref: '#/components/parameters/ReceptionIdPath'
+      - $ref: '#/components/parameters/RecordingFileIdPath'
+      responses:
+        '200':
+          description: 단기 접근 URL.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileAccess'
+              example:
+                fileId: file_rec_01
+                kind: CALL_RECORDING
+                method: GET
+                url: https://example-bucket.s3.ap-northeast-2.amazonaws.com/example?X-Amz-Signature=example
+                expiresAt: '2026-11-13T14:15:00+09:00'
+                contentType: audio/mp4
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '409':
+          description: 파일 업로드 또는 정식 원문 저장·연결이 완료되지 않았다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FILE_NOT_READY
+                message: 아직 접근할 수 없는 파일입니다.
+                traceId: trace_example_01
+  /receptions/{receptionId}/transcripts/{transcriptFileId}/access:
+    get:
+      operationId: getTranscriptAccess
+      summary: 접수 STT 원문 파일 접근 URL 발급
+      description: 매 요청에서 인증·역할·파일 종류 및 경로 업무와의 연결·현재 접근 권한을 검증한 뒤 S3 Presigned GET URL을 발급한다. 기사는 본인 작업과 현재 담당 의뢰에
+        연결된 이전 작업의 허용된 사진만 조회할 수 있고 수정 권한은 얻지 않는다. STT 원문은 Backend 생성 파일이다. 보존·파기는 UC-15를 따르며 URL을 영구 저장·공유하지 않는다.
+        업로드·Backend 생성 및 메타데이터 연결이 완료된 파일만 접근할 수 있고 준비 전은 409 FILE_NOT_READY다.
+      tags:
+      - Files
+      x-roles:
+      - ADMIN
+      x-business-rules:
+      - BR-02
+      - BR-09
+      parameters:
+      - $ref: '#/components/parameters/ReceptionIdPath'
+      - $ref: '#/components/parameters/TranscriptFileIdPath'
+      responses:
+        '200':
+          description: 단기 접근 URL.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileAccess'
+              example:
+                fileId: file_stt_01
+                kind: STT_TRANSCRIPT
+                method: GET
+                url: https://example-bucket.s3.ap-northeast-2.amazonaws.com/example?X-Amz-Signature=example
+                expiresAt: '2026-11-13T14:15:00+09:00'
+                contentType: text/plain; charset=utf-8
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '409':
+          description: 파일 업로드 또는 정식 원문 저장·연결이 완료되지 않았다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FILE_NOT_READY
+                message: 아직 접근할 수 없는 파일입니다.
+                traceId: trace_example_01
+  /works/{workId}/photos/{photoFileId}/access:
+    get:
+      operationId: getWorkPhotoAccess
+      summary: 작업 사진 접근 URL 발급
+      description: 매 요청에서 인증·역할·파일 종류 및 경로 업무와의 연결·현재 접근 권한을 검증한 뒤 S3 Presigned GET URL을 발급한다. 기사는 본인 작업과 현재 담당 의뢰에
+        연결된 이전 작업의 허용된 사진만 조회할 수 있고 수정 권한은 얻지 않는다. STT 원문은 Backend 생성 파일이다. 보존·파기는 UC-15를 따르며 URL을 영구 저장·공유하지 않는다.
+        업로드·Backend 생성 및 메타데이터 연결이 완료된 파일만 접근할 수 있고 준비 전은 409 FILE_NOT_READY다.
+      tags:
+      - Files
+      x-roles:
+      - ADMIN
+      - DRIVER
+      x-business-rules:
+      - BR-02
+      - BR-09
+      parameters:
+      - $ref: '#/components/parameters/WorkIdPath'
+      - $ref: '#/components/parameters/PhotoFileIdPath'
+      responses:
+        '200':
+          description: 단기 접근 URL.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileAccess'
+              example:
+                fileId: file_photo_01
+                kind: WORK_PHOTO
+                method: GET
+                url: https://example-bucket.s3.ap-northeast-2.amazonaws.com/example?X-Amz-Signature=example
+                expiresAt: '2026-11-13T14:15:00+09:00'
+                contentType: image/jpeg
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '409':
+          description: 파일 업로드 또는 정식 원문 저장·연결이 완료되지 않았다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FILE_NOT_READY
+                message: 아직 접근할 수 없는 파일입니다.
+                traceId: trace_example_01
+  /works/{workId}/photos/upload-requests:
+    post:
+      operationId: createWorkPhotoUploadRequest
+      summary: 작업 전·중·후 사진 업로드 URL 발급
+      description: 현재 유효 담당 기사가 해당 작업의 사진을 예약한다. phase는 BEFORE/DURING/AFTER이며 S3에 직접 PUT한다. 응답 photoFileId를 완료 확인
+        후 보고서의 해당 사진 ID 배열에 넣는다. 원본 사진 객체 덮어쓰기를 금지한다. 허용 MIME·최대 크기·사진 수 상한은 TODO다.
+      tags:
+      - Files
+      x-roles:
+      - DRIVER
+      x-business-rules:
+      - BR-02
+      - BR-09
+      parameters:
+      - $ref: '#/components/parameters/WorkIdPath'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkPhotoUploadRequest'
+            example:
+              phase: BEFORE
+              originalFilename: before.jpg
+              contentType: image/jpeg
+              sizeBytes: 245760
+              checksum:
+                algorithm: SHA256
+                value: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      responses:
+        '201':
+          description: 사진 예약 및 업로드 URL 발급.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkPhotoUploadGrant'
+              example:
+                photoFileId: file_photo_01
+                workId: work_01
+                phase: BEFORE
+                fileStatus: PENDING
+                method: PUT
+                uploadUrl: https://example-bucket.s3.ap-northeast-2.amazonaws.com/example?X-Amz-Signature=example
+                requiredHeaders:
+                  Content-Type: image/jpeg
+                  If-None-Match: '*'
+                  x-amz-checksum-sha256: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+                expiresAt: '2026-11-13T14:15:00+09:00'
+          headers:
+            Idempotency-Replayed:
+              description: 최초 성공 응답 재현이면 true. 현재 상태는 조회 API로 확인한다.
+              schema:
+                type: boolean
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/VersionConflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /works/{workId}/photos/{photoFileId}/completion:
+    post:
+      operationId: completeWorkPhotoUpload
+      summary: 작업 사진 업로드 완료 확인
+      description: 현재 유효 담당자·파일 업로더·작업 연결과 S3 객체의 크기·MIME·체크섬을 확인해 UPLOADED로 바꾼다. 같은 사진의 완료 재통보는 동일 파일을 반환한다. 검증 실패는
+        400 FILE_UPLOAD_NOT_VERIFIED. 완료 확인은 보고서 제출이나 작업 완료를 의미하지 않으며 제출 시 권한·작업 상태·사진 연결을 다시 검증한다.
+      tags:
+      - Files
+      x-roles:
+      - DRIVER
+      x-business-rules:
+      - BR-02
+      - BR-09
+      parameters:
+      - $ref: '#/components/parameters/WorkIdPath'
+      - $ref: '#/components/parameters/PhotoFileIdPath'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: 업로드 검증 완료.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkPhotoUploaded'
+              example:
+                photoFileId: file_photo_01
+                workId: work_01
+                phase: BEFORE
+                fileStatus: UPLOADED
+                contentType: image/jpeg
+                sizeBytes: 245760
+                checksum:
+                  algorithm: SHA256
+                  value: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+                uploadedAt: '2026-11-13T14:00:00+09:00'
+          headers:
+            Idempotency-Replayed:
+              description: 최초 성공 응답 재현이면 true. 현재 상태는 조회 API로 확인한다.
+              schema:
+                type: boolean
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/VersionConflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /receptions/{receptionId}/analyses:
+    post:
+      operationId: createReceptionAnalysis
+      summary: 관리자의 접수 재분석 요청
+      description: 최초 분석은 녹음 완료 확인에서 자동 접수한다. 이 API는 ADMIN의 명시적인 재분석 전용이다. DRAFT, expectedVersion 및 완료된 녹음이 필요하며 확정
+        접수는 409 RECEPTION_ALREADY_CONFIRMED, 진행 중 시도가 있으면 409 ANALYSIS_IN_PROGRESS. 새 analysisRequestId·version·실행
+        의도를 원자적으로 저장한 뒤 202. FULL은 STT부터 새 원문을 생성하고 STRUCTURE_ONLY는 경로 접수·녹음에 속한 검증된 transcriptFileId를 재사용한다. 이전 원문·AI
+        결과 이력과 finalData는 보존한다. referenceTime은 최초 녹음 전달 시각으로 유지한다.
+      tags:
+      - Receptions
+      x-roles:
+      - ADMIN
+      x-business-rules:
+      - BR-02
+      - BR-09
+      parameters:
+      - $ref: '#/components/parameters/ReceptionIdPath'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAnalysis'
+            example:
+              expectedVersion: 4
+              mode: STRUCTURE_ONLY
+              transcriptFileId: file_stt_01
+      responses:
+        '202':
+          description: 재분석 접수 완료.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisAccepted'
+              example:
+                analysisRequestId: anl_02
+                receptionId: rec_01
+                receptionVersion: 5
+                recordingFileId: file_rec_01
+                mode: STRUCTURE_ONLY
+                status: PENDING
+                statusUrl: /api/v1/receptions/rec_01/analyses/anl_02
+          headers:
+            Idempotency-Replayed:
+              description: 최초 성공 응답 재현이면 true. 현재 상태는 조회 API로 확인한다.
+              schema:
+                type: boolean
+            Location:
+              description: 새 분석 시도 조회 경로
+              schema:
+                type: string
+                format: uri-reference
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/VersionConflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /receptions/{receptionId}/analyses/{analysisRequestId}:
+    get:
+      operationId: getReceptionAnalysis
+      summary: 접수 분석 시도 상태 조회
+      description: Backend가 저장한 상태를 조회한다. FAILED/DISCARDED도 조회 성공은 200이다. 푸시 수신·탭·앱 재진입 시 갱신하며 과거 알림이 최신 시도를 대체하지
+        않도록 latestAnalysisRequestId와 비교한다. 원문·JSON은 접수 상세에서 조회한다. 처리 단계는 Backend에서 관찰 가능한 단계이며 AI 내부 진행률을 추정하지 않는다.
+      tags:
+      - Receptions
+      x-roles:
+      - ADMIN
+      x-business-rules:
+      - BR-02
+      - BR-09
+      parameters:
+      - $ref: '#/components/parameters/ReceptionIdPath'
+      - $ref: '#/components/parameters/AnalysisRequestIdPath'
+      responses:
+        '200':
+          description: 저장된 분석 시도 상태.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisView'
+              examples:
+                pending:
+                  value:
+                    analysisRequestId: anl_01
+                    receptionId: rec_01
+                    receptionVersion: 3
+                    recordingFileId: file_rec_01
+                    mode: FULL
+                    status: PENDING
+                    stage: QUEUED
+                    sttStatus: PENDING
+                    transcriptStorageStatus: PENDING
+                    analysisStatus: PENDING
+                    transcriptFileId: null
+                    resultApplied: false
+                    requestedAt: '2026-11-13T14:00:00+09:00'
+                    completedAt: null
+                    error: null
+                succeeded:
+                  value:
+                    analysisRequestId: anl_01
+                    receptionId: rec_01
+                    receptionVersion: 3
+                    recordingFileId: file_rec_01
+                    mode: FULL
+                    status: SUCCEEDED
+                    stage: COMPLETED
+                    sttStatus: SUCCEEDED
+                    transcriptStorageStatus: SUCCEEDED
+                    analysisStatus: SUCCEEDED
+                    transcriptFileId: file_stt_01
+                    resultApplied: true
+                    requestedAt: '2026-11-13T14:00:00+09:00'
+                    completedAt: '2026-11-13T14:02:00+09:00'
+                    error: null
+                structureFailed:
+                  value:
+                    analysisRequestId: anl_01
+                    receptionId: rec_01
+                    receptionVersion: 3
+                    recordingFileId: file_rec_01
+                    mode: FULL
+                    status: FAILED
+                    stage: STRUCTURE
+                    sttStatus: SUCCEEDED
+                    transcriptStorageStatus: SUCCEEDED
+                    analysisStatus: FAILED
+                    transcriptFileId: file_stt_01
+                    resultApplied: false
+                    requestedAt: '2026-11-13T14:00:00+09:00'
+                    completedAt: '2026-11-13T14:02:00+09:00'
+                    error:
+                      code: AI_TIMEOUT
+                      message: 구조화 응답을 받지 못했습니다. 원격 완료 여부는 알 수 없습니다.
+                      traceId: trace_example_01
+                discarded:
+                  value:
+                    analysisRequestId: anl_01
+                    receptionId: rec_01
+                    receptionVersion: 3
+                    recordingFileId: file_rec_01
+                    mode: FULL
+                    status: DISCARDED
+                    stage: RESULT_APPLICATION
+                    sttStatus: SUCCEEDED
+                    transcriptStorageStatus: SUCCEEDED
+                    analysisStatus: SUCCEEDED
+                    transcriptFileId: file_stt_01
+                    resultApplied: false
+                    requestedAt: '2026-11-13T14:00:00+09:00'
+                    completedAt: '2026-11-13T14:02:00+09:00'
+                    error:
+                      code: STALE_ANALYSIS_RESULT
+                      message: 접수가 변경되어 결과를 반영하지 않았습니다.
+                      traceId: trace_example_01
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /push-devices/{installationId}:
+    put:
+      operationId: registerPushDevice
+      summary: 관리자 앱 푸시 기기 등록·토큰 갱신
+      description: 로그인한 관리자의 설치 ID와 FCM 토큰을 연결한다. 사용자 ID는 JWT로 결정한다. 같은 값을 반복 설정해도 결과가 같으므로 Idempotency-Key를 받지 않는다.
+        토큰 갱신 시 같은 설치 ID로 재등록하고 토큰을 응답·로그에 노출하지 않는다. 다른 계정으로 이전할 때 이전 연결을 해제하며 소유권 충돌은 409. 현재 계약은 관리자 분석 알림용이며 기사
+        앱 기기 정책은 별도 검토한다.
+      tags:
+      - Push Devices
+      x-roles:
+      - ADMIN
+      x-business-rules:
+      - BR-02
+      - BR-09
+      parameters:
+      - $ref: '#/components/parameters/InstallationIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PushDeviceRegistration'
+            example:
+              platform: ANDROID
+              pushToken: example-fcm-registration-token
+      responses:
+        '200':
+          description: 본인 기기 등록·갱신 완료.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PushDevice'
+              example:
+                installationId: install_01
+                platform: ANDROID
+                registeredAt: '2026-11-13T14:00:00+09:00'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/VersionConflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+    delete:
+      operationId: unregisterPushDevice
+      summary: 관리자 앱 푸시 기기 연결 해제
+      description: 본인 기기 연결을 멱등하게 해제한다. 이미 해제된 본인 연결도 204다. 다른 사용자의 연결은 변경할 수 없다. 로그아웃 시 해당 설치 연결 해제도 수행하도록 앱 계약에
+        포함한다.
+      tags:
+      - Push Devices
+      x-roles:
+      - ADMIN
+      x-business-rules:
+      - BR-02
+      - BR-09
+      parameters:
+      - $ref: '#/components/parameters/InstallationIdPath'
+      responses:
+        '204':
+          description: 기기 연결 해제 완료. 본문 없음.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /service-requests/{requestId}:
     get:
       operationId: getServiceRequest
@@ -3831,12 +4613,41 @@ components:
       required: true
       schema: {$ref: "#/components/schemas/Id"}
       example: can_01
-    FileIdPath:
-      name: fileId
+    RecordingFileIdPath:
+      name: recordingFileId
       in: path
       required: true
-      schema: {$ref: "#/components/schemas/Id"}
-      example: file_01
+      schema:
+        $ref: '#/components/schemas/Id'
+      example: file_rec_01
+    TranscriptFileIdPath:
+      name: transcriptFileId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+      example: file_stt_01
+    PhotoFileIdPath:
+      name: photoFileId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+      example: file_photo_01
+    AnalysisRequestIdPath:
+      name: analysisRequestId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+      example: anl_01
+    InstallationIdPath:
+      name: installationId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+      example: install_01
     ChatBefore:
       name: before
       in: query
@@ -4263,11 +5074,11 @@ components:
       type: object
       additionalProperties: false
       required:
-        - workDescription
-        - diagnosis
-        - beforePhotoIds
-        - afterPhotoIds
-        - totalCost
+      - workDescription
+      - diagnosis
+      - beforePhotoIds
+      - afterPhotoIds
+      - totalCost
       properties:
         workDescription:
           type: string
@@ -4292,16 +5103,22 @@ components:
         totalCost:
           type: integer
           minimum: 0
+        duringPhotoIds:
+          type: array
+          items:
+            $ref: '#/components/schemas/Id'
+          uniqueItems: true
+          description: 선택적인 작업 중 사진 ID. 생략 또는 빈 배열 허용. 업로드 완료·작업 연결·DURING 분류를 검증한다.
     SubmitReport:
       type: object
       additionalProperties: false
       required:
-        - totalCost
-        - expectedVersion
-        - workDescription
-        - diagnosis
-        - beforePhotoIds
-        - afterPhotoIds
+      - totalCost
+      - expectedVersion
+      - workDescription
+      - diagnosis
+      - beforePhotoIds
+      - afterPhotoIds
       properties:
         totalCost:
           type: integer
@@ -4329,6 +5146,12 @@ components:
             minLength: 1
           minItems: 1
           uniqueItems: true
+        duringPhotoIds:
+          type: array
+          items:
+            $ref: '#/components/schemas/Id'
+          uniqueItems: true
+          description: 선택적인 작업 중 사진 ID. 생략 또는 빈 배열 허용. 업로드 완료·작업 연결·DURING 분류를 검증한다.
     ReportCreated:
       type: object
       additionalProperties: false
@@ -5136,32 +5959,87 @@ components:
     ReceptionDetail:
       type: object
       additionalProperties: false
-      required: [receptionId, receivedAt, callerPhoneMasked, reviewStatus, recordingStatus, sttStatus, analysisStatus, version, recordingFileId, transcript, aiOriginal, finalData, confirmedAt, requestId]
+      required:
+      - receptionId
+      - receivedAt
+      - callerPhoneMasked
+      - reviewStatus
+      - recordingStatus
+      - sttStatus
+      - analysisStatus
+      - version
+      - recordingFileId
+      - transcript
+      - aiOriginal
+      - finalData
+      - confirmedAt
+      - requestId
+      - transcriptFileId
+      - latestAnalysisRequestId
+      - recordingReceivedAt
+      - referenceTime
+      - timeZone
+      - transcriptStorageStatus
       properties:
-        receptionId: {$ref: "#/components/schemas/Id"}
-        receivedAt: {$ref: "#/components/schemas/DateTime"}
-        callerPhoneMasked: {type: string, maxLength: 20}
-        reviewStatus: {type: string, enum: [DRAFT, CONFIRMED]}
-        recordingStatus: {$ref: "#/components/schemas/ProcessingStatus"}
-        sttStatus: {$ref: "#/components/schemas/ProcessingStatus"}
-        analysisStatus: {$ref: "#/components/schemas/ProcessingStatus"}
-        version: {type: integer, minimum: 1, description: 수정·확정 요청의 expectedVersion.}
+        receptionId:
+          $ref: '#/components/schemas/Id'
+        receivedAt:
+          $ref: '#/components/schemas/DateTime'
+        callerPhoneMasked:
+          type: string
+          maxLength: 20
+        reviewStatus:
+          type: string
+          enum:
+          - DRAFT
+          - CONFIRMED
+        recordingStatus:
+          $ref: '#/components/schemas/ProcessingStatus'
+        sttStatus:
+          $ref: '#/components/schemas/ProcessingStatus'
+        analysisStatus:
+          $ref: '#/components/schemas/ProcessingStatus'
+        version:
+          type: integer
+          minimum: 1
+          description: 수정·확정 요청의 expectedVersion.
         recordingFileId:
-          $ref: "#/components/schemas/NullableId"
-          description: 녹음 원본이 실제로 존재할 때만 값이 있다. 재생 URL은 파일 접근 API로 받는다.
-        transcript: {type: [string, "null"], maxLength: 100000, description: STT 결과. 없으면 null.}
+          $ref: '#/components/schemas/NullableId'
+          description: 검증된 녹음 원본이 있을 때만 값이 있다. 접수당 1개이며 MVP 교체는 지원하지 않는다.
+        transcript:
+          type:
+          - string
+          - 'null'
+          maxLength: 100000
+          description: S3에 저장된 현재 유효 STT 원문을 Backend가 읽어 제공한다. 미생성은 null, 저장된 원문 읽기 실패는 503이다. DB 중복 저장을 요구하지 않는다.
         aiOriginal:
           description: AI가 추출한 원본. 분석 결과가 없으면 null. 관리자가 수정해도 변하지 않는다.
           oneOf:
-            - $ref: "#/components/schemas/ReceptionDraftFields"
-            - type: "null"
+          - $ref: '#/components/schemas/ReceptionDraftFields'
+          - type: 'null'
         finalData:
-          $ref: "#/components/schemas/ReceptionDraftFields"
+          $ref: '#/components/schemas/ReceptionDraftFields'
           description: 관리자가 저장한 최종 값. 아직 입력이 없으면 빈 객체.
-        confirmedAt: {$ref: "#/components/schemas/NullableDateTime"}
+        confirmedAt:
+          $ref: '#/components/schemas/NullableDateTime'
         requestId:
-          $ref: "#/components/schemas/NullableId"
+          $ref: '#/components/schemas/NullableId'
           description: 이 접수로 등록된 의뢰가 있으면 그 ID.
+        transcriptFileId:
+          $ref: '#/components/schemas/NullableId'
+          description: 정식 원문의 S3 파일 메타데이터 ID. 단계 실패 시에도 이전 유효 원문이 있으면 유지한다.
+        latestAnalysisRequestId:
+          $ref: '#/components/schemas/NullableId'
+        recordingReceivedAt:
+          $ref: '#/components/schemas/NullableDateTime'
+        referenceTime:
+          $ref: '#/components/schemas/NullableDateTime'
+        timeZone:
+          type: string
+          const: Asia/Seoul
+        transcriptStorageStatus:
+          $ref: '#/components/schemas/ProcessingStatus'
+          description: 정식 STT 원문 S3 저장 상태. STT 변환 성공과 원문 보관 실패를 구분한다.
     UpdateReception:
       type: object
       additionalProperties: false
@@ -5184,22 +6062,35 @@ components:
     FileAccess:
       type: object
       additionalProperties: false
-      required: [fileId, url, expiresAt, contentType]
+      required:
+      - fileId
+      - url
+      - expiresAt
+      - contentType
+      - kind
+      - method
       properties:
-        fileId: {$ref: "#/components/schemas/Id"}
-        url: {type: string, format: uri, maxLength: 2000, description: 단기 서명 URL. 저장하거나 공유하지 않는다.}
-        expiresAt: {$ref: "#/components/schemas/DateTime"}
-        contentType: {type: string, maxLength: 100}
-    FileUploaded:
-      type: object
-      additionalProperties: false
-      required: [fileId, kind, contentType, sizeBytes, uploadedAt]
-      properties:
-        fileId: {$ref: "#/components/schemas/Id"}
-        kind: {type: string, enum: [WORK_PHOTO]}
-        contentType: {type: string, maxLength: 100}
-        sizeBytes: {type: integer, minimum: 1}
-        uploadedAt: {$ref: "#/components/schemas/DateTime"}
+        fileId:
+          $ref: '#/components/schemas/Id'
+        url:
+          type: string
+          format: uri
+          pattern: ^https://
+          description: 단기 Presigned GET URL. 저장·공유·로그 기록 금지.
+        expiresAt:
+          $ref: '#/components/schemas/DateTime'
+        contentType:
+          type: string
+          maxLength: 100
+        kind:
+          type: string
+          enum:
+          - CALL_RECORDING
+          - STT_TRANSCRIPT
+          - WORK_PHOTO
+        method:
+          type: string
+          const: GET
     # ---------- 의뢰·배차 ----------
     OfferResult:
       type: object
@@ -5574,3 +6465,540 @@ components:
       properties:
         lastReadMessageId: {$ref: "#/components/schemas/Id"}
         readAt: {$ref: "#/components/schemas/DateTime"}
+    FileChecksum:
+      type: object
+      additionalProperties: false
+      required:
+      - algorithm
+      - value
+      properties:
+        algorithm:
+          type: string
+          const: SHA256
+        value:
+          type: string
+          pattern: ^[A-Za-z0-9+/]{43}=$
+          minLength: 44
+          maxLength: 44
+          description: 파일 전체 SHA-256 digest 32바이트의 Base64 표현. hex 문자열이 아니다.
+    CreateReception:
+      type: object
+      additionalProperties: false
+      required: []
+      properties:
+        callerPhone:
+          type: string
+          pattern: ^[0-9+-]{9,20}$
+        callStartedAt:
+          $ref: '#/components/schemas/DateTime'
+          description: 확보 가능한 실제 통화 시작 시각 메타데이터. MVP 상대 날짜 기준으로 사용하지 않는다.
+      description: 관리자 접수 생성. 수동 입력은 빈 객체로도 시작할 수 있다. receivedAt은 Backend 수신 시각이다.
+    RecordingUploadRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - expectedVersion
+      - originalFilename
+      - contentType
+      - sizeBytes
+      - checksum
+      properties:
+        expectedVersion:
+          type: integer
+          minimum: 1
+        originalFilename:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: 표시용 원래 파일명. S3 객체 키는 Backend가 생성한다.
+        contentType:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: 허용 MIME 목록은 TODO. 실제 파일 형식은 별도 검증한다.
+        sizeBytes:
+          type: integer
+          minimum: 1
+          description: 예상 바이트 수. 유형별 상한은 TODO이며 완료 시 실제 값과 비교한다.
+        checksum:
+          $ref: '#/components/schemas/FileChecksum'
+    WorkPhotoPhase:
+      type: string
+      enum:
+      - BEFORE
+      - DURING
+      - AFTER
+    WorkPhotoUploadRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - phase
+      - originalFilename
+      - contentType
+      - sizeBytes
+      - checksum
+      properties:
+        phase:
+          $ref: '#/components/schemas/WorkPhotoPhase'
+        originalFilename:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: 표시용 원래 파일명. S3 객체 키는 Backend가 생성한다.
+        contentType:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: 허용 MIME 목록은 TODO. 실제 파일 형식은 별도 검증한다.
+        sizeBytes:
+          type: integer
+          minimum: 1
+          description: 예상 바이트 수. 유형별 상한은 TODO이며 완료 시 실제 값과 비교한다.
+        checksum:
+          $ref: '#/components/schemas/FileChecksum'
+    RecordingUploadGrant:
+      type: object
+      additionalProperties: false
+      description: 서명된 requiredHeaders로 S3에 직접 PUT한다. S3 오류는 Backend Error JSON과 형식이 다르다. 응답 유실 후 재PUT이 412이면 완료 확인으로 기존 객체가 기대 파일인지 검증한다.
+      required:
+      - recordingFileId
+      - receptionId
+      - version
+      - fileStatus
+      - method
+      - uploadUrl
+      - requiredHeaders
+      - expiresAt
+      properties:
+        recordingFileId:
+          $ref: '#/components/schemas/Id'
+        receptionId:
+          $ref: '#/components/schemas/Id'
+        version:
+          type: integer
+          minimum: 1
+        fileStatus:
+          type: string
+          const: PENDING
+        method:
+          type: string
+          const: PUT
+        uploadUrl:
+          type: string
+          format: uri
+          pattern: ^https://
+          description: 단기 Presigned PUT URL. 재인코딩·로그 기록·영구 저장 금지.
+        requiredHeaders:
+          type: object
+          additionalProperties: false
+          required:
+          - Content-Type
+          - If-None-Match
+          - x-amz-checksum-sha256
+          properties:
+            Content-Type:
+              type: string
+              minLength: 1
+            If-None-Match:
+              type: string
+              const: '*'
+            x-amz-checksum-sha256:
+              type: string
+              pattern: ^[A-Za-z0-9+/]{43}=$
+        expiresAt:
+          $ref: '#/components/schemas/DateTime'
+    WorkPhotoUploadGrant:
+      type: object
+      additionalProperties: false
+      description: 서명된 requiredHeaders로 S3에 직접 PUT한다. S3 오류는 Backend Error JSON과 형식이 다르다. 응답 유실 후 재PUT이 412이면 완료 확인으로 기존 객체가 기대 파일인지 검증한다.
+      required:
+      - photoFileId
+      - workId
+      - phase
+      - fileStatus
+      - method
+      - uploadUrl
+      - requiredHeaders
+      - expiresAt
+      properties:
+        photoFileId:
+          $ref: '#/components/schemas/Id'
+        workId:
+          $ref: '#/components/schemas/Id'
+        phase:
+          $ref: '#/components/schemas/WorkPhotoPhase'
+        fileStatus:
+          type: string
+          const: PENDING
+        method:
+          type: string
+          const: PUT
+        uploadUrl:
+          type: string
+          format: uri
+          pattern: ^https://
+          description: 단기 Presigned PUT URL. 재인코딩·로그 기록·영구 저장 금지.
+        requiredHeaders:
+          type: object
+          additionalProperties: false
+          required:
+          - Content-Type
+          - If-None-Match
+          - x-amz-checksum-sha256
+          properties:
+            Content-Type:
+              type: string
+              minLength: 1
+            If-None-Match:
+              type: string
+              const: '*'
+            x-amz-checksum-sha256:
+              type: string
+              pattern: ^[A-Za-z0-9+/]{43}=$
+        expiresAt:
+          $ref: '#/components/schemas/DateTime'
+    CompleteRecordingUpload:
+      type: object
+      additionalProperties: false
+      required:
+      - expectedVersion
+      properties:
+        expectedVersion:
+          type: integer
+          minimum: 1
+    AnalysisMode:
+      type: string
+      enum:
+      - FULL
+      - STRUCTURE_ONLY
+    AnalysisStatus:
+      type: string
+      enum:
+      - PENDING
+      - PROCESSING
+      - SUCCEEDED
+      - FAILED
+      - DISCARDED
+    AnalysisStage:
+      type: string
+      enum:
+      - QUEUED
+      - RECORDING_DOWNLOAD
+      - STT
+      - TRANSCRIPT_STORAGE
+      - STRUCTURE
+      - RESULT_APPLICATION
+      - COMPLETED
+    AnalysisAccepted:
+      type: object
+      additionalProperties: false
+      required:
+      - analysisRequestId
+      - receptionId
+      - receptionVersion
+      - recordingFileId
+      - mode
+      - status
+      - statusUrl
+      properties:
+        analysisRequestId:
+          $ref: '#/components/schemas/Id'
+        receptionId:
+          $ref: '#/components/schemas/Id'
+        receptionVersion:
+          type: integer
+          minimum: 1
+        recordingFileId:
+          $ref: '#/components/schemas/Id'
+        mode:
+          $ref: '#/components/schemas/AnalysisMode'
+        status:
+          type: string
+          const: PENDING
+        statusUrl:
+          type: string
+          format: uri-reference
+          description: Backend 분석 시도 조회 경로. 최초 접수 응답 재현 후에도 현재 상태는 이 경로로 확인한다.
+    RecordingUploadCompleted:
+      type: object
+      additionalProperties: false
+      required:
+      - recordingFileId
+      - recordingStatus
+      - recordingReceivedAt
+      - referenceTime
+      - analysis
+      properties:
+        recordingFileId:
+          $ref: '#/components/schemas/Id'
+        recordingStatus:
+          type: string
+          const: SUCCEEDED
+        recordingReceivedAt:
+          $ref: '#/components/schemas/DateTime'
+        referenceTime:
+          $ref: '#/components/schemas/DateTime'
+        analysis:
+          $ref: '#/components/schemas/AnalysisAccepted'
+    WorkPhotoUploaded:
+      type: object
+      additionalProperties: false
+      required:
+      - photoFileId
+      - workId
+      - phase
+      - fileStatus
+      - contentType
+      - sizeBytes
+      - checksum
+      - uploadedAt
+      properties:
+        photoFileId:
+          $ref: '#/components/schemas/Id'
+        workId:
+          $ref: '#/components/schemas/Id'
+        phase:
+          $ref: '#/components/schemas/WorkPhotoPhase'
+        fileStatus:
+          type: string
+          const: UPLOADED
+        contentType:
+          type: string
+          minLength: 1
+          maxLength: 100
+        sizeBytes:
+          type: integer
+          minimum: 1
+        checksum:
+          $ref: '#/components/schemas/FileChecksum'
+        uploadedAt:
+          $ref: '#/components/schemas/DateTime'
+    CreateAnalysis:
+      type: object
+      additionalProperties: false
+      required:
+      - expectedVersion
+      - mode
+      properties:
+        expectedVersion:
+          type: integer
+          minimum: 1
+        mode:
+          $ref: '#/components/schemas/AnalysisMode'
+        transcriptFileId:
+          $ref: '#/components/schemas/Id'
+      oneOf:
+      - properties:
+          mode:
+            type: string
+            const: FULL
+        not:
+          required:
+          - transcriptFileId
+      - properties:
+          mode:
+            type: string
+            const: STRUCTURE_ONLY
+        required:
+        - transcriptFileId
+      description: 관리자의 명시적인 재분석. FULL은 녹음부터 수행, STRUCTURE_ONLY는 해당 접수·녹음의 저장된 원문을 재사용한다.
+    AnalysisView:
+      type: object
+      additionalProperties: false
+      required:
+      - analysisRequestId
+      - receptionId
+      - receptionVersion
+      - recordingFileId
+      - mode
+      - status
+      - stage
+      - sttStatus
+      - transcriptStorageStatus
+      - analysisStatus
+      - transcriptFileId
+      - resultApplied
+      - requestedAt
+      - completedAt
+      - error
+      properties:
+        analysisRequestId:
+          $ref: '#/components/schemas/Id'
+        receptionId:
+          $ref: '#/components/schemas/Id'
+        receptionVersion:
+          type: integer
+          minimum: 1
+        recordingFileId:
+          $ref: '#/components/schemas/Id'
+        mode:
+          $ref: '#/components/schemas/AnalysisMode'
+        status:
+          $ref: '#/components/schemas/AnalysisStatus'
+        stage:
+          $ref: '#/components/schemas/AnalysisStage'
+        sttStatus:
+          $ref: '#/components/schemas/ProcessingStatus'
+        transcriptStorageStatus:
+          $ref: '#/components/schemas/ProcessingStatus'
+          description: STT 실행과 별도인 원문 S3 저장·메타데이터 연결 상태. 저장 실패 시 구조화를 시작하지 않는다.
+        analysisStatus:
+          $ref: '#/components/schemas/ProcessingStatus'
+        transcriptFileId:
+          $ref: '#/components/schemas/NullableId'
+        resultApplied:
+          type: boolean
+          description: 이 시도의 구조화 결과가 현재 접수에 반영되었는지 여부. STT 파일의 저장 성공과 구분한다.
+        requestedAt:
+          $ref: '#/components/schemas/DateTime'
+        completedAt:
+          $ref: '#/components/schemas/NullableDateTime'
+        error:
+          oneOf:
+          - $ref: '#/components/schemas/Error'
+          - type: 'null'
+      description: 조회 리소스이므로 FAILED/DISCARDED도 200. receptionVersion은 요청의 고정 스냅샷이며 현재 접수 version과 다를 수 있다. DISCARDED는
+        오래된 버전·확정·다른 유효 시도로 인해 결과가 반영되지 않은 종료 상태다. STT 동기 호출 중 AI 내부 다운로드·변환 진행률은 추정하지 않는다.
+        STRUCTURE_ONLY에서 S3 원문 읽기 실패는 TRANSCRIPT_READ_FAILED로 기록하고 AI를 호출하지 않는다.
+      oneOf:
+      - properties:
+          status:
+            type: string
+            enum:
+            - PENDING
+            - PROCESSING
+          resultApplied:
+            const: false
+          completedAt:
+            type: 'null'
+          error:
+            type: 'null'
+      - properties:
+          status:
+            type: string
+            const: SUCCEEDED
+          stage:
+            type: string
+            const: COMPLETED
+          resultApplied:
+            const: true
+          completedAt:
+            $ref: '#/components/schemas/DateTime'
+          transcriptFileId:
+            $ref: '#/components/schemas/Id'
+          error:
+            type: 'null'
+          sttStatus:
+            type: string
+            const: SUCCEEDED
+          transcriptStorageStatus:
+            type: string
+            const: SUCCEEDED
+          analysisStatus:
+            type: string
+            const: SUCCEEDED
+      - properties:
+          status:
+            type: string
+            enum:
+            - FAILED
+            - DISCARDED
+          resultApplied:
+            const: false
+          completedAt:
+            $ref: '#/components/schemas/DateTime'
+          error:
+            $ref: '#/components/schemas/Error'
+      allOf:
+      - if:
+          properties:
+            transcriptStorageStatus:
+              const: SUCCEEDED
+        then:
+          properties:
+            transcriptFileId:
+              $ref: '#/components/schemas/Id'
+            sttStatus:
+              const: SUCCEEDED
+      - if:
+          properties:
+            mode:
+              const: STRUCTURE_ONLY
+        then:
+          properties:
+            transcriptFileId:
+              $ref: '#/components/schemas/Id'
+            sttStatus:
+              const: SUCCEEDED
+            transcriptStorageStatus:
+              const: SUCCEEDED
+      - if:
+          properties:
+            status:
+              const: PENDING
+        then:
+          properties:
+            stage:
+              const: QUEUED
+      - if:
+          properties:
+            status:
+              const: DISCARDED
+        then:
+          properties:
+            stage:
+              const: RESULT_APPLICATION
+    PushDeviceRegistration:
+      type: object
+      additionalProperties: false
+      required:
+      - platform
+      - pushToken
+      properties:
+        platform:
+          type: string
+          enum:
+          - ANDROID
+          - IOS
+        pushToken:
+          type: string
+          minLength: 1
+          description: FCM 등록 토큰. 로그·응답에 노출하지 않는다. 갱신 시 같은 installationId로 다시 등록한다.
+    PushDevice:
+      type: object
+      additionalProperties: false
+      required:
+      - installationId
+      - platform
+      - registeredAt
+      properties:
+        installationId:
+          $ref: '#/components/schemas/Id'
+        platform:
+          type: string
+          enum:
+          - ANDROID
+          - IOS
+        registeredAt:
+          $ref: '#/components/schemas/DateTime'
+    ReceptionAnalysisPushData:
+      type: object
+      additionalProperties: false
+      required:
+      - eventId
+      - eventType
+      - receptionId
+      - analysisRequestId
+      properties:
+        eventId:
+          $ref: '#/components/schemas/Id'
+        eventType:
+          type: string
+          enum:
+          - RECEPTION_ANALYSIS_SUCCEEDED
+          - RECEPTION_ANALYSIS_FAILED
+        receptionId:
+          $ref: '#/components/schemas/Id'
+        analysisRequestId:
+          $ref: '#/components/schemas/Id'
+      description: FCM data payload. 모든 값은 문자열. 원문·구조화 JSON·개인정보·Presigned URL은 포함하지 않는다.

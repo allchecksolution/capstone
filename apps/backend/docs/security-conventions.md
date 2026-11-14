@@ -12,6 +12,7 @@ Manage authentication and authorization using Spring Security and JWT.
 - **MUST — JWT Validation:** Validate JWT signatures, expiration times, allowed algorithms, and required issuer and audience information.
 - **MUST — Token Lifecycle:** Separate the purposes of Access Tokens and Refresh Tokens, and apply appropriate expiration periods and Refresh Token reissuance and revocation policies.
 - **MUST — Credential Protection:** Store passwords using secure hashing algorithms, and do not expose JWT signing keys or authentication secrets in source code or repositories.
+- **MUST — Service Authentication:** Authenticate service-to-service calls with dedicated service credentials, authorize service principals independently of end-user sessions, and manage secrets outside source code.
 
 ---
 
@@ -34,3 +35,4 @@ Manage authentication and authorization using Spring Security and JWT.
 ## Sensitive Data Protection
 
 - **MUST — Sensitive Data Protection:** Collect, process, and disclose sensitive data only to the extent necessary. Keep sensitive files private and serve them through authorized access.
+- **MUST — Sensitive Transport Artifacts:** Exclude credentials, signed access URLs, device registration tokens, and private payloads from logs. Notifications should disclose only necessary information; access to protected content requires authorization.

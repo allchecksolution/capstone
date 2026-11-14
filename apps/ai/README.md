@@ -2,6 +2,20 @@
 
 Python 3.13.9 기반 FastAPI 서비스입니다. `GET /health`는 HTTP 200과 `{"status":"ok"}`를 반환합니다. 외부 AI·DB 연결을 검사하지 않는 서비스 상태 확인 API입니다.
 
+## 구현 전 내부 API 계약
+
+[AI OpenAPI](docs/openapi.yaml)는 동기 STT·구조화 요청을 정의하고, [Backend OpenAPI](../../docs/api/openapi.yaml)는 앱 업로드·진행 조회·푸시 계약을 정의합니다.
+실행 순서·상태·재분석 정책은 [BR-09](../backend/docs/business-specification.md#br-09)를 따릅니다. 실제 실행 API는 현재 /health입니다.
+
+[계약 검증 스크립트](../../scripts/validate-api-contracts.py)는 두 명세의 구조·참조·예시·공유 스키마와 정상/실패 회귀 사례를 검사합니다. S3·AI·FCM을 호출하거나 DB를 변경하지 않습니다.
+검증 도구는 앱 의존성과 분리된 환경에 설치하고 저장소 루트에서 실행합니다.
+
+~~~sh
+python3 -m venv /tmp/capstone-api-contract-venv
+/tmp/capstone-api-contract-venv/bin/python -m pip install PyYAML==6.0.3 openapi-spec-validator==0.7.2 jsonschema==4.25.1
+/tmp/capstone-api-contract-venv/bin/python scripts/validate-api-contracts.py
+~~~
+
 ## 구성과 버전 정책
 
 - `app/main.py`: FastAPI 앱 및 health 엔드포인트

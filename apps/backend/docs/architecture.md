@@ -2,7 +2,7 @@
 
 ## Goal
 
-The ALLCHECK Backend codebase adopts **a Modular Monolith with a domain-oriented package structure
+This guide defines **a Modular Monolith with a domain-oriented package structure
 and a 4-layer Layered Architecture that apply the core design principles of DDD (Domain-Driven Design)**.
 Business domains are organized into cohesive application modules, with clearly separated layer responsibilities within each module.
 
@@ -61,7 +61,7 @@ Code dependencies between layers follow these directions.
 ### Package Structure
 
 ```text
-com.allcheck
+com.example
 ├── BackendApplication.kt
 │
 ├── {domain}/                         # Spring Modulith Application Module
@@ -103,7 +103,7 @@ com.allcheck
 
 ### Package Rules
 
-- Implement new features in the owning bounded context and module defined in [Domain Design](domain-design.md).
+- Place new features in the context and module that owns their business data and behavior. Project-specific assignments are defined in [Business Specification](business-specification.md#project-domain-model); general boundary guidance follows [Domain Design Conventions](domain-design.md).
 - Before creating a new top-level domain package, check whether it belongs within an existing domain boundary.
 - Create a package only when code for that layer is actually needed.
 - Expose inter-module APIs through the module's root package, and use Spring Modulith Named Interfaces when additional packages need to be exposed.
