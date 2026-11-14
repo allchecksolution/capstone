@@ -121,7 +121,7 @@ extension BackendScreens on _WorkflowShellState {
   }
 
   Future<void> afterAuthentication()async{
-    if(!mounted||!signedIn||developmentSession||afterAuthRunning)return;
+    if(!mounted||!signedIn||developmentSession||sdkOnlySession||afterAuthRunning)return;
     afterAuthRunning=true;try{
     await loadInbox();
     try{final token=await appPush?.token();if(token!=null)await registerDevice(token);}catch(_){if(mounted)refresh(()=>pushStatus='알림 연결을 다시 시도해 주세요.');}

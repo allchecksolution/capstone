@@ -2,8 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart' as kakao;
 
-/// Kakao credentials are kept in memory and must be verified by the service
-/// backend before it issues a service session or decides driver approval.
+/// SDK authentication works without a service backend. Credentials stay in
+/// memory; service sessions and driver approval are verified by the backend.
 class KakaoIdentity {
   const KakaoIdentity({required this.userId, required this.accessToken,
     this.nickname, this.email});

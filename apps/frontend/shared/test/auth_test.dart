@@ -36,7 +36,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('Kakao identity cannot authorize a saved active account', (tester) async {
+  testWidgets('SDK-only login enters app with fresh identity and logs out', (tester) async {
     final auth = FakeAuth();
     final store = AppStore(AppRole.driver);
     store.data['account'] = <String, dynamic>{'status': '활성', 'profile': <String, dynamic>{'name': '이전 사용자'}};
@@ -47,9 +47,15 @@ void main() {
     expect(find.text('카카오 계정이 확인되었습니다.'), findsOneWidget);
     await tester.tap(find.text('계속'));
     await tester.pumpAndSettle();
-    expect(find.text('로그인 서비스를 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.'), findsOneWidget);
-    expect(find.byType(NavigationBar), findsNothing);
+    expect(find.byType(NavigationBar), findsOneWidget);
+    expect(store.account?['userId'], '123');
+    expect(store.account?['status'], '카카오 인증');
+    expect(store.profile['name'], isNot('이전 사용자'));
+    expect(store.data.toString(), isNot(contains(identity.accessToken)));
     expect(find.text('승인 상태 미리보기'), findsNothing);
+    await tester.tap(find.text('더보기'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('로그아웃'));
     await tester.tap(find.text('로그아웃'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('확인'));
