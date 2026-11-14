@@ -1,7 +1,9 @@
 import re
 from datetime import datetime
 from typing import Annotated, Any, Literal, NotRequired, TypedDict
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from zoneinfo import ZoneInfo
+
+from pydantic_core import PydanticCustomError
 
 from pydantic import (
     AfterValidator,
@@ -10,7 +12,7 @@ from pydantic import (
     Field,
     StringConstraints,
     WithJsonSchema,
-    field_validator,
+    model_validator,
 )
 
 RFC3339 = re.compile(
@@ -49,21 +51,24 @@ REQUIRED_DRAFT_FIELDS: tuple[RequiredDraftField, ...] = (
 class AnalyzeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    jobId: Id
+    analysisRequestId: Id
+    recordingFileId: Id
+    transcriptFileId: Id
     receptionId: Id
     receptionVersion: Annotated[int, Field(ge=1)]
     transcript: Annotated[str, StringConstraints(max_length=100_000)]
     referenceTime: DateTime
-    timeZone: Annotated[str, StringConstraints(min_length=1)]
+    timeZone: Literal["Asia/Seoul"]
 
-    @field_validator("timeZone")
-    @classmethod
-    def validate_time_zone(cls, value: str) -> str:
-        try:
-            ZoneInfo(value)
-        except (ZoneInfoNotFoundError, ValueError) as error:
-            raise ValueError("IANA 시간대 이름이 필요합니다.") from error
-        return value
+    @model_validator(mode="after")
+    def validate_reference_time_offset(self) -> "AnalyzeRequest":
+        reference_time = datetime.fromisoformat(self.referenceTime.upper())
+        local_time = reference_time.astimezone(ZoneInfo(self.timeZone))
+        if reference_time.utcoffset() != local_time.utcoffset() or not self.referenceTime.endswith("+09:00"):
+            raise PydanticCustomError("time_zone_offset_mismatch", "기준 시각 오프셋이 업무 시간대와 일치해야 합니다.")
+        if "T" not in self.referenceTime:
+            raise ValueError("기준 시각은 대문자 T를 사용해야 합니다.")
+        return self
 
 
 class ReceptionDraftFields(TypedDict, total=False):
@@ -80,7 +85,9 @@ class ReceptionDraftFields(TypedDict, total=False):
 class AnalyzeResponse(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    jobId: Id
+    analysisRequestId: Id
+    recordingFileId: Id
+    transcriptFileId: Id
     receptionId: Id
     receptionVersion: Annotated[int, Field(ge=1)]
     status: Literal["SUCCEEDED"]

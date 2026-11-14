@@ -5,7 +5,7 @@ spring:
   application:
     name: backend
   profiles:
-    default: local # 기본 프로파일 local , 배포 환경에서는 dockerfile을 통해 prod로 변경
+    default: local # 배포 환경에서는 SPRING_PROFILES_ACTIVE=prod로 지정
   modulith:
     detection-strategy: explicitly-annotated # @ApplicationModule이 선언된 패키지만 Spring Modulith 모듈로 인식
 
@@ -19,6 +19,12 @@ spring:
       ddl-auto: validate # 스키마 검증만 수행, 수정은 flyway 마이그레이션을 통해 수행
     open-in-view: false # Spring OSIV 비활성화
 
+springdoc:
+   api-docs:
+     enabled: false
+   swagger-ui:
+     enabled: false
+
 # Actuator
 management:
   endpoints:
@@ -30,3 +36,7 @@ management:
     health:
       probes:
         enabled: true
+
+jwt:
+  secret: ${JWT_SECRET:}
+  access-token-expiration: ${JWT_ACCESS_TOKEN_EXPIRATION}

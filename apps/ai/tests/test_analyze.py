@@ -11,7 +11,9 @@ from app.main import app
 
 PATH = "/internal/v1/analyze"
 REQUEST = {
-    "jobId": "job_example",
+    "analysisRequestId": "analysis_example",
+    "recordingFileId": "recording_example",
+    "transcriptFileId": "transcript_example",
     "receptionId": "rec_example",
     "receptionVersion": 1,
     "transcript": "싱크대가 막혔어요. 예시로 10에 내일 오후 2시부터 4시 사이에 와 주세요. 방문 전 연락 주세요.",
@@ -37,8 +39,9 @@ COMPLETE_EXTRACTION = {
 
 
 @pytest.fixture
-def client():
-    with TestClient(app) as test_client:
+def client(monkeypatch):
+    monkeypatch.setenv("AI_INTERNAL_API_KEY", "mock-internal-key")
+    with TestClient(app, headers={"X-Internal-Api-Key": "mock-internal-key"}) as test_client:
         yield test_client
 
 
@@ -115,7 +118,9 @@ def test_analyze_normal_consultation_and_relative_dates(client, mock_openai, cap
         response = client.post(PATH, json=REQUEST)
     assert response.status_code == 200
     assert response.json() == {
-        "jobId": REQUEST["jobId"],
+        "analysisRequestId": REQUEST["analysisRequestId"],
+        "recordingFileId": REQUEST["recordingFileId"],
+        "transcriptFileId": REQUEST["transcriptFileId"],
         "receptionId": REQUEST["receptionId"],
         "receptionVersion": REQUEST["receptionVersion"],
         "status": "SUCCEEDED",
@@ -147,7 +152,9 @@ def test_analyze_omits_unknown_fields(client, mock_openai, extraction, missing):
 @pytest.mark.parametrize(
     "changes",
     [
-        {"jobId": ""},
+        {"analysisRequestId": ""},
+        {"recordingFileId": ""},
+        {"transcriptFileId": ""},
         {"receptionId": "x" * 65},
         {"receptionVersion": 0},
         {"receptionVersion": "1"},
@@ -157,6 +164,7 @@ def test_analyze_omits_unknown_fields(client, mock_openai, extraction, missing):
         {"referenceTime": "2026-02-30T14:00:00+09:00"},
         {"referenceTime": "2026-11-06T14:00:00+09:99"},
         {"timeZone": "Invalid/Zone"},
+        {"timeZone": "Etc/UTC"},
         {"finalData": {}},
     ],
 )
@@ -194,7 +202,12 @@ def test_provider_failure_is_sanitized(client, mock_openai, caplog, mode):
     mock_openai(respond)
     with caplog.at_level(logging.DEBUG):
         response = client.post(PATH, json=REQUEST)
-    assert_error(response, 503, "TEMPORARILY_UNAVAILABLE")
+    expected = {
+        "timeout": (504, "AI_TIMEOUT"),
+        "failed": (502, "AI_PROVIDER_FAILED"),
+        "http_error": (503, "TEMPORARILY_UNAVAILABLE"),
+    }
+    assert_error(response, *expected[mode])
     assert REQUEST["transcript"] not in response.text
     assert REQUEST["transcript"] not in caplog.text
     assert "test-only" not in caplog.text
@@ -268,3 +281,35 @@ def test_provider_metadata_does_not_leak_in_serialization_warnings(
     assert not recwarn.list
     assert marker not in response.text
     assert marker not in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("key", "status", "code"),
+    [(None, 401, "UNAUTHENTICATED"), ("incorrect", 401, "UNAUTHENTICATED"),
+     ("restricted", 403, "FORBIDDEN")],
+)
+def test_internal_key_rejected(monkeypatch, mock_openai, key, status, code):
+    monkeypatch.setenv("AI_INTERNAL_API_KEY", "mock-internal-key")
+    monkeypatch.setenv("AI_INTERNAL_NO_ANALYZE_API_KEY", "restricted")
+    mock_openai(lambda _: pytest.fail("Unauthorized request called the model"))
+    headers = {} if key is None else {"X-Internal-Api-Key": key}
+    with TestClient(app) as unauthenticated_client:
+        assert_error(unauthenticated_client.post(PATH, json=REQUEST, headers=headers), status, code)
+
+
+def test_reference_time_offset_mismatch(client, mock_openai):
+    mock_openai(lambda _: pytest.fail("Invalid offset called the model"))
+    response = client.post(PATH, json={**REQUEST, "referenceTime": "2026-11-06T05:00:00Z"})
+    assert_error(response, 422, "TIME_ZONE_OFFSET_MISMATCH")
+
+
+def test_visit_times_are_normalized_to_seoul(client, mock_openai):
+    extraction = {**EMPTY_EXTRACTION, "desiredVisitFrom": "2026-11-07T05:00:00Z",
+                  "desiredVisitTo": "2026-11-07T07:00:00Z"}
+    mock_openai(lambda _: model_response(extraction))
+    response = client.post(PATH, json=REQUEST)
+    assert response.status_code == 200
+    assert response.json()["aiOriginal"] == {
+        "desiredVisitFrom": "2026-11-07T14:00:00+09:00",
+        "desiredVisitTo": "2026-11-07T16:00:00+09:00",
+    }

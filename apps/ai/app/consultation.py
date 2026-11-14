@@ -2,7 +2,9 @@ import logging
 from datetime import datetime
 from json import JSONDecodeError
 
-from openai import APIResponseValidationError, OpenAI, OpenAIError
+from zoneinfo import ZoneInfo
+
+from openai import APITimeoutError, APIResponseValidationError, APIStatusError, OpenAI, OpenAIError
 from openai.types.responses import Response, ResponseOutputMessage, ResponseOutputText
 from pydantic import BaseModel, ConfigDict, ValidationError
 
@@ -51,6 +53,14 @@ class ProviderUnavailable(Exception):
     pass
 
 
+class ProviderFailed(Exception):
+    pass
+
+
+class ProviderTimeout(Exception):
+    pass
+
+
 class InvalidModelOutput(Exception):
     pass
 
@@ -75,14 +85,20 @@ def analyze_consultation(request: AnalyzeRequest) -> AnalyzeResponse:
             )
     except (APIResponseValidationError, JSONDecodeError, UnicodeError):
         raise InvalidModelOutput from None
+    except APITimeoutError:
+        raise ProviderTimeout from None
+    except APIStatusError as error:
+        if error.status_code in (429, 503):
+            raise ProviderUnavailable from None
+        raise ProviderFailed from None
     except OpenAIError:
-        raise ProviderUnavailable from None
+        raise ProviderFailed from None
 
     if not isinstance(result, Response):
         raise InvalidModelOutput
     status = getattr(result, "status", None)
     if status == "failed":
-        raise ProviderUnavailable
+        raise ProviderFailed
     outputs = getattr(result, "output", None)
     if status != "completed" or not isinstance(outputs, list):
         raise InvalidModelOutput
@@ -111,8 +127,14 @@ def analyze_consultation(request: AnalyzeRequest) -> AnalyzeResponse:
         raise InvalidModelOutput
 
     draft = extracted.model_dump(exclude_none=True)
+    seoul = ZoneInfo("Asia/Seoul")
+    for field in ("desiredVisitFrom", "desiredVisitTo"):
+        if field in draft:
+            draft[field] = datetime.fromisoformat(draft[field].upper()).astimezone(seoul).isoformat()
     return AnalyzeResponse(
-        jobId=request.jobId,
+        analysisRequestId=request.analysisRequestId,
+        recordingFileId=request.recordingFileId,
+        transcriptFileId=request.transcriptFileId,
         receptionId=request.receptionId,
         receptionVersion=request.receptionVersion,
         status="SUCCEEDED",
