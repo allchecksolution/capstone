@@ -14,3 +14,4 @@ allcheck-*-flutter-debug.apk
 
 **/android/app/google-services.json
 **/ios/Runner/GoogleService-Info.plist
+**/GeneratedPluginRegistrant.java

@@ -39,4 +39,4 @@ Android APK는 저장소 루트에서 `./apps/frontend/scripts/build-apks.ps1 -F
 
 ## 검증 상태
 
-Node 구조 점검, XML 파싱 및 Dart formatter 문법 검사는 통과했습니다. Dart 실행 차단은 해제됐으나 실행 환경에서 pub.dev에 연결하지 못해 의존성을 설치하지 못했습니다. Dart 분석, 테스트, 새 APK/iOS 빌드 및 실제 서버·푸시 동작은 검증하지 못했습니다. [검증 기록](VERIFICATION.md)을 참고하세요.
+Node 구조 점검, XML 파싱, Dart 문법 검사, 공유 테스트 26개와 개발 진입 테스트 2개가 통과했습니다. 두 실행 앱의 분석은 이슈가 없고 공유 패키지에는 정보성 진단이 남아 있습니다. Android 엔진 다운로드와 ADB 설정 폴더 접근이 현재 실행 환경에서 제한돼 에뮬레이터 실행은 미완료입니다. 실제 서버·푸시·iOS 동작도 별도 검증이 필요합니다. [검증 기록](VERIFICATION.md)을 참고하세요.

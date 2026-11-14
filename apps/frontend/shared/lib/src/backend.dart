@@ -62,7 +62,7 @@ class HttpFrontendBackend implements FrontendBackend {
             _refreshing??=_request('auth/refresh',{'refreshToken':_refreshToken},allowRefresh:false);
             await _refreshing;
           }finally{_refreshing=null;}
-          return _request(operation,data,allowRefresh:false);
+          return await _request(operation,data,allowRefresh:false);
         }
         if (response.statusCode == 401) clearSession();
         throw ServiceFailure(response.statusCode, switch(response.statusCode) {

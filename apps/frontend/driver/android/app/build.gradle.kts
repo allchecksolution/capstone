@@ -1,7 +1,9 @@
-plugins { id("com.android.application"); id("dev.flutter.flutter-gradle-plugin") }
+@file:Suppress("DEPRECATION")
+import java.util.Base64
+plugins { id("com.android.application"); id("org.jetbrains.kotlin.android"); id("dev.flutter.flutter-gradle-plugin") }
 val dartDefines = (project.findProperty("dart-defines") as? String).orEmpty()
  .split(",").filter { it.isNotBlank() }
- .map { String(java.util.Base64.getDecoder().decode(it), Charsets.UTF_8) }
+ .map { String(Base64.getDecoder().decode(it), Charsets.UTF_8) }
  .associate { it.substringBefore("=") to it.substringAfter("=", "") }
 val kakaoNativeAppKey = dartDefines["KAKAO_NATIVE_APP_KEY"].orEmpty()
 require(kakaoNativeAppKey.isEmpty() || kakaoNativeAppKey.matches(Regex("[a-fA-F0-9]{32}"))) {
