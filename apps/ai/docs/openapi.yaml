@@ -35,7 +35,8 @@ paths:
       description: Backend 작업자가 녹음 GET URL과 고정된 식별자·버전을 보낸다. AI는 허용된 S3 원본을 다운로드하고 크기·실제 형식·SHA256을 검증해 STT를 끝낸
         뒤 같은 HTTP 응답으로 원문을 반환한다. 완료 전에 202를 반환하지 않는다. 파일 바이트·multipart·AI 작업 조회·콜백을 사용하지 않는다. 식별자는 불투명하게 그대로 반환하며
         Backend DB를 조회하거나 버전·중복을 판단하지 않는다. SDK·HTTP·제공자 자동 재시도를 비활성화한다. URL 만료/접근 오류는 502 RECORDING_ACCESS_FAILED,
-        체크섬 불일치는 422 RECORDING_CHECKSUM_MISMATCH. 제한 수치·무음/빈 원문 정책은 TODO.
+        체크섬 불일치는 422 RECORDING_CHECKSUM_MISMATCH. 제한 수치는 TODO.
+        빈 문자열·공백뿐인 원문을 받은 Backend는 STT_NO_CONTENT 실패로 처리하고 원문 DB 저장·구조화 호출을 생략한다. AI 입출력 필드는 변경하지 않는다.
       requestBody:
         required: true
         content:
@@ -57,7 +58,7 @@ paths:
                   value: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
       responses:
         '200':
-          description: 전사 완료. Backend의 S3 저장 완료를 의미하지 않는다.
+          description: 전사 완료. Backend의 원문 DB 저장 완료를 의미하지 않는다.
           content:
             application/json:
               schema:
@@ -109,7 +110,7 @@ paths:
     post:
       operationId: analyzeAiTranscript
       summary: 저장된 STT 원문 동기 구조화 분석
-      description: Backend가 정식 원문을 S3에 저장한 뒤 동일 텍스트와 transcriptFileId를 보낸다. AI는 구조화 JSON을 생성해 같은 HTTP 응답으로 반환한다.
+      description: Backend가 정식 원문을 DB에 저장한 뒤 동일 텍스트와 transcriptFileId를 보낸다. transcriptFileId는 보관된 원문의 불투명 식별자이며 S3 파일을 요구하지 않는다. AI는 구조화 JSON을 생성해 같은 HTTP 응답으로 반환한다.
         원문을 재다운로드하거나 S3·Backend DB에 쓰지 않는다. 버전·현재 유효 시도·원문 연결·결과 반영은 Backend 책임이다. 미확인 값은 null 대신 생략하고 모든 값이 미확인이면
         빈 객체를 반환한다. 원문·aiOriginal·finalData를 구분하며 관리자 최종값은 변경하지 않는다. referenceTime은 최초 녹음 전달 시각이고 timeZone은 Asia/Seoul이다.
         실제 오프셋 불일치는 422 TIME_ZONE_OFFSET_MISMATCH. 상대 날짜와 방문 구간 순서·missingFields 일치 검증을 수행한다. 자동 재시도는 없다. 추출한 desiredVisitFrom/desiredVisitTo는
@@ -343,7 +344,7 @@ components:
         transcript:
           type: string
           maxLength: 100000
-          description: STT 원문. Backend는 trim·요약·치환·줄바꿈 정규화 없이 반환된 문자열을 그대로 UTF-8 txt로 S3에 저장한다.
+          description: STT 원문. Backend는 비어 있거나 공백뿐인 결과를 실패로 처리한다. 내용이 있으면 trim·요약·치환·줄바꿈 정규화 없이 반환된 문자열을 그대로 DB에 저장한다.
     ReferenceTime:
       type: string
       format: date-time

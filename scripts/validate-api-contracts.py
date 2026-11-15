@@ -230,8 +230,91 @@ record("recording completion points to attempt",
        "Location" in backend["paths"][recording + "/completion"]["post"]["responses"]["202"]["headers"])
 record("Backend explicit reanalysis 202",
        "202" in backend["paths"]["/receptions/{receptionId}/analyses"]["post"]["responses"])
+record("reanalysis is excluded from MVP",
+       backend["paths"]["/receptions/{receptionId}/analyses"]["post"]["x-mvp-scope"] == "EXCLUDED")
 record("Backend transcript GET only",
        set(backend["paths"]["/receptions/{receptionId}/transcripts/{transcriptFileId}/access"]) == {"get"})
+record("S3 transcript access is excluded from MVP",
+       backend["paths"]["/receptions/{receptionId}/transcripts/{transcriptFileId}/access"]["get"]["x-mvp-scope"] == "EXCLUDED")
+for route, path_item in backend["paths"].items():
+    if not route.startswith("/receptions"):
+        continue
+    for method, operation in path_item.items():
+        if method in METHODS and operation.get("x-mvp-scope") != "EXCLUDED":
+            record(method + " " + route + " reception owner scope",
+                   operation.get("x-access-scope") == "RECEPTION_OWNER")
+
+intake = dict(workType="BLOCKAGE", symptoms="싱크대 배수 불가", address="서울시 강남구 예시로 10",
+              desiredVisitFrom="2026-11-13T14:00:00+09:00",
+              desiredVisitTo="2026-11-13T16:00:00+09:00", contactPhone="010-1234-5678")
+case(backend, "ReceptionFields", intake)
+case(backend, "ReceptionFields", dict(intake, notes="방문 30분 전 연락"))
+for field in intake:
+    missing = dict(intake)
+    del missing[field]
+    case(backend, "ReceptionFields", missing, False, "confirmed intake requires " + field)
+case(backend, "ReceptionFields", dict(intake, desiredVisitFrom="내일 오전"), False)
+case(backend, "ReceptionFields", dict(intake, desiredVisitText="가능한 빨리"), False)
+confirmation = dict(expectedVersion=4, finalData=intake)
+case(backend, "ConfirmReception", confirmation)
+case(backend, "ConfirmReception", dict(confirmation, finalData=dict(intake, notes="방문 전 연락")))
+case(backend, "ConfirmReception", {"expectedVersion": 4}, False)
+case(backend, "ConfirmReception", dict(confirmation, expectedVersion=0), False)
+for field in intake:
+    missing = dict(intake)
+    del missing[field]
+    case(backend, "ConfirmReception", dict(confirmation, finalData=missing), False,
+         "review completion cannot omit " + field)
+    case(backend, "ConfirmReception", dict(confirmation, finalData=dict(intake, **{field: None})), False,
+         "review completion cannot clear " + field)
+for field in ["symptoms", "address", "contactPhone"]:
+    case(backend, "ConfirmReception", dict(confirmation, finalData=dict(intake, **{field: ""})), False)
+    case(backend, "ConfirmReception", dict(confirmation, finalData=dict(intake, **{field: "   "})), False)
+case(backend, "ConfirmReception", dict(confirmation, aiOriginal=intake), False)
+record("separate administrator draft save is excluded from MVP",
+       backend["paths"]["/receptions/{receptionId}"]["patch"]["x-mvp-scope"] == "EXCLUDED")
+case(backend, "ReceptionEditableFields", {})
+case(backend, "ReceptionEditableFields", {"contactPhone": "010-1234-5678"})
+case(backend, "UpdateReception", {"expectedVersion": 4, "changes": {"notes": "건물 뒤 주차"}})
+case(backend, "UpdateReception", {"expectedVersion": 4, "changes": {"contactPhone": "010-1234-5678"}})
+case(backend, "UpdateReception", {"expectedVersion": 4, "changes": {}}, False)
+case(backend, "UpdateReception", {"expectedVersion": 4, "changes": {"desiredVisitText": "내일 오전"}}, False)
+case(backend, "ReceptionDraftFields", {"contactPhone": "010-1234-5678"}, False,
+     "administrator contact is separate from AI original")
+case(backend, "CreateReception", {"ownerAdminId": "another-admin"}, False)
+
+reopen = backend["paths"]["/receptions/{receptionId}/reopen"]["post"]
+record("confirmation revocation is administrator-only", reopen["x-roles"] == ["ADMIN"])
+case(backend, "ReopenReception", {"expectedVersion": 5})
+case(backend, "ReopenReception", {}, False)
+case(backend, "ReopenReception", {"expectedVersion": 0}, False)
+reopened = reopen["responses"]["200"]["content"]["application/json"]["example"]
+case(backend, "ReceptionReopened", reopened)
+case(backend, "ReceptionReopened", dict(reopened, confirmedAt="2026-11-13T14:00:00+09:00"), False)
+case(backend, "ReceptionReopened", dict(reopened, reviewStatus="CONFIRMED"), False)
+
+detail_route = backend["paths"]["/receptions/{receptionId}"]["get"]
+detail = deepcopy(detail_route["responses"]["200"]["content"]["application/json"]["examples"]["analyzed"]["value"])
+case(backend, "ReceptionDetail", detail)
+case(backend, "ReceptionDetail", dict(detail, recordingFileId=None), False)
+case(backend, "ReceptionDetail", dict(detail, transcript=None), False)
+case(backend, "ReceptionDetail", dict(detail, callerPhoneMasked=None))
+case(backend, "ReceptionDetail", dict(detail, reviewStatus="CONFIRMED", confirmedAt="2026-11-13T14:00:00+09:00"), False,
+     "confirmed detail requires customer contact")
+case(backend, "ReceptionDetail", dict(detail, reviewStatus="CONFIRMED", confirmedAt="2026-11-13T14:00:00+09:00",
+                                      finalData=intake))
+
+access_operation = backend["paths"][recording + "/access"]["get"]
+access = deepcopy(access_operation["responses"]["200"]["content"]["application/json"]["example"])
+case(backend, "RecordingAccess", access)
+for field in ["url", "expiresAt", "method", "contentType"]:
+    missing = dict(access)
+    del missing[field]
+    case(backend, "RecordingAccess", missing, False, "playback access requires " + field)
+case(backend, "RecordingAccess", dict(access, objectKey="client-selected-key"), False)
+case(backend, "RecordingAccess", dict(access, kind="WORK_PHOTO"), False)
+record("recording playback signed response not HTTP-cached",
+       access_operation["responses"]["200"]["headers"]["Cache-Control"]["schema"]["const"] == "no-store")
 for base in [recording_base, photo_base]:
     operation = backend["paths"][base + "/upload-requests"]["post"]
     record(base + " JSON metadata only", set(operation["requestBody"]["content"]) == {"application/json"})
@@ -268,6 +351,11 @@ success = deepcopy(views["succeeded"]["value"])
 failed = deepcopy(views["structureFailed"]["value"])
 for view in views.values():
     case(backend, "AnalysisView", view["value"])
+no_transcript = deepcopy(views["noTranscript"]["value"])
+case(backend, "AnalysisView", dict(no_transcript, stage="STRUCTURE"), False)
+case(backend, "AnalysisView", dict(no_transcript, sttStatus="SUCCEEDED"), False)
+case(backend, "AnalysisView", dict(no_transcript, analysisStatus="PROCESSING"), False)
+case(backend, "AnalysisView", dict(no_transcript, transcriptFileId="file_stt_01"), False)
 case(backend, "AnalysisView", dict(pending, completedAt="2026-11-13T14:02:00+09:00"), False)
 case(backend, "AnalysisView", dict(success, transcriptFileId=None), False)
 case(backend, "AnalysisView", dict(success, resultApplied=False), False)
@@ -289,6 +377,16 @@ case(backend, "AnalysisView", dict(
     transcriptFileId="file_stt_01"))
 case(backend, "AnalysisView", dict(pending, stage="COMPLETED"), False)
 case(backend, "AnalysisView", dict(views["discarded"]["value"], stage="QUEUED"), False)
+
+offer = backend["paths"]["/dispatch-offers/{offerId}"]["get"]["responses"]["200"]["content"]["application/json"]["example"]
+case(backend, "OfferDetail", dict(offer, notes="방문 30분 전 연락"))
+case(backend, "OfferDetail", dict(offer, contactPhone="010-1234-5678"), False,
+     "candidate offer does not expose customer phone")
+record("candidate offer summary omits customer phone",
+       "contactPhone" not in backend["components"]["schemas"]["OfferSummary"]["properties"])
+driver_work = backend["paths"]["/works/{workId}"]["get"]["responses"]["200"]["content"]["application/json"]["example"]
+case(backend, "DriverWork", driver_work)
+case(backend, "DriverWork", dict(driver_work, contactPhone=None))
 
 report = {"workDescription": "배관 세척", "diagnosis": "이물질", "totalCost": 100000,
           "beforePhotoIds": ["before_01"], "afterPhotoIds": ["after_01"]}
@@ -321,8 +419,8 @@ case(backend, "ReceptionAnalysisPushData", dict(push, transcript="sensitive"), F
 case(backend, "ReceptionAnalysisPushData", dict(push, downloadUrl="https://example.invalid/signed"), False)
 case(backend, "ReceptionAnalysisPushData", dict(push, receptionId=1), False)
 record("FCM data all strings", all(isinstance(value, str) for value in push.values()))
-record("recording access preserves scoped driver authorization",
-       backend["paths"][recording + "/access"]["get"]["x-roles"] == ["ADMIN", "DRIVER"])
+record("recording originals remain administrator-only",
+       backend["paths"][recording + "/access"]["get"]["x-roles"] == ["ADMIN"])
 record("transcript remains administrator-only",
        backend["paths"]["/receptions/{receptionId}/transcripts/{transcriptFileId}/access"]["get"]["x-roles"] == ["ADMIN"])
 
