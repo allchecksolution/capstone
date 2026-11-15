@@ -95,6 +95,26 @@ class Reception(
         version = nextVersion
     }
 
+    /** 소유권 확인 후 서버 시각으로 검토 확정을 해제한다. 원본·최신값은 보존하고 AI를 다시 실행하지 않는다. */
+    fun reopen(expectedVersion: Int, now: Instant) {
+        if (expectedVersion != version) {
+            throw BusinessException(GlobalErrorCode.VERSION_CONFLICT)
+        }
+        if (requestId != null) {
+            throw BusinessException(ReceptionErrorCode.RECEPTION_ALREADY_REGISTERED)
+        }
+        if (reviewStatus != ReceptionReviewStatus.CONFIRMED) {
+            throw BusinessException(ReceptionErrorCode.RECEPTION_NOT_CONFIRMED)
+        }
+
+        val nextVersion = Math.incrementExact(version)
+
+        reviewStatus = ReceptionReviewStatus.DRAFT
+        confirmedAt = null
+        updatedAt = now
+        version = nextVersion
+    }
+
     private fun validateReviewReadiness(analysisStatus: ReceptionAnalysisStatus?) {
         if (analysisStatus == ReceptionAnalysisStatus.PENDING ||
             analysisStatus == ReceptionAnalysisStatus.PROCESSING ||

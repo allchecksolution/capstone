@@ -2788,7 +2788,7 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}
-              example: {code: RECEPTION_ALREADY_REGISTERED, message: 의뢰로 등록된 접수는 확정을 취소할 수 없습니다., traceId: trace_example_01}
+              example: {code: RECEPTION_ALREADY_REGISTERED, message: 의뢰로 등록된 접수는 변경할 수 없습니다., traceId: trace_example_01}
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
   /receptions/{receptionId}/recordings/upload-requests:
