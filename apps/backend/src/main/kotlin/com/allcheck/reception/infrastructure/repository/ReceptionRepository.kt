@@ -1,4 +1,12 @@
 package com.allcheck.reception.infrastructure.repository
 
-/** 접수 저장소 골격. Entity 매핑과 식별자 정의 후 Spring Data JPA를 연결한다. */
-interface ReceptionRepository
+import com.allcheck.reception.domain.entity.Reception
+import org.springframework.data.domain.Page
+import org.springframework.data.domain.Pageable
+import org.springframework.data.jpa.repository.JpaRepository
+
+interface ReceptionRepository : JpaRepository<Reception, String> {
+    fun findByReceptionIdAndOwnerAdminId(receptionId: String, ownerAdminId: String): Reception?
+
+    fun findAllByOwnerAdminId(ownerAdminId: String, pageable: Pageable): Page<Reception>
+}

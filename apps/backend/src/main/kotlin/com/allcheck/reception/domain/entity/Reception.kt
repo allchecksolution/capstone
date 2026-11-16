@@ -8,51 +8,90 @@ import com.allcheck.reception.domain.vo.ReceptionConfirmationData
 import com.allcheck.reception.domain.vo.ReceptionData
 import com.allcheck.reception.domain.vo.ReceptionReviewStatus
 import com.allcheck.reception.exception.ReceptionErrorCode
+import jakarta.persistence.Column
+import jakarta.persistence.Entity
+import jakarta.persistence.EnumType
+import jakarta.persistence.Enumerated
+import jakarta.persistence.Id
+import jakarta.persistence.Index
+import jakarta.persistence.Table
+import jakarta.persistence.Version
+import org.hibernate.annotations.JdbcTypeCode
+import org.hibernate.type.SqlTypes
 import java.time.Instant
 import java.time.OffsetDateTime
 
-/** 접수의 소유자·검토 상태·현재 자료 연결·최신 편집값을 소유한다. JPA 매핑은 후속 단계에서 추가한다. */
+/** 접수의 소유자·검토 상태·현재 자료 연결·최신 편집값을 소유한다. */
+@Entity
+@Table(
+    name = "receptions",
+    indexes = [Index(name = "ix_receptions_owner_received", columnList = "owner_admin_id, received_at")],
+)
 class Reception(
+    @field:Id
+    @field:Column(name = "reception_id", nullable = false, length = 64, updatable = false)
     val receptionId: String,
+    @field:Column(name = "owner_admin_id", nullable = false, length = 64, updatable = false)
     val ownerAdminId: String,
+    @field:Column(name = "received_at", nullable = false, updatable = false)
     val receivedAt: Instant,
     /** 통화 메타데이터의 상대 번호. 관리자가 확인하는 finalData.contactPhone과 구분한다. */
+    @field:Column(name = "caller_phone", nullable = true, length = 20, updatable = false)
     val callerPhone: String? = null,
+    @field:Column(name = "call_started_at", nullable = true, updatable = false)
     val callStartedAt: OffsetDateTime? = null,
 ) {
+    @field:Enumerated(EnumType.STRING)
+    @field:Column(name = "review_status", nullable = false, length = 20)
     var reviewStatus: ReceptionReviewStatus = ReceptionReviewStatus.DRAFT
-        private set
+        protected set
 
+    @field:Column(name = "version", nullable = false)
     var version: Int = 1
-        private set
+        protected set
+
+    /** 업무 버전과 분리한 JPA 동시 수정 감지 값. 외부 계약에는 노출하지 않는다. */
+    @field:Version
+    @field:Column(name = "persistence_version", nullable = false)
+    private var persistenceVersion: Long? = null
 
     /** 최초 적용된 AI 추출 원본. 관리자의 최신 편집값과 분리한다. */
+    @field:JdbcTypeCode(SqlTypes.JSON)
+    @field:Column(name = "ai_original", nullable = true, columnDefinition = "jsonb")
     var aiOriginal: ReceptionAiOriginal? = null
-        private set
+        protected set
 
     /** 최초 AI 자동 채움 또는 마지막 검토 완료로 저장된 현재 값. 검토 전에는 불완전할 수 있다. */
+    @field:JdbcTypeCode(SqlTypes.JSON)
+    @field:Column(name = "final_data", nullable = false, columnDefinition = "jsonb")
     var finalData: ReceptionData = ReceptionData()
-        private set
+        protected set
 
     /** 미완료 업로드 예약도 식별한다. ID 존재만으로 원본 재생 가능 여부를 판단하지 않는다. */
+    @field:Column(name = "recording_file_id", nullable = true, length = 64)
     var recordingFileId: String? = null
-        private set
+        protected set
 
     /** DB STT 원문의 식별자이며 S3 파일을 의미하지 않는다. */
+    @field:Column(name = "transcript_file_id", nullable = true, length = 64)
     var transcriptFileId: String? = null
-        private set
+        protected set
 
+    @field:Column(name = "latest_analysis_request_id", nullable = true, length = 64)
     var latestAnalysisRequestId: String? = null
-        private set
+        protected set
 
+    @field:Column(name = "request_id", nullable = true, length = 64, unique = true)
     var requestId: String? = null
-        private set
+        protected set
 
+    @field:Column(name = "confirmed_at", nullable = true)
     var confirmedAt: Instant? = null
-        private set
+        protected set
 
+    @field:Column(name = "updated_at", nullable = false)
     var updatedAt: Instant = receivedAt
-        private set
+        protected set
 
     /**
      * 애플리케이션은 소유권 확인 후 현재 분석 시도의 상태와 서버 시각을 전달해야 한다.

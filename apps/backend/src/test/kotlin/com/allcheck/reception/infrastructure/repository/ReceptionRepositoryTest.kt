@@ -1,0 +1,353 @@
+package com.allcheck.reception.infrastructure.repository
+
+import com.allcheck.global.config.HibernateConfig
+import com.allcheck.reception.domain.entity.Reception
+import com.allcheck.reception.domain.vo.ReceptionAiOriginal
+import com.allcheck.reception.domain.vo.ReceptionAnalysisStatus
+import com.allcheck.reception.domain.vo.ReceptionConfirmationData
+import com.allcheck.reception.domain.vo.ReceptionData
+import com.allcheck.reception.domain.vo.ReceptionReviewStatus
+import com.allcheck.reception.domain.vo.WorkType
+import jakarta.persistence.EntityManager
+import org.assertj.core.api.Assertions.assertThat
+import org.flywaydb.core.Flyway
+import org.junit.jupiter.api.AfterAll
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.assertThrows
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.autoconfigure.ImportAutoConfiguration
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
+import org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration
+import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase
+import org.springframework.context.annotation.Import
+import org.springframework.dao.DataIntegrityViolationException
+import org.springframework.dao.OptimisticLockingFailureException
+import org.springframework.data.domain.PageRequest
+import org.springframework.data.domain.Sort
+import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.test.annotation.DirtiesContext
+import org.springframework.test.context.ActiveProfiles
+import org.springframework.test.context.DynamicPropertyRegistry
+import org.springframework.test.context.DynamicPropertySource
+import org.springframework.test.util.ReflectionTestUtils
+import org.springframework.transaction.PlatformTransactionManager
+import org.springframework.transaction.annotation.Propagation
+import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
+import java.sql.SQLException
+import java.time.Instant
+import java.time.OffsetDateTime
+import java.time.ZoneOffset
+import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import javax.sql.DataSource
+
+@DataJpaTest(properties = ["spring.jpa.hibernate.ddl-auto=validate", "spring.jpa.show-sql=false"])
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+@ImportAutoConfiguration(FlywayAutoConfiguration::class)
+@Import(HibernateConfig::class)
+@ActiveProfiles("test")
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
+class ReceptionRepositoryTest @Autowired constructor(
+    private val repository: ReceptionRepository,
+    private val entityManager: EntityManager,
+    private val dataSource: DataSource,
+    private val transactionManager: PlatformTransactionManager,
+) {
+    private val jdbc by lazy { JdbcTemplate(dataSource) }
+
+    @Test
+    fun `원본과 편집값이 없는 초안을 저장한 뒤 같은 의미로 조회한다`() {
+        // given
+        val startedAt = OffsetDateTime.parse("2026-11-15T13:30:00+09:00")
+        val reception = Reception(id(), id(), NOW.minusSeconds(3600), "02-1234-5678", startedAt)
+
+        // when
+        repository.saveAndFlush(reception)
+        entityManager.clear()
+        val loaded = repository.findById(reception.receptionId).orElseThrow()
+
+        // then
+        assertThat(loaded.ownerAdminId).isEqualTo(reception.ownerAdminId)
+        assertThat(loaded.receivedAt).isEqualTo(reception.receivedAt)
+        assertThat(loaded.callerPhone).isEqualTo(reception.callerPhone)
+        assertThat(loaded.callStartedAt?.toInstant()).isEqualTo(startedAt.toInstant())
+        assertThat(loaded.reviewStatus).isEqualTo(ReceptionReviewStatus.DRAFT)
+        assertThat(loaded.version).isEqualTo(1)
+        assertThat(loaded.finalData).isEqualTo(ReceptionData())
+        assertThat(loaded.aiOriginal).isNull()
+        assertThat(loaded.confirmedAt).isNull()
+        assertThat(
+            jdbc.queryForObject(
+                "SELECT final_data = '{}'::jsonb FROM $SCHEMA.receptions WHERE reception_id = ?",
+                Boolean::class.java,
+                reception.receptionId,
+            ),
+        ).isTrue()
+    }
+
+    @Test
+    fun `빈 AI 추출 객체는 원본이 없는 null과 구분해 보관한다`() {
+        // given
+        val reception = newReception()
+        ReflectionTestUtils.setField(reception, "aiOriginal", ReceptionAiOriginal())
+
+        // when
+        repository.saveAndFlush(reception)
+        entityManager.clear()
+        val loaded = repository.findById(reception.receptionId).orElseThrow()
+
+        // then
+        assertThat(loaded.aiOriginal).isNotNull().isEqualTo(ReceptionAiOriginal())
+        assertThat(
+            jdbc.queryForObject(
+                "SELECT ai_original = '{}'::jsonb FROM $SCHEMA.receptions WHERE reception_id = ?",
+                Boolean::class.java,
+                reception.receptionId,
+            ),
+        ).isTrue()
+    }
+
+    @Test
+    fun `원본과 최신값의 오프셋을 보존하며 확정과 해제를 저장한다`() {
+        // given
+        val reception = newReception()
+        val original = ReceptionAiOriginal(
+            workType = WorkType.EXTERIOR_LEAK,
+            symptoms = "AI 추출 증상",
+            desiredVisitFrom = OffsetDateTime.parse("2026-11-15T14:00:00+09:00"),
+            desiredVisitTo = OffsetDateTime.parse("2026-11-15T16:00:00+09:00"),
+            notes = "AI 원본 메모",
+        )
+        ReflectionTestUtils.setField(reception, "aiOriginal", original)
+        ReflectionTestUtils.setField(reception, "version", 4)
+        ReflectionTestUtils.setField(reception, "recordingFileId", "recording-1")
+        ReflectionTestUtils.setField(reception, "transcriptFileId", "transcript-1")
+        ReflectionTestUtils.setField(reception, "latestAnalysisRequestId", "analysis-1")
+        reception.confirm(reception.version, reviewedData(), ReceptionAnalysisStatus.SUCCEEDED, NOW)
+
+        // when
+        repository.saveAndFlush(reception)
+        entityManager.clear()
+        val confirmed = repository.findById(reception.receptionId).orElseThrow()
+
+        // then
+        assertThat(confirmed.reviewStatus).isEqualTo(ReceptionReviewStatus.CONFIRMED)
+        assertThat(confirmed.version).isEqualTo(5)
+        assertThat(confirmed.confirmedAt).isEqualTo(NOW)
+        assertThat(confirmed.finalData.desiredVisitFrom).isEqualTo(reviewedData().desiredVisitFrom)
+        assertThat(confirmed.finalData.desiredVisitTo).isEqualTo(reviewedData().desiredVisitTo)
+        assertThat(confirmed.finalData.contactPhone).isEqualTo(reviewedData().contactPhone)
+        assertThat(confirmed.finalData.notes).isEqualTo(reviewedData().notes)
+        assertThat(confirmed.aiOriginal).isEqualTo(original)
+
+        // when
+        confirmed.reopen(confirmed.version, NOW.plusSeconds(60))
+        repository.flush()
+        entityManager.clear()
+        val reopened = repository.findById(reception.receptionId).orElseThrow()
+
+        // then
+        assertThat(reopened.reviewStatus).isEqualTo(ReceptionReviewStatus.DRAFT)
+        assertThat(reopened.version).isEqualTo(6)
+        assertThat(reopened.confirmedAt).isNull()
+        assertThat(reopened.updatedAt).isEqualTo(NOW.plusSeconds(60))
+        assertThat(reopened.finalData).isEqualTo(confirmed.finalData)
+        assertThat(reopened.aiOriginal).isEqualTo(original)
+        assertThat(reopened.recordingFileId).isEqualTo("recording-1")
+        assertThat(reopened.transcriptFileId).isEqualTo("transcript-1")
+        assertThat(reopened.latestAnalysisRequestId).isEqualTo("analysis-1")
+    }
+
+    @Test
+    fun `소유자 조회는 다른 관리자 접수를 제외하고 페이지 합계도 해당 소유자만 센다`() {
+        // given
+        val owner = id()
+        val first = Reception(id(), owner, NOW.minusSeconds(60))
+        val second = Reception(id(), owner, NOW)
+        val other = newReception()
+        repository.saveAllAndFlush(listOf(first, second, other))
+        entityManager.clear()
+
+        // when
+        val page = repository.findAllByOwnerAdminId(
+            owner,
+            PageRequest.of(0, 1, Sort.by(Sort.Direction.DESC, "receivedAt")),
+        )
+
+        // then
+        assertThat(page.totalElements).isEqualTo(2)
+        assertThat(page.content.map { it.receptionId }).containsExactly(second.receptionId)
+        assertThat(repository.findByReceptionIdAndOwnerAdminId(first.receptionId, owner)).isNotNull()
+        assertThat(repository.findByReceptionIdAndOwnerAdminId(other.receptionId, owner)).isNull()
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    fun `독립 트랜잭션의 동시 검토 완료는 한 번만 저장하고 패자의 변경을 남기지 않는다`() {
+        // given
+        val reception = newReception()
+        val transaction = TransactionTemplate(transactionManager)
+        transaction.executeWithoutResult { repository.saveAndFlush(reception) }
+        val loaded = CountDownLatch(2)
+        val executor = Executors.newFixedThreadPool(2)
+
+        try {
+            // when
+            val futures = listOf("editor-1", "editor-2").map { editor ->
+                editor to executor.submit<Boolean> {
+                    try {
+                        transaction.executeWithoutResult {
+                            val current = repository.findById(reception.receptionId).orElseThrow()
+                            loaded.countDown()
+                            check(loaded.await(10, TimeUnit.SECONDS)) { "Both transactions must read before writing." }
+                            current.confirm(1, reviewedData().copy(notes = editor), analysisStatus = null, now = NOW)
+                            repository.flush()
+                        }
+                        true
+                    } catch (_: OptimisticLockingFailureException) {
+                        false
+                    }
+                }
+            }
+            val results = futures.map { (editor, future) -> editor to future.get(15, TimeUnit.SECONDS) }
+            val winner = results.single { it.second }.first
+            val saved = repository.findById(reception.receptionId).orElseThrow()
+
+            // then
+            assertThat(results.count { it.second }).isEqualTo(1)
+            assertThat(saved.finalData.notes).isEqualTo(winner)
+            assertThat(saved.reviewStatus).isEqualTo(ReceptionReviewStatus.CONFIRMED)
+            assertThat(saved.confirmedAt).isEqualTo(NOW)
+            assertThat(saved.version).isEqualTo(2)
+        } finally {
+            executor.shutdownNow()
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ["missing-data", "invalid-version", "draft-with-request"])
+    fun `DB는 불완전한 확정과 잘못된 버전 및 미확정 의뢰 연결을 거부한다`(invalidState: String) {
+        // given
+        val reception = repository.saveAndFlush(newReception())
+        val assignment = when (invalidState) {
+            "missing-data" -> "review_status = 'CONFIRMED', confirmed_at = ?, updated_at = ?"
+            "invalid-version" -> "version = 0"
+            "draft-with-request" -> "request_id = 'request-invalid'"
+            else -> error("Unknown constraint case")
+        }
+        val arguments = if (invalidState == "missing-data") {
+            arrayOf(NOW.atOffset(ZoneOffset.UTC), NOW.atOffset(ZoneOffset.UTC), reception.receptionId)
+        } else {
+            arrayOf(reception.receptionId)
+        }
+
+        // when
+        val exception = assertThrows<DataIntegrityViolationException> {
+            jdbc.update("UPDATE $SCHEMA.receptions SET $assignment WHERE reception_id = ?", *arguments)
+        }
+
+        // then
+        assertThat(exception.mostSpecificCause).isInstanceOfSatisfying(SQLException::class.java) {
+            assertThat(it.sqlState).isEqualTo("23514")
+        }
+    }
+
+    @Test
+    fun `동일한 의뢰를 여러 접수에 연결할 수 없다`() {
+        // given
+        val first = newReception().also { it.confirm(1, reviewedData(), analysisStatus = null, now = NOW) }
+        val second = newReception().also { it.confirm(1, reviewedData(), analysisStatus = null, now = NOW) }
+        repository.saveAllAndFlush(listOf(first, second))
+        jdbc.update("UPDATE $SCHEMA.receptions SET request_id = 'request-shared' WHERE reception_id = ?", first.receptionId)
+
+        // when
+        val exception = assertThrows<DataIntegrityViolationException> {
+            jdbc.update("UPDATE $SCHEMA.receptions SET request_id = 'request-shared' WHERE reception_id = ?", second.receptionId)
+        }
+
+        // then
+        assertThat(exception.mostSpecificCause).isInstanceOfSatisfying(SQLException::class.java) {
+            assertThat(it.sqlState).isEqualTo("23505")
+        }
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    fun `V1에 보관한 녹음 메타데이터를 보존하며 V2로 확장한다`() {
+        // given
+        migrationAt("1").migrate()
+        jdbc.update(
+            """
+            INSERT INTO $UPGRADE_SCHEMA.reception_recordings (
+                recording_file_id, reception_id, uploaded_by_admin_id, original_filename,
+                bucket, object_key, content_type, size_bytes, checksum_sha256
+            ) VALUES ('legacy-recording', 'legacy-reception', 'legacy-admin', 'legacy.m4a',
+                'test-bucket', 'legacy.m4a', 'audio/mp4', 1, decode(repeat('00', 32), 'hex'))
+            """.trimIndent(),
+        )
+
+        // when
+        val upgraded = migrationAt("2")
+        upgraded.migrate()
+
+        // then
+        assertThat(upgraded.validateWithResult().validationSuccessful).isTrue()
+        assertThat(upgraded.info().current()?.version?.version).isEqualTo("2")
+        assertThat(jdbc.queryForObject("SELECT original_filename FROM $UPGRADE_SCHEMA.reception_recordings", String::class.java))
+            .isEqualTo("legacy.m4a")
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM $UPGRADE_SCHEMA.receptions", Long::class.java)).isZero()
+    }
+
+    @AfterAll
+    fun removeOwnedTestSchemas() {
+        // 두 이름 모두 이 테스트 실행에서 생성한 UUID이며 외부 설정으로 바꾸지 않는다.
+        jdbc.execute("DROP SCHEMA IF EXISTS $UPGRADE_SCHEMA CASCADE")
+        jdbc.execute("DROP SCHEMA IF EXISTS $SCHEMA CASCADE")
+    }
+
+    private fun migrationAt(version: String) = Flyway.configure()
+        .dataSource(dataSource)
+        .schemas(UPGRADE_SCHEMA)
+        .defaultSchema(UPGRADE_SCHEMA)
+        .target(version)
+        .load()
+
+    private fun newReception() = Reception(id(), id(), NOW.minusSeconds(7200))
+
+    private fun id() = UUID.randomUUID().toString()
+
+    private fun reviewedData() = ReceptionConfirmationData(
+        workType = WorkType.BLOCKAGE,
+        symptoms = "싱크대 배수 불가",
+        address = "서울시 강남구 예시로 10",
+        desiredVisitFrom = OffsetDateTime.parse("2026-11-15T14:00:00+09:00"),
+        desiredVisitTo = OffsetDateTime.parse("2026-11-15T16:00:00+09:00"),
+        contactPhone = "010-1234-5678",
+        notes = "방문 전 연락",
+    )
+
+    companion object {
+        private val NOW = Instant.parse("2026-11-15T06:00:00Z")
+        private val SCHEMA = "reception_test_" + UUID.randomUUID().toString().replace("-", "")
+        private val UPGRADE_SCHEMA = SCHEMA + "_upgrade"
+
+        @JvmStatic
+        @DynamicPropertySource
+        fun testDatabase(registry: DynamicPropertyRegistry) {
+            val url = System.getenv("TEST_DATABASE_URL") ?: "jdbc:postgresql://localhost:15432/allcheck"
+            registry.add("spring.datasource.url") { url + (if ('?' in url) "&" else "?") + "currentSchema=$SCHEMA" }
+            registry.add("spring.datasource.username") { System.getenv("TEST_DATABASE_USERNAME") ?: "allcheck" }
+            registry.add("spring.datasource.password") { System.getenv("TEST_DATABASE_PASSWORD") ?: "allcheck_local_6" }
+            registry.add("spring.flyway.schemas") { SCHEMA }
+            registry.add("spring.flyway.default-schema") { SCHEMA }
+            registry.add("spring.jpa.properties.hibernate.default_schema") { SCHEMA }
+        }
+    }
+}

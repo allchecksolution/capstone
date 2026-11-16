@@ -24,6 +24,8 @@ avoid unnecessary database access and complex persistence abstractions, and appl
 - **MUST — Schema Mapping Consistency:** Explicitly declare column constraints supported by JPA, such as nullability, length, and uniqueness, in Entity mapping annotations consistently with the [Flyway-managed schema](flyway-conventions.md#migration-lifecycle).
 - **SHOULD — Lazy Loading:** Prefer lazy loading for Entity relationships, and explicitly fetch the required data according to the purpose of the query.
 - **SHOULD — Persistence Context Awareness:** Consider the persistence context lifecycle and Entity state, and do not rely on lazy loading outside transactions.
+- **MAY — Kotlin Entity Encapsulation:** For Kotlin Entities opened by `all-open`, use `protected set` when private setters conflict with open properties. Keep external state changes behind domain methods while allowing JPA proxy accessors.
+- **SHOULD — JSON Column Mapping:** Map JSON columns explicitly and configure their format mapper centrally. Preserve empty-object/null distinctions and date/time offsets when the stored original requires them.
 
 ---
 
@@ -53,6 +55,7 @@ and minimize scope and contention when using locks.
 - **SHOULD — Conflict Handling:** When concurrency conflicts occur, apply an appropriate handling strategy, such as failure responses or limited retries, according to business requirements.
 - **MAY — Isolation Levels:** Prefer the default transaction isolation level, and adjust it when needed to meet data consistency requirements.
 - **MUST — Database Invariants:** Enforce domain-defined uniqueness and other persisted invariants with database constraints or atomic conditional writes, independently of idempotency-key retention. Application-level prechecks alone are insufficient under concurrency.
+- **SHOULD — Version Ownership:** Leave `@Version` updates to JPA. When domain methods control a separate business revision, use a distinct persistence version or explicit conditional writes rather than manually changing the JPA-managed field.
 
 ---
 
