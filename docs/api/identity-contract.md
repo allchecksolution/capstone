@@ -144,10 +144,36 @@ Access Token 기본 15분, 세션 절대 수명 기본 14일, 여러 기기 로�
 ## 단계별 완료 기준
 
 1. **완료:** 이 계약의 API 형식·기사 상태 조회 분리와 세션 정책을 확정했다.
-2. Account·외부 로그인 연결·AuthSession 모델과 새 Flyway 마이그레이션을 구현한다.
+2. **완료:** Account·외부 로그인 연결·AuthSession 모델, Repository, V2 Flyway 마이그레이션을 구현했다.
 3. 카카오 검증 클라이언트와 정상·만료·타 앱·장애 테스트를 구현한다.
 4. 카카오 로그인과 토큰 발급을 구현하고 중복 계정 생성 경쟁을 검증한다.
 5. JWT 요청 인증과 `/auth/accounts/me`를 연결해 실제 앱 인증을 확인한다.
 6. 갱신·로그아웃·동시 갱신·폐기 세션 차단을 검증한다.
 7. driver 가입·승인·반려·탈퇴 및 업무 권한을 연결한다.
 8. 관리자 ID/PW 인증과 사전 계정 발급을 연결한다. 역할별 업무 권한 차등·요청 제한의 미확정 정책은 해당 작업 전에 확인한다.
+
+## 영속성 구현과 검증
+
+- `identity`를 Spring Modulith 모듈로 등록하고, `Account`와 `AuthSession`을 별도 Aggregate로 관리한다.
+- `Account`의 카카오 연결·관리자 자격 증명은 Embeddable이며 `identity_accounts`에 함께 저장한다. `AuthSession`은 `identity_auth_sessions`에 저장한다. 세부 소유권·제약은 [Identity Persistence](../../apps/backend/docs/business-specification.md#identity-persistence)를 따른다.
+- 스키마는 `V2__create_identity_accounts_and_sessions.sql`로 추가하며 V1은 수정하지 않는다.
+- 이 단계에는 로그인 API, 토큰 난수 생성·해싱, 계정 비활성화와 전체 세션 폐기를 조정하는 서비스가 아직 포함되지 않는다. 이후 단계에서 연결한다.
+
+도메인·모듈 경계·스타일 검사는 Java 21 환경에서 `apps/backend`를 기준으로 실행한다.
+
+```powershell
+.\gradlew.bat ktlintCheck test --tests 'com.allcheck.identity.domain.*' --tests 'com.allcheck.ModularityTests'
+```
+
+영속성 테스트에는 **다른 데이터가 없는 별도 PostgreSQL 테스트 DB**를 사용한다. 로컬 Compose PostgreSQL을 사용하는 경우 서버를 실행한 뒤 테스트 DB를 한 번 생성한다.
+
+```powershell
+createdb -h 127.0.0.1 -p 15432 -U allcheck allcheck_identity_test
+$env:IDENTITY_TEST_DATABASE_URL = 'jdbc:postgresql://localhost:15432/allcheck_identity_test'
+.\gradlew.bat test --tests 'com.allcheck.identity.infrastructure.IdentityPersistenceTest'
+```
+
+접속 계정이 로컬 기본값과 다르면 `IDENTITY_TEST_DATABASE_USER`, `IDENTITY_TEST_DATABASE_PASSWORD`도 설정한다.
+이 테스트는 Flyway로 생성한 스키마를 Hibernate `validate`로 확인하고, 실제 DB의 유니크·외래키·계정 유형 제약과 독립 트랜잭션의 동시 갱신 충돌을 검증한다. 테스트 자체는 Flyway clean이나 기존 데이터 전체 삭제를 수행하지 않는다.
+
+2026-11-17 검증 결과: Java 21·Gradle 9.8.2와 분리된 임시 PostgreSQL 18에서 `ktlintCheck test`를 실행해 전체 92개 테스트가 통과했다. Flyway V1·V2 적용, Hibernate 스키마 검증, 동시 갱신의 단일 커밋을 확인했다. 로컬 Compose의 PostgreSQL 17에서는 아직 실행하지 않았다.

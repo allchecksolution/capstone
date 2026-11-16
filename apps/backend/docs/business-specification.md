@@ -63,6 +63,7 @@ The following is the initial design of the key Aggregates.
 | BC / Nested Module | Aggregate Root | Owned Models and Boundaries |
 |---|---|---|
 | `identity` | `Account` | Administrator authentication accounts and driver authentication identities and external login links. Driver membership information and registration reviews belong to `driver`. |
+| `identity` | `AuthSession` | One independent login session, its current Refresh Token hash, absolute expiry, refresh time, and revocation. References `Account` by ID; sessions are not an Account-owned collection. |
 | `reception` | `Reception` | Manages consultation materials and analysis results separately from intake information finalized by administrators. |
 | `driver` | `Driver` | Manages driver membership information, business registration verification, application and review history, service eligibility, and dispatch preferences. |
 | `driver` | `DriverLocation` | Manages each driver's latest location and update timestamp separately from profile and review information. |
@@ -72,6 +73,12 @@ The following is the initial design of the key Aggregates.
 | `operations.work` | `WorkReport` | Manages the originally submitted report and photos, administrator revision history, and the latest effective content. |
 | `chat` | `Conversation` | Manages each driver's ongoing conversation relationship independently of individual service requests. |
 | `chat` | `ChatMessage` | Manages message content, senders, transmission identifiers, and processing results separately from the conversation. |
+
+### Identity Persistence
+
+`Account` owns either an embedded Kakao `SocialLogin` or an embedded `AdminCredential` including the administrator role. Store them in `identity_accounts`, with a database check ensuring the credential shape matches `userType`. Keep the social-provider/member-number pair and administrator login ID unique. Account deactivation retains its credentials and uniqueness constraints, preventing a withdrawn identity from being recreated as a new account.
+
+`AuthSession` is stored in `identity_auth_sessions` with an account-ID foreign key, a unique SHA-256 Refresh Token digest, and an account-ID index. Both aggregates use optimistic versions. A stale session update must not overwrite a committed rotation or revocation; application services translate conflicts according to the refresh API contract. Neither aggregate stores a raw Refresh Token or a Kakao token. Authentication state and session state must be coordinated by application-service transactions; disabling an Account object alone does not persist session revocations.
 
 ## Project Integration and Migration Policies
 
