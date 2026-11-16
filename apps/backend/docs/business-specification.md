@@ -27,7 +27,7 @@ ALLCHECK consists of five bounded contexts and one integrated query module. The 
 
 | Type | Domain / Package | Owned Responsibilities and Data | Related Requirements |
 |---|---|---|---|
-| BC | Identity and Access Management — `identity` | Administrator accounts, credentials, roles, and MFA; driver Kakao authentication identifiers and account links; authentication sessions and tokens; administrator push-device registrations | [FR-01], [FR-13] authentication / [UC-01], [UC-08] authentication |
+| BC | Identity and Access Management — `identity` | Administrator accounts, credentials, and roles; driver Kakao authentication identifiers and account links; authentication sessions and tokens; administrator push-device registrations | [FR-01], [FR-13] authentication / [UC-01], [UC-08] authentication |
 | BC | Consultation Intake — `reception` | Consultation cases; recordings, STT and AI analysis results and processing statuses; manual entry; administrator review and finalized intake information | [FR-02], [FR-03], [FR-04] / [UC-02] |
 | BC | Driver Management — `driver` | Driver personal and business information and verification results; registration applications and review history; approval, rejection, reapplication, and withdrawal; specialties, service areas, equipment, preferences, standby/rest status, and latest location | [FR-06], [FR-10], [FR-13] membership management, [FR-14] / [UC-06], [UC-08] membership management, [UC-09], [UC-14], [UC-15] |
 | BC | Service Request Fulfillment — `operations` | Customer service requests; dispatch candidate selection, offers, responses, and delivery results; work ownership, cancellation, redispatch, and administrator follow-up decisions; work progress and revisits; original reports and revision history | [FR-05], [FR-07], [FR-08], [FR-09], [FR-11], [FR-12], [FR-16] history retention / [UC-03], [UC-05], [UC-07], [UC-10], [UC-11], [UC-12], [UC-13] |
@@ -222,6 +222,28 @@ Calculate location usability at query or candidate-selection time. Use only `VAL
 ## BR-02 Business Actors and Access Scopes
 
 Authentication and authorization mechanisms follow [Security Conventions](security-conventions.md). Apply BR-01 account and work state conditions to the operation-specific access scopes below.
+
+### Administrator Authentication
+
+Administrators authenticate using pre-provisioned IDs and passwords. Do not provide public administrator registration, MFA, or TOTP enrollment/verification. Successful ID/password authentication issues application credentials; operation-specific authorization remains required. Administrator `MASTER`/`SUB` role distinctions are retained, but their detailed permission differences remain undecided.
+
+### Authentication Sessions
+
+The following initial policies were confirmed on 2026-11-16. API paths, payloads, and frontend migration are defined in the [Identity API Contract](../../../docs/api/identity-contract.md).
+
+| Concern | Policy |
+|---|---|
+| Access Token | JWT; default lifetime 15 minutes, configurable |
+| Refresh Token | Cryptographically random; persist only its hash |
+| Session lifetime | Default 14 days from login; refresh never extends the session's absolute expiry |
+| Multiple devices | Allow independent sessions; a new login does not revoke existing sessions |
+| Refresh | Issue a new Access/Refresh Token pair and invalidate the consumed Refresh Token atomically |
+| Concurrent refresh and token replay | Only one refresh using the same token succeeds; reject other uses with 401. Replay alone does not revoke the replacement token or other sessions |
+| Logout | Revoke only the session identified by the presented valid Refresh Token; immediately reject that session's previously issued Access Tokens |
+| Logout with an invalid, expired, or revoked token | Return 204 without affecting other sessions |
+| Account deactivation and driver withdrawal | Revoke all account sessions and prevent both existing Access Token use and refresh |
+
+Authenticate every protected request against the current account and session state stored on the server. Do not rely solely on token claims or process-local memory. Identity owns authentication state; driver owns membership state. Driver withdrawal disables authentication and revokes all sessions through identity's public module API. Identity does not depend on driver internals; the app queries driver registration state separately after login. An authenticated identity does not itself grant access to driver business features.
 
 ### Driver Account Access
 
