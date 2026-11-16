@@ -29,6 +29,15 @@ avoid unnecessary database access and complex persistence abstractions, and appl
 
 ---
 
+## Identifiers and Generation
+
+- **MUST — Default Primary Keys:** Use Kotlin `Long` / PostgreSQL `BIGINT` for generated Entity primary keys and `GenerationType.IDENTITY` as the default generation strategy. Define the corresponding identity column and primary-key constraint through Flyway. A new Entity's generated ID is nullable until assigned by persistence; callers must not supply or modify generated IDs.
+- **MAY — Evidence-Based Sequence Exceptions:** Use `SEQUENCE` when a specific Entity requires an alternative generation strategy. Document the reason and align the JPA generator with the Flyway-managed sequence.
+- **MUST — Typed Internal References:** Store references to generated Entity keys as `Long` / `BIGINT`, following the cross-aggregate ID-reference rule. Keep external-provider identifiers, installation identifiers, idempotency keys, trace IDs, and other business identifiers distinct from generated primary keys.
+- **MUST — Persistence Before Publication:** A generated ID does not imply transaction commit. Ensure required database changes are committed before dependent external operations. Generated IDs are not guaranteed to be gapless or ordered by commit time.
+
+---
+
 ## Repository Management
 
 - **SHOULD — Spring Data JPA:** Prefer Spring Data JPA features for basic CRUD operations and simple queries.
