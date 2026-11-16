@@ -68,7 +68,7 @@ Write tests with the characteristics of Kotlin and Spring Boot in mind, and veri
 
 ## Running Reception Persistence Tests
 
-`ReceptionRepositoryTest`, `ReceptionRecordingRepositoryTest`, and `ReceptionTranscriptRepositoryTest` use PostgreSQL 17 from the [local Compose configuration](../../../infra/compose/compose.local.yml).
+`ReceptionRepositoryTest`, `ReceptionRecordingRepositoryTest`, `ReceptionTranscriptRepositoryTest`, and `ReceptionAnalysisRepositoryTest` use PostgreSQL 17 from the [local Compose configuration](../../../infra/compose/compose.local.yml).
 Start it with `npm run db:up` from the repository root, then run from `apps/backend/`:
 
 ```sh
@@ -86,3 +86,6 @@ Transcript tests cover exact text/line-break/Unicode preservation, source foreig
 and V3-to-V4 migration with existing recording/analysis records. An additional isolated schema verifies that unexpected legacy S3 transcript rows stop V4 without losing existing data.
 Work-type coverage verifies all five types in AI-original/final-data JSONB round trips and confirmation/reopen persistence,
 rejects unsupported types, and checks V4-to-V5 expansion while preserving existing confirmed intake data.
+Analysis tests cover persisted pending intents, fixed verified-recording context, one initial attempt per recording even after failure,
+ordered pending queries, and a single successful execution-claim commit across independent transactions.
+V5-to-V6 migration preserves existing processing state, worker identity, claim deadlines, and captured reception versions.
