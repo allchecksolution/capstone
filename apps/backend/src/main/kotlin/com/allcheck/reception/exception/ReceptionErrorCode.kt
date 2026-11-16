@@ -7,6 +7,7 @@ enum class ReceptionErrorCode(
     override val status: HttpStatus,
     override val message: String,
 ) : ErrorCode {
+    RECEPTION_NOT_FOUND(HttpStatus.NOT_FOUND, "접수를 찾을 수 없습니다."),
     REVIEW_NOT_READY(HttpStatus.CONFLICT, "분석 처리가 끝난 뒤 검토를 완료해 주세요."),
     RECEPTION_ALREADY_CONFIRMED(HttpStatus.CONFLICT, "이미 검토가 완료된 접수입니다."),
     RECEPTION_NOT_CONFIRMED(HttpStatus.CONFLICT, "검토가 완료된 접수만 확정을 취소할 수 있습니다."),

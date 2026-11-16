@@ -173,7 +173,7 @@ components:
       type: string
       minLength: 1
       maxLength: 64
-      description: 불투명 식별자. 형식은 서버가 정하며 클라이언트는 해석하지 않는다.
+      description: 불투명 식별자. 형식은 서버가 정하며 클라이언트는 해석하지 않는다. 접수·녹음·분석·원문 ID는 Backend의 숫자 PK를 rec_·file_rec_·anl_·file_stt_ 접두어가 있는 문자열로 변환한다. AI는 받은 식별자를 변경 없이 반환한다.
     DateTime:
       type: string
       format: date-time

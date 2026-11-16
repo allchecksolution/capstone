@@ -5,6 +5,7 @@ import com.allcheck.global.exception.ErrorCode
 import com.allcheck.global.exception.GlobalErrorCode
 import com.allcheck.reception.domain.vo.ReceptionReviewStatus
 import com.allcheck.reception.exception.ReceptionErrorCode
+import com.allcheck.reception.fixture.testReception
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -21,10 +22,10 @@ class ReceptionRecordingReservationTest {
         val data = reception.finalData
 
         // when
-        reception.reserveRecording(1, "recording-1", RESERVED_AT)
+        reception.reserveRecording(1, 1_007L, RESERVED_AT)
 
         // then
-        assertThat(reception.recordingFileId).isEqualTo("recording-1")
+        assertThat(reception.recordingFileId).isEqualTo(1_007L)
         assertThat(reception.version).isEqualTo(2)
         assertThat(reception.updatedAt).isEqualTo(RESERVED_AT)
         assertThat(reception.reviewStatus).isEqualTo(ReceptionReviewStatus.DRAFT)
@@ -34,7 +35,7 @@ class ReceptionRecordingReservationTest {
         assertThat(reception.transcriptFileId).isNull()
         assertThat(reception.latestAnalysisRequestId).isNull()
         assertThat(reception.requestId).isNull()
-        assertThat(reception.ownerAdminId).isEqualTo("admin-1")
+        assertThat(reception.ownerAdminId).isEqualTo(1_003L)
         assertThat(reception.receivedAt).isEqualTo(RECEIVED_AT)
     }
 
@@ -46,16 +47,16 @@ class ReceptionRecordingReservationTest {
 
         // when & then
         assertRejected(reception, GlobalErrorCode.VERSION_CONFLICT) {
-            reception.reserveRecording(expectedVersion, "recording-1", RESERVED_AT)
+            reception.reserveRecording(expectedVersion, 1_007L, RESERVED_AT)
         }
     }
 
     @ParameterizedTest
-    @ValueSource(strings = ["recording-1", "recording-2"])
-    fun `이미 예약된 접수에는 같은 파일이든 다른 파일이든 새 예약을 만들지 않는다`(fileId: String) {
+    @ValueSource(longs = [1_007L, 1_006L])
+    fun `이미 예약된 접수에는 같은 파일이든 다른 파일이든 새 예약을 만들지 않는다`(fileId: Long) {
         // given
         val reception = reception()
-        reception.reserveRecording(1, "recording-1", RESERVED_AT)
+        reception.reserveRecording(1, 1_007L, RESERVED_AT)
 
         // when & then
         assertRejected(reception, ReceptionErrorCode.RECORDING_ALREADY_EXISTS) {
@@ -72,7 +73,7 @@ class ReceptionRecordingReservationTest {
 
         // when & then
         assertRejected(reception, ReceptionErrorCode.RECEPTION_ALREADY_CONFIRMED) {
-            reception.reserveRecording(1, "recording-1", RESERVED_AT)
+            reception.reserveRecording(1, 1_007L, RESERVED_AT)
         }
     }
 
@@ -82,20 +83,20 @@ class ReceptionRecordingReservationTest {
         val reception = reception()
         ReflectionTestUtils.setField(reception, "reviewStatus", ReceptionReviewStatus.CONFIRMED)
         ReflectionTestUtils.setField(reception, "confirmedAt", RESERVED_AT)
-        ReflectionTestUtils.setField(reception, "requestId", "request-1")
+        ReflectionTestUtils.setField(reception, "requestId", 1_002L)
 
         // when & then
         assertRejected(reception, ReceptionErrorCode.RECEPTION_ALREADY_REGISTERED) {
-            reception.reserveRecording(1, "recording-1", RESERVED_AT)
+            reception.reserveRecording(1, 1_007L, RESERVED_AT)
         }
     }
 
     @ParameterizedTest
-    @ValueSource(strings = ["", " ", "too-long"])
-    fun `서버가 잘못 생성한 파일 ID는 예약하지 않는다`(invalid: String) {
+    @ValueSource(longs = [0, -1])
+    fun `서버가 잘못 생성한 파일 ID는 예약하지 않는다`(invalid: Long) {
         // given
         val reception = reception()
-        val fileId = if (invalid == "too-long") "r".repeat(65) else invalid
+        val fileId = invalid
         val before = snapshot(reception)
 
         // when & then
@@ -111,7 +112,7 @@ class ReceptionRecordingReservationTest {
         val before = snapshot(reception)
 
         // when & then
-        assertThrows<ArithmeticException> { reception.reserveRecording(Int.MAX_VALUE, "recording-1", RESERVED_AT) }
+        assertThrows<ArithmeticException> { reception.reserveRecording(Int.MAX_VALUE, 1_007L, RESERVED_AT) }
         assertThat(snapshot(reception)).isEqualTo(before)
     }
 
@@ -134,7 +135,7 @@ class ReceptionRecordingReservationTest {
         reception.requestId,
     )
 
-    private fun reception() = Reception("reception-1", "admin-1", RECEIVED_AT)
+    private fun reception() = testReception(1_001L, 1_003L, RECEIVED_AT)
 
     private companion object {
         val RECEIVED_AT = Instant.parse("2026-11-16T00:00:00Z")

@@ -3,6 +3,7 @@ package com.allcheck.reception.domain.entity
 import com.allcheck.global.exception.BusinessException
 import com.allcheck.global.exception.GlobalErrorCode
 import com.allcheck.reception.domain.vo.RecordingUploadStatus
+import com.allcheck.reception.fixture.testReceptionRecording
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -58,7 +59,7 @@ class ReceptionRecordingTest {
         assertThat(recording.recordingReceivedAt).isEqualTo(RECEIVED_AT)
         assertThat(recording.updatedAt).isEqualTo(RECEIVED_AT)
         assertThat(recording.createdAt).isEqualTo(CREATED_AT)
-        assertThat(recording.recordingFileId).isEqualTo("recording-1")
+        assertThat(recording.recordingFileId).isEqualTo(1_007L)
         assertThat(recording.objectKey).isEqualTo("recordings/recording-1.m4a")
         assertThat(recording.checksumSha256).containsExactly(*digest())
     }
@@ -185,10 +186,10 @@ class ReceptionRecordingTest {
         sizeBytes: Long = 1024,
         checksum: ByteArray = digest(),
         objectKey: String = "recordings/recording-1.m4a",
-    ) = ReceptionRecording(
-        recordingFileId = "recording-1",
-        receptionId = "reception-1",
-        uploadedByAdminId = "admin-1",
+    ) = testReceptionRecording(
+        recordingFileId = 1_007L,
+        receptionId = 1_001L,
+        uploadedByAdminId = 1_003L,
         originalFilename = originalFilename,
         bucket = "test-bucket",
         objectKey = objectKey,

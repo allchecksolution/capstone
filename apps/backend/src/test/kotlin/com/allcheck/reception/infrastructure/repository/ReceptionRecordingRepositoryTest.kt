@@ -60,19 +60,19 @@ class ReceptionRecordingRepositoryTest @Autowired constructor(
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     fun `접수의 예약 연결과 파일 메타데이터를 같은 트랜잭션으로 저장한다`() {
         // given
-        val reception = Reception(id(), id(), CREATED_AT.minusSeconds(60))
+        val reception = Reception(id(), CREATED_AT.minusSeconds(60))
         val transaction = TransactionTemplate(transactionManager)
         transaction.executeWithoutResult { receptionRepository.saveAndFlush(reception) }
-        val recording = recording(receptionId = reception.receptionId, uploadedByAdminId = reception.ownerAdminId)
+        val recording = recording(receptionId = checkNotNull(reception.receptionId), uploadedByAdminId = reception.ownerAdminId)
 
         // when
         transaction.executeWithoutResult {
-            val current = receptionRepository.findById(reception.receptionId).orElseThrow()
-            current.reserveRecording(1, recording.recordingFileId, CREATED_AT)
+            val current = receptionRepository.findById(checkNotNull(reception.receptionId)).orElseThrow()
             repository.saveAndFlush(recording)
+            current.reserveRecording(1, checkNotNull(recording.recordingFileId), CREATED_AT)
         }
-        val saved = receptionRepository.findById(reception.receptionId).orElseThrow()
-        val reserved = repository.findByReceptionId(reception.receptionId) ?: error("Reservation must be saved")
+        val saved = receptionRepository.findById(checkNotNull(reception.receptionId)).orElseThrow()
+        val reserved = repository.findByReceptionId(checkNotNull(reception.receptionId)) ?: error("Reservation must be saved")
 
         // then
         assertThat(saved.recordingFileId).isEqualTo(reserved.recordingFileId)
@@ -88,7 +88,7 @@ class ReceptionRecordingRepositoryTest @Autowired constructor(
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     fun `파일 메타데이터 저장이 실패하면 접수의 예약 연결과 버전도 롤백한다`() {
         // given
-        val reception = Reception(id(), id(), CREATED_AT.minusSeconds(60))
+        val reception = Reception(id(), CREATED_AT.minusSeconds(60))
         val transaction = TransactionTemplate(transactionManager)
         val existing = recording()
         transaction.executeWithoutResult {
@@ -96,7 +96,7 @@ class ReceptionRecordingRepositoryTest @Autowired constructor(
             repository.saveAndFlush(existing)
         }
         val conflicting = recording(
-            receptionId = reception.receptionId,
+            receptionId = checkNotNull(reception.receptionId),
             uploadedByAdminId = reception.ownerAdminId,
             objectKey = existing.objectKey,
         )
@@ -104,64 +104,66 @@ class ReceptionRecordingRepositoryTest @Autowired constructor(
         // when
         val exception = assertThrows<DataIntegrityViolationException> {
             transaction.executeWithoutResult {
-                val current = receptionRepository.findById(reception.receptionId).orElseThrow()
-                current.reserveRecording(1, conflicting.recordingFileId, CREATED_AT)
-                receptionRepository.flush()
+                val current = receptionRepository.findById(checkNotNull(reception.receptionId)).orElseThrow()
                 repository.saveAndFlush(conflicting)
+                current.reserveRecording(1, checkNotNull(conflicting.recordingFileId), CREATED_AT)
+                receptionRepository.flush()
             }
         }
-        val saved = receptionRepository.findById(reception.receptionId).orElseThrow()
+        val saved = receptionRepository.findById(checkNotNull(reception.receptionId)).orElseThrow()
 
         // then
         assertSqlState(exception, "23505")
         assertThat(saved.recordingFileId).isNull()
         assertThat(saved.version).isEqualTo(1)
         assertThat(saved.updatedAt).isEqualTo(reception.receivedAt)
-        assertThat(repository.findByReceptionId(reception.receptionId)).isNull()
-        assertThat(repository.existsById(existing.recordingFileId)).isTrue()
+        assertThat(repository.findByReceptionId(checkNotNull(reception.receptionId))).isNull()
+        assertThat(repository.existsById(checkNotNull(existing.recordingFileId))).isTrue()
     }
 
     @Test
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     fun `동시 예약은 접수 연결과 파일 메타데이터 한 쌍만 남긴다`() {
         // given
-        val reception = Reception(id(), id(), CREATED_AT.minusSeconds(60))
+        val reception = Reception(id(), CREATED_AT.minusSeconds(60))
         val transaction = TransactionTemplate(transactionManager)
         transaction.executeWithoutResult { receptionRepository.saveAndFlush(reception) }
-        val candidates = List(2) { recording(receptionId = reception.receptionId, uploadedByAdminId = reception.ownerAdminId) }
+        val candidates = List(2) { recording(receptionId = checkNotNull(reception.receptionId), uploadedByAdminId = reception.ownerAdminId) }
         val loaded = CountDownLatch(2)
         val executor = Executors.newFixedThreadPool(2)
 
         try {
             // when
             val futures = candidates.map { recording ->
-                recording.recordingFileId to executor.submit<Boolean> {
+                recording to executor.submit<Boolean> {
                     try {
                         transaction.executeWithoutResult {
-                            val current = receptionRepository.findById(reception.receptionId).orElseThrow()
+                            val current = receptionRepository.findById(checkNotNull(reception.receptionId)).orElseThrow()
                             loaded.countDown()
                             check(loaded.await(10, TimeUnit.SECONDS)) { "Both transactions must read before writing." }
-                            current.reserveRecording(1, recording.recordingFileId, CREATED_AT)
-                            receptionRepository.flush()
                             repository.saveAndFlush(recording)
+                            current.reserveRecording(1, checkNotNull(recording.recordingFileId), CREATED_AT)
+                            receptionRepository.flush()
                         }
                         true
                     } catch (_: OptimisticLockingFailureException) {
+                        false
+                    } catch (_: DataIntegrityViolationException) {
                         false
                     }
                 }
             }
             val results = futures.map { (fileId, future) -> fileId to future.get(15, TimeUnit.SECONDS) }
-            val winner = results.single { it.second }.first
-            val saved = receptionRepository.findById(reception.receptionId).orElseThrow()
-            val reserved = repository.findByReceptionId(reception.receptionId) ?: error("One reservation must be saved")
+            val winner = checkNotNull(results.single { it.second }.first.recordingFileId)
+            val saved = receptionRepository.findById(checkNotNull(reception.receptionId)).orElseThrow()
+            val reserved = repository.findByReceptionId(checkNotNull(reception.receptionId)) ?: error("One reservation must be saved")
 
             // then
             assertThat(results.count { it.second }).isEqualTo(1)
             assertThat(saved.recordingFileId).isEqualTo(winner)
             assertThat(saved.version).isEqualTo(2)
             assertThat(reserved.recordingFileId).isEqualTo(winner)
-            assertThat(repository.findAllById(candidates.map { it.recordingFileId })).hasSize(1)
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM $SCHEMA.reception_recordings WHERE reception_id = ?", Long::class.java, reception.receptionId)).isEqualTo(1)
         } finally {
             executor.shutdownNow()
         }
@@ -176,7 +178,7 @@ class ReceptionRecordingRepositoryTest @Autowired constructor(
 
         // when
         val loaded = repository.findByRecordingFileIdAndReceptionIdAndUploadedByAdminId(
-            recording.recordingFileId,
+            checkNotNull(recording.recordingFileId),
             recording.receptionId,
             recording.uploadedByAdminId,
         ) ?: error("Saved recording must be found")
@@ -193,9 +195,9 @@ class ReceptionRecordingRepositoryTest @Autowired constructor(
         assertThat(loaded.updatedAt).isEqualTo(CREATED_AT)
         assertThat(loaded.recordingReceivedAt).isNull()
         assertThat(repository.findByReceptionId(recording.receptionId)?.recordingFileId).isEqualTo(recording.recordingFileId)
-        assertThat(repository.findByRecordingFileIdAndReceptionIdAndUploadedByAdminId(recording.recordingFileId, id(), recording.uploadedByAdminId))
+        assertThat(repository.findByRecordingFileIdAndReceptionIdAndUploadedByAdminId(checkNotNull(recording.recordingFileId), id(), recording.uploadedByAdminId))
             .isNull()
-        assertThat(repository.findByRecordingFileIdAndReceptionIdAndUploadedByAdminId(recording.recordingFileId, recording.receptionId, id()))
+        assertThat(repository.findByRecordingFileIdAndReceptionIdAndUploadedByAdminId(checkNotNull(recording.recordingFileId), recording.receptionId, id()))
             .isNull()
     }
 
@@ -216,7 +218,7 @@ class ReceptionRecordingRepositoryTest @Autowired constructor(
         assertThat(loaded.objectKey).isEqualTo(recording.objectKey)
         assertThat(loaded.checksumSha256).containsExactly(*digest())
         assertThat(loaded.updatedAt).isEqualTo(CREATED_AT)
-        assertThat(persistenceVersion(loaded.recordingFileId)).isEqualTo(0)
+        assertThat(persistenceVersion(checkNotNull(loaded.recordingFileId))).isEqualTo(0)
     }
 
     @ParameterizedTest
@@ -255,15 +257,15 @@ class ReceptionRecordingRepositoryTest @Autowired constructor(
         recording.completeUpload("audio/mp4", 1024, digest(), RECEIVED_AT)
         repository.flush()
         entityManager.clear()
-        val completed = repository.findById(recording.recordingFileId).orElseThrow()
-        val originalVersion = persistenceVersion(completed.recordingFileId)
+        val completed = repository.findById(checkNotNull(recording.recordingFileId)).orElseThrow()
+        val originalVersion = persistenceVersion(checkNotNull(completed.recordingFileId))
 
         // when
         completed.checksumSha256[0] = 99
         val changed = completed.completeUpload("audio/mpeg", 2048, byteArrayOf(1), RECEIVED_AT.plusSeconds(60))
         repository.flush()
         entityManager.clear()
-        val loaded = repository.findById(recording.recordingFileId).orElseThrow()
+        val loaded = repository.findById(checkNotNull(recording.recordingFileId)).orElseThrow()
 
         // then
         assertThat(changed).isFalse()
@@ -273,7 +275,7 @@ class ReceptionRecordingRepositoryTest @Autowired constructor(
         assertThat(loaded.sizeBytes).isEqualTo(1024)
         assertThat(loaded.contentType).isEqualTo("audio/mp4")
         assertThat(loaded.checksumSha256).containsExactly(*digest())
-        assertThat(persistenceVersion(loaded.recordingFileId)).isEqualTo(originalVersion)
+        assertThat(persistenceVersion(checkNotNull(loaded.recordingFileId))).isEqualTo(originalVersion)
     }
 
     @Test
@@ -292,7 +294,7 @@ class ReceptionRecordingRepositoryTest @Autowired constructor(
                 receivedAt to executor.submit<Boolean> {
                     try {
                         transaction.executeWithoutResult {
-                            val current = repository.findById(recording.recordingFileId).orElseThrow()
+                            val current = repository.findById(checkNotNull(recording.recordingFileId)).orElseThrow()
                             loaded.countDown()
                             check(loaded.await(10, TimeUnit.SECONDS)) { "Both transactions must read before completion." }
                             current.completeUpload("audio/mp4", 1024, digest(), receivedAt)
@@ -306,7 +308,7 @@ class ReceptionRecordingRepositoryTest @Autowired constructor(
             }
             val results = futures.map { (time, future) -> time to future.get(15, TimeUnit.SECONDS) }
             val winner = results.single { it.second }.first
-            val saved = repository.findById(recording.recordingFileId).orElseThrow()
+            val saved = repository.findById(checkNotNull(recording.recordingFileId)).orElseThrow()
 
             // then
             assertThat(results.count { it.second }).isEqualTo(1)
@@ -314,7 +316,7 @@ class ReceptionRecordingRepositoryTest @Autowired constructor(
             assertThat(saved.recordingReceivedAt).isEqualTo(winner)
             assertThat(saved.updatedAt).isEqualTo(winner)
             assertThat(saved.checksumSha256).containsExactly(*digest())
-            assertThat(persistenceVersion(saved.recordingFileId)).isEqualTo(1)
+            assertThat(persistenceVersion(checkNotNull(saved.recordingFileId))).isEqualTo(1)
         } finally {
             executor.shutdownNow()
         }
@@ -391,7 +393,7 @@ class ReceptionRecordingRepositoryTest @Autowired constructor(
         }
     }
 
-    private fun persistenceVersion(recordingFileId: String) = jdbc.queryForObject(
+    private fun persistenceVersion(recordingFileId: Long) = jdbc.queryForObject(
         "SELECT persistence_version FROM $SCHEMA.reception_recordings WHERE recording_file_id = ?",
         Long::class.java,
         recordingFileId,
@@ -405,11 +407,10 @@ class ReceptionRecordingRepositoryTest @Autowired constructor(
         .load()
 
     private fun recording(
-        receptionId: String = id(),
+        receptionId: Long = id(),
         objectKey: String = "recordings/${id()}.m4a",
-        uploadedByAdminId: String = id(),
+        uploadedByAdminId: Long = id(),
     ) = ReceptionRecording(
-        recordingFileId = id(),
         receptionId = receptionId,
         uploadedByAdminId = uploadedByAdminId,
         originalFilename = "call.m4a",
@@ -421,7 +422,9 @@ class ReceptionRecordingRepositoryTest @Autowired constructor(
         createdAt = CREATED_AT,
     )
 
-    private fun id() = UUID.randomUUID().toString()
+    private val nextId = java.util.concurrent.atomic.AtomicLong(1_000_000)
+
+    private fun id() = nextId.incrementAndGet()
 
     private fun digest() = ByteArray(32) { it.toByte() }
 

@@ -1,5 +1,6 @@
 package com.allcheck.reception.domain.entity
 
+import com.allcheck.reception.fixture.testReceptionTranscript
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -18,10 +19,10 @@ class ReceptionTranscriptTest {
 
         // then
         assertThat(transcript.transcript).isSameAs(original)
-        assertThat(transcript.transcriptFileId).isEqualTo("transcript-1")
-        assertThat(transcript.receptionId).isEqualTo("reception-1")
-        assertThat(transcript.recordingFileId).isEqualTo("recording-1")
-        assertThat(transcript.producedByAnalysisRequestId).isEqualTo("analysis-1")
+        assertThat(transcript.transcriptFileId).isEqualTo(1_004L)
+        assertThat(transcript.receptionId).isEqualTo(1_001L)
+        assertThat(transcript.recordingFileId).isEqualTo(1_007L)
+        assertThat(transcript.producedByAnalysisRequestId).isEqualTo(1_005L)
         assertThat(transcript.storedAt).isEqualTo(STORED_AT)
     }
 
@@ -55,11 +56,11 @@ class ReceptionTranscriptTest {
         assertThat(original.length).isEqualTo(100_001)
     }
 
-    private fun transcript(original: String) = ReceptionTranscript(
-        transcriptFileId = "transcript-1",
-        receptionId = "reception-1",
-        recordingFileId = "recording-1",
-        producedByAnalysisRequestId = "analysis-1",
+    private fun transcript(original: String) = testReceptionTranscript(
+        transcriptFileId = 1_004L,
+        receptionId = 1_001L,
+        recordingFileId = 1_007L,
+        producedByAnalysisRequestId = 1_005L,
         transcript = original,
         storedAt = STORED_AT,
     )

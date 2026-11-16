@@ -7,6 +7,8 @@ import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
+import jakarta.persistence.GeneratedValue
+import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.Table
 import jakarta.persistence.UniqueConstraint
@@ -27,13 +29,10 @@ import java.time.Instant
     ],
 )
 class ReceptionRecording(
-    @field:Id
-    @field:Column(name = "recording_file_id", nullable = false, length = 64, updatable = false)
-    val recordingFileId: String,
-    @field:Column(name = "reception_id", nullable = false, length = 64, updatable = false)
-    val receptionId: String,
-    @field:Column(name = "uploaded_by_admin_id", nullable = false, length = 64, updatable = false)
-    val uploadedByAdminId: String,
+    @field:Column(name = "reception_id", nullable = false, updatable = false)
+    val receptionId: Long,
+    @field:Column(name = "uploaded_by_admin_id", nullable = false, updatable = false)
+    val uploadedByAdminId: Long,
     @field:Column(name = "original_filename", nullable = false, length = 255, updatable = false)
     val originalFilename: String,
     @field:Column(name = "bucket", nullable = false, length = 63, updatable = false)
@@ -48,10 +47,15 @@ class ReceptionRecording(
     @field:Column(name = "created_at", nullable = false, updatable = false)
     val createdAt: Instant,
 ) {
+    @field:Id
+    @field:GeneratedValue(strategy = GenerationType.IDENTITY)
+    @field:Column(name = "recording_file_id", nullable = false, updatable = false)
+    var recordingFileId: Long? = null
+        protected set
+
     init {
-        require(recordingFileId.isNotBlank() && recordingFileId.length <= 64)
-        require(receptionId.isNotBlank() && receptionId.length <= 64)
-        require(uploadedByAdminId.isNotBlank() && uploadedByAdminId.length <= 64)
+        require(receptionId > 0)
+        require(uploadedByAdminId > 0)
         require(bucket.isNotBlank() && bucket.length <= 63)
         require(objectKey.toByteArray(Charsets.UTF_8).size in 1..1024)
         if (originalFilename.isBlank() ||

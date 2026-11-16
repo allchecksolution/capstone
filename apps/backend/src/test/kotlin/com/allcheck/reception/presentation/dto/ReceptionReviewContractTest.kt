@@ -2,8 +2,8 @@ package com.allcheck.reception.presentation.dto
 
 import com.allcheck.global.exception.BusinessException
 import com.allcheck.global.exception.GlobalErrorCode
-import com.allcheck.reception.domain.entity.Reception
 import com.allcheck.reception.domain.vo.ReceptionReviewStatus
+import com.allcheck.reception.fixture.testReception
 import com.allcheck.reception.presentation.dto.request.ConfirmReceptionRequest
 import com.allcheck.reception.presentation.dto.request.ReopenReceptionRequest
 import com.allcheck.reception.presentation.dto.response.ReceptionConfirmedResponse
@@ -104,10 +104,10 @@ class ReceptionReviewContractTest {
     @Test
     fun `확정 응답에는 검토된 전체값만 포함하고 AI 원본과 내부 버전은 포함하지 않는다`() {
         // given
-        val reception = Reception("reception-1", "admin-1", NOW.minusSeconds(60))
+        val reception = testReception(1_001L, 1_003L, NOW.minusSeconds(60))
         reception.confirm(1, readRequest().finalData.toConfirmationData(), null, NOW)
         val response = ReceptionConfirmedResponse(
-            reception.receptionId,
+            "rec_" + checkNotNull(reception.receptionId),
             reception.reviewStatus,
             reception.version,
             checkNotNull(reception.confirmedAt),
@@ -133,11 +133,11 @@ class ReceptionReviewContractTest {
     @Test
     fun `확정 취소 응답은 해제된 confirmedAt을 null로 명시하며 notes를 보존한다`() {
         // given
-        val reception = Reception("reception-1", "admin-1", NOW.minusSeconds(60))
+        val reception = testReception(1_001L, 1_003L, NOW.minusSeconds(60))
         reception.confirm(1, readRequest().finalData.copy(notes = "방문 전 연락").toConfirmationData(), null, NOW)
         reception.reopen(2, NOW.plusSeconds(1))
         val response = ReceptionReopenedResponse(
-            reception.receptionId,
+            "rec_" + checkNotNull(reception.receptionId),
             reception.reviewStatus,
             reception.version,
             reception.updatedAt,

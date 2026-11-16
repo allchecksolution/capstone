@@ -11,6 +11,9 @@ import com.allcheck.reception.domain.vo.ReceptionProcessingStatus
 import com.allcheck.reception.domain.vo.ReceptionReviewStatus
 import com.allcheck.reception.domain.vo.ReceptionStructuredResult
 import com.allcheck.reception.domain.vo.WorkType
+import com.allcheck.reception.fixture.testReception
+import com.allcheck.reception.fixture.testReceptionAnalysis
+import com.allcheck.reception.fixture.testReceptionTranscript
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -84,10 +87,10 @@ class ReceptionStructuringTest {
     @Test
     fun `기존 수동 검토값이 있는 접수의 최초 AI 결과는 최신 편집값을 덮어쓰지 않는다`() {
         // given
-        val reception = Reception("reception-1", "admin-1", REFERENCE_TIME.minusSeconds(60))
+        val reception = testReception(1_001L, 1_003L, REFERENCE_TIME.minusSeconds(60))
         reception.confirm(1, reviewedData(), analysisStatus = null, now = REFERENCE_TIME.minusSeconds(30))
         reception.reopen(2, REFERENCE_TIME.minusSeconds(20))
-        reception.reserveRecording(3, "recording-1", REFERENCE_TIME.minusSeconds(10))
+        reception.reserveRecording(3, 1_007L, REFERENCE_TIME.minusSeconds(10))
         bindStoredContext(reception, version = 5)
         val reviewed = reception.finalData
         val analysis = readyResult(version = 5)
@@ -110,15 +113,15 @@ class ReceptionStructuringTest {
         // given
         val analysis = readyResult()
         val reception = reception(
-            receptionId = if (stale == "reception") "another-reception" else "reception-1",
-            ownerAdminId = if (stale == "owner") "another-admin" else "admin-1",
+            receptionId = if (stale == "reception") 9000001L else 1_001L,
+            ownerAdminId = if (stale == "owner") 3L else 1_003L,
         )
         // 정상 MVP의 선확정 흐름을 만들지 않고 오래된 저장 상태에 대한 서버 방어조건을 준비한다.
         when (stale) {
             "version" -> ReflectionTestUtils.setField(reception, "version", 4)
-            "attempt" -> ReflectionTestUtils.setField(reception, "latestAnalysisRequestId", "another-analysis")
-            "recording" -> ReflectionTestUtils.setField(reception, "recordingFileId", "another-recording")
-            "transcript" -> ReflectionTestUtils.setField(reception, "transcriptFileId", "another-transcript")
+            "attempt" -> ReflectionTestUtils.setField(reception, "latestAnalysisRequestId", 9000003L)
+            "recording" -> ReflectionTestUtils.setField(reception, "recordingFileId", 9000002L)
+            "transcript" -> ReflectionTestUtils.setField(reception, "transcriptFileId", 9000004L)
             "confirmed", "registered" -> {
                 ReflectionTestUtils.setField(reception, "reviewStatus", ReceptionReviewStatus.CONFIRMED)
                 ReflectionTestUtils.setField(reception, "confirmedAt", STRUCTURED_AT)
@@ -136,7 +139,7 @@ class ReceptionStructuringTest {
                     ),
                 )
                 ReflectionTestUtils.setField(reception, "updatedAt", STRUCTURED_AT)
-                if (stale == "registered") ReflectionTestUtils.setField(reception, "requestId", "request-1")
+                if (stale == "registered") ReflectionTestUtils.setField(reception, "requestId", 1_002L)
             }
             "original" -> ReflectionTestUtils.setField(reception, "aiOriginal", ReceptionAiOriginal(notes = "기존 AI 원본"))
         }
@@ -176,7 +179,7 @@ class ReceptionStructuringTest {
         assertThat(analysis.sttStatus).isEqualTo(ReceptionProcessingStatus.SUCCEEDED)
         assertThat(analysis.transcriptStorageStatus).isEqualTo(ReceptionProcessingStatus.SUCCEEDED)
         assertThat(analysis.analysisStatus).isEqualTo(ReceptionProcessingStatus.FAILED)
-        assertThat(analysis.transcriptFileId).isEqualTo("transcript-1")
+        assertThat(analysis.transcriptFileId).isEqualTo(1_004L)
         assertThat(analysis.aiOriginal).isNull()
         assertThat(analysis.claimedBy).isNull()
         assertThat(analysis.leaseExpiresAt).isNull()
@@ -203,7 +206,7 @@ class ReceptionStructuringTest {
         assertThat(outcome).isEqualTo(ReceptionAnalysisTransition.FAILED)
         assertThat(analysis.status).isEqualTo(ReceptionAnalysisStatus.FAILED)
         assertThat(analysis.errorCode).isEqualTo("ANALYSIS_TIMEOUT")
-        assertThat(analysis.transcriptFileId).isEqualTo("transcript-1")
+        assertThat(analysis.transcriptFileId).isEqualTo(1_004L)
         assertThat(analysis.resultApplied).isFalse()
         assertThat(receptionSnapshot(reception)).isEqualTo(before)
     }
@@ -308,12 +311,12 @@ class ReceptionStructuringTest {
         assertThrows<IllegalArgumentException> { ReceptionStructuredResult(invalidOriginal, emptyList()) }
     }
 
-    private fun pendingStructure(version: Int = 3) = ReceptionAnalysis(
-        "analysis-1",
-        "reception-1",
-        "recording-1",
+    private fun pendingStructure(version: Int = 3) = testReceptionAnalysis(
+        1_005L,
+        1_001L,
+        1_007L,
         version,
-        "admin-1",
+        1_003L,
         REFERENCE_TIME,
         ACCEPTED_AT,
     ).also {
@@ -322,7 +325,7 @@ class ReceptionStructuringTest {
         check(
             it.attachTranscript(
                 WORKER,
-                ReceptionTranscript("transcript-1", "reception-1", "recording-1", "analysis-1", "STT 원문", STORED_AT),
+                testReceptionTranscript(1_004L, 1_001L, 1_007L, 1_005L, "STT 원문", STORED_AT),
                 TRACE,
                 STORED_AT,
             ) == ReceptionAnalysisTransition.ADVANCED,
@@ -334,16 +337,16 @@ class ReceptionStructuringTest {
         check(it.receiveStructuredResult(WORKER, ReceptionStructuredResult(aiOriginal, emptyList()), TRACE, STRUCTURED_AT) == ReceptionAnalysisTransition.ADVANCED)
     }
 
-    private fun reception(receptionId: String = "reception-1", ownerAdminId: String = "admin-1") = Reception(receptionId, ownerAdminId, REFERENCE_TIME.minusSeconds(60), callerPhone = "010-9999-9999").also {
-        it.reserveRecording(1, "recording-1", REFERENCE_TIME.minusSeconds(10))
+    private fun reception(receptionId: Long = 1_001L, ownerAdminId: Long = 1_003L) = testReception(receptionId, ownerAdminId, REFERENCE_TIME.minusSeconds(60), callerPhone = "010-9999-9999").also {
+        it.reserveRecording(1, 1_007L, REFERENCE_TIME.minusSeconds(10))
         bindStoredContext(it, 3)
     }
 
     // 아직 연결하지 않은 업로드 완료·원문 보관 애플리케이션의 저장 상태를 준비한다.
     private fun bindStoredContext(reception: Reception, version: Int) {
         ReflectionTestUtils.setField(reception, "version", version)
-        ReflectionTestUtils.setField(reception, "latestAnalysisRequestId", "analysis-1")
-        ReflectionTestUtils.setField(reception, "transcriptFileId", "transcript-1")
+        ReflectionTestUtils.setField(reception, "latestAnalysisRequestId", 1_005L)
+        ReflectionTestUtils.setField(reception, "transcriptFileId", 1_004L)
         ReflectionTestUtils.setField(reception, "updatedAt", STORED_AT)
     }
 

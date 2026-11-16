@@ -3,6 +3,7 @@ package com.allcheck.reception.domain.entity
 import com.allcheck.reception.domain.vo.ReceptionAnalysisStage
 import com.allcheck.reception.domain.vo.ReceptionAnalysisStatus
 import com.allcheck.reception.domain.vo.ReceptionProcessingStatus
+import com.allcheck.reception.fixture.testReceptionAnalysis
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -19,10 +20,10 @@ class ReceptionAnalysisTest {
         val analysis = analysis()
 
         // then
-        assertThat(analysis.analysisRequestId).isEqualTo("analysis-1")
-        assertThat(analysis.receptionId).isEqualTo("reception-1")
-        assertThat(analysis.recordingFileId).isEqualTo("recording-1")
-        assertThat(analysis.requestedByAdminId).isEqualTo("admin-1")
+        assertThat(analysis.analysisRequestId).isEqualTo(1_005L)
+        assertThat(analysis.receptionId).isEqualTo(1_001L)
+        assertThat(analysis.recordingFileId).isEqualTo(1_007L)
+        assertThat(analysis.requestedByAdminId).isEqualTo(1_003L)
         assertThat(analysis.receptionVersion).isEqualTo(3)
         assertThat(analysis.referenceTime).isEqualTo(REFERENCE_TIME)
         assertThat(analysis.timeZone).isEqualTo("Asia/Seoul")
@@ -164,7 +165,7 @@ class ReceptionAnalysisTest {
     fun `접수 스냅샷 버전은 양수여야 한다`(version: Int) {
         // when & then
         assertThrows<IllegalArgumentException> {
-            ReceptionAnalysis("analysis-1", "reception-1", "recording-1", version, "admin-1", REFERENCE_TIME, ACCEPTED_AT)
+            testReceptionAnalysis(1_005L, 1_001L, 1_007L, version, 1_003L, REFERENCE_TIME, ACCEPTED_AT)
         }
     }
 
@@ -172,11 +173,11 @@ class ReceptionAnalysisTest {
     fun `녹음 수신 시각 이전에는 분석을 접수할 수 없다`() {
         // when & then
         assertThrows<IllegalArgumentException> {
-            ReceptionAnalysis("analysis-1", "reception-1", "recording-1", 3, "admin-1", ACCEPTED_AT.plusSeconds(1), ACCEPTED_AT)
+            testReceptionAnalysis(1_005L, 1_001L, 1_007L, 3, 1_003L, ACCEPTED_AT.plusSeconds(1), ACCEPTED_AT)
         }
     }
 
-    private fun analysis() = ReceptionAnalysis("analysis-1", "reception-1", "recording-1", 3, "admin-1", REFERENCE_TIME, ACCEPTED_AT)
+    private fun analysis() = testReceptionAnalysis(1_005L, 1_001L, 1_007L, 3, 1_003L, REFERENCE_TIME, ACCEPTED_AT)
 
     private fun snapshot(analysis: ReceptionAnalysis) = listOf(
         analysis.status,

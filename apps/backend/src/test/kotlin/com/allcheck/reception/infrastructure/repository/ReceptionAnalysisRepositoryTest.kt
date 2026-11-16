@@ -244,15 +244,15 @@ class ReceptionAnalysisRepositoryTest @Autowired constructor(
         // given
         val analysis = repository.saveAndFlush(awaitingStorage())
         val original = transcript(analysis)
-        analysis.attachTranscript(WORKER, original, TRACE, STORED_AT)
         transcriptRepository.saveAndFlush(original)
+        analysis.attachTranscript(WORKER, original, TRACE, STORED_AT)
         analysis.startStructuring(WORKER, TRACE, STRUCTURING_AT)
 
         // when
         assertThat(analysis.failStructuring(WORKER, ReceptionAnalysisFailureReason.AI_TIMEOUT, TRACE, STRUCTURED_AT)).isTrue()
         repository.flush()
         entityManager.clear()
-        val failed = repository.findById(analysis.analysisRequestId).orElseThrow()
+        val failed = repository.findById(checkNotNull(analysis.analysisRequestId)).orElseThrow()
 
         // then
         assertThat(failed.status).isEqualTo(ReceptionAnalysisStatus.FAILED)
@@ -273,12 +273,12 @@ class ReceptionAnalysisRepositoryTest @Autowired constructor(
 
         // when
         transaction.executeWithoutResult {
-            val current = repository.findById(analysis.analysisRequestId).orElseThrow()
-            assertThat(current.attachTranscript(WORKER, artifact, TRACE, STORED_AT)).isEqualTo(ReceptionAnalysisTransition.ADVANCED)
+            val current = repository.findById(checkNotNull(analysis.analysisRequestId)).orElseThrow()
             transcriptRepository.saveAndFlush(artifact)
+            assertThat(current.attachTranscript(WORKER, artifact, TRACE, STORED_AT)).isEqualTo(ReceptionAnalysisTransition.ADVANCED)
         }
-        val saved = repository.findById(analysis.analysisRequestId).orElseThrow()
-        val original = transcriptRepository.findByProducedByAnalysisRequestId(analysis.analysisRequestId)
+        val saved = repository.findById(checkNotNull(analysis.analysisRequestId)).orElseThrow()
+        val original = transcriptRepository.findByProducedByAnalysisRequestId(checkNotNull(analysis.analysisRequestId))
             ?: error("Canonical original must be stored")
 
         // then
@@ -301,35 +301,36 @@ class ReceptionAnalysisRepositoryTest @Autowired constructor(
         val existing = transaction.execute {
             val producer = repository.saveAndFlush(awaitingStorage())
             val original = transcript(producer)
-            assertThat(producer.attachTranscript(WORKER, original, TRACE, STORED_AT)).isEqualTo(ReceptionAnalysisTransition.ADVANCED)
             transcriptRepository.saveAndFlush(original)
+            assertThat(producer.attachTranscript(WORKER, original, TRACE, STORED_AT)).isEqualTo(ReceptionAnalysisTransition.ADVANCED)
+            original
         }
         val analysis = transaction.execute { repository.saveAndFlush(awaitingStorage()) }
-        val colliding = transcript(analysis, existing.transcriptFileId)
+        val colliding = transcript(analysis).also { ReflectionTestUtils.setField(it, "sizeBytes", 0L) }
 
         // when
         assertThrows<DataIntegrityViolationException> {
             transaction.executeWithoutResult {
-                val current = repository.findById(analysis.analysisRequestId).orElseThrow()
-                assertThat(current.attachTranscript(WORKER, colliding, TRACE, STORED_AT)).isEqualTo(ReceptionAnalysisTransition.ADVANCED)
+                val current = repository.findById(checkNotNull(analysis.analysisRequestId)).orElseThrow()
                 transcriptRepository.saveAndFlush(colliding)
+                assertThat(current.attachTranscript(WORKER, colliding, TRACE, STORED_AT)).isEqualTo(ReceptionAnalysisTransition.ADVANCED)
             }
         }
-        val afterRollback = repository.findById(analysis.analysisRequestId).orElseThrow()
+        val afterRollback = repository.findById(checkNotNull(analysis.analysisRequestId)).orElseThrow()
 
         // then
         assertThat(afterRollback.stage).isEqualTo(ReceptionAnalysisStage.TRANSCRIPT_STORAGE)
         assertThat(afterRollback.sttStatus).isEqualTo(ReceptionProcessingStatus.SUCCEEDED)
         assertThat(afterRollback.transcriptStorageStatus).isEqualTo(ReceptionProcessingStatus.PROCESSING)
         assertThat(afterRollback.transcriptFileId).isNull()
-        assertThat(transcriptRepository.findByProducedByAnalysisRequestId(analysis.analysisRequestId)).isNull()
+        assertThat(transcriptRepository.findByProducedByAnalysisRequestId(checkNotNull(analysis.analysisRequestId))).isNull()
 
         // when
         transaction.executeWithoutResult {
-            val current = repository.findById(analysis.analysisRequestId).orElseThrow()
+            val current = repository.findById(checkNotNull(analysis.analysisRequestId)).orElseThrow()
             assertThat(current.failTranscriptStorage(WORKER, TRACE, STORED_AT.plusSeconds(1))).isTrue()
         }
-        val failed = repository.findById(analysis.analysisRequestId).orElseThrow()
+        val failed = repository.findById(checkNotNull(analysis.analysisRequestId)).orElseThrow()
 
         // then
         assertThat(failed.status).isEqualTo(ReceptionAnalysisStatus.FAILED)
@@ -340,7 +341,7 @@ class ReceptionAnalysisRepositoryTest @Autowired constructor(
         assertThat(failed.transcriptFileId).isNull()
         assertThat(failed.claimedBy).isNull()
         assertThat(failed.leaseExpiresAt).isNull()
-        assertThat(transcriptRepository.findById(existing.transcriptFileId).orElseThrow().transcript).isEqualTo(ORIGINAL)
+        assertThat(transcriptRepository.findById(checkNotNull(existing.transcriptFileId)).orElseThrow().transcript).isEqualTo(ORIGINAL)
     }
 
     @Test
@@ -353,12 +354,12 @@ class ReceptionAnalysisRepositoryTest @Autowired constructor(
         assertThat(analysis.receiveTranscription(WORKER, " \r\n\u00A0", TRACE, TRANSCRIBED_AT)).isEqualTo(ReceptionAnalysisTransition.FAILED)
         repository.flush()
         entityManager.clear()
-        val failed = repository.findById(analysis.analysisRequestId).orElseThrow()
+        val failed = repository.findById(checkNotNull(analysis.analysisRequestId)).orElseThrow()
         assertThat(failed.receiveTranscription(WORKER, ORIGINAL, "late-trace", DEADLINE)).isEqualTo(ReceptionAnalysisTransition.IGNORED)
         assertThat(failed.expireIfDue(DEADLINE, "late-trace")).isFalse()
         repository.flush()
         entityManager.clear()
-        val saved = repository.findById(analysis.analysisRequestId).orElseThrow()
+        val saved = repository.findById(checkNotNull(analysis.analysisRequestId)).orElseThrow()
 
         // then
         assertThat(saved.status).isEqualTo(ReceptionAnalysisStatus.FAILED)
@@ -370,8 +371,8 @@ class ReceptionAnalysisRepositoryTest @Autowired constructor(
         assertThat(saved.analysisStatus).isEqualTo(ReceptionProcessingStatus.NOT_AVAILABLE)
         assertThat(saved.completedAt).isEqualTo(TRANSCRIBED_AT)
         assertThat(saved.transcriptFileId).isNull()
-        assertThat(transcriptRepository.findByProducedByAnalysisRequestId(saved.analysisRequestId)).isNull()
-        assertThat(persistenceVersion(saved.analysisRequestId)).isEqualTo(1)
+        assertThat(transcriptRepository.findByProducedByAnalysisRequestId(checkNotNull(saved.analysisRequestId))).isNull()
+        assertThat(persistenceVersion(checkNotNull(saved.analysisRequestId))).isEqualTo(1)
     }
 
     @Test
@@ -382,17 +383,17 @@ class ReceptionAnalysisRepositoryTest @Autowired constructor(
         val analysis = transaction.execute {
             val current = repository.saveAndFlush(awaitingStorage())
             val artifact = transcript(current)
-            assertThat(current.attachTranscript(WORKER, artifact, TRACE, STORED_AT)).isEqualTo(ReceptionAnalysisTransition.ADVANCED)
             transcriptRepository.saveAndFlush(artifact)
+            assertThat(current.attachTranscript(WORKER, artifact, TRACE, STORED_AT)).isEqualTo(ReceptionAnalysisTransition.ADVANCED)
             current
         }
 
         // when
         transaction.executeWithoutResult {
-            val current = repository.findById(analysis.analysisRequestId).orElseThrow()
+            val current = repository.findById(checkNotNull(analysis.analysisRequestId)).orElseThrow()
             assertThat(current.expireIfDue(DEADLINE, TRACE)).isTrue()
         }
-        val failed = repository.findById(analysis.analysisRequestId).orElseThrow()
+        val failed = repository.findById(checkNotNull(analysis.analysisRequestId)).orElseThrow()
         val original = transcriptRepository.findById(checkNotNull(failed.transcriptFileId)).orElseThrow()
 
         // then
@@ -421,12 +422,12 @@ class ReceptionAnalysisRepositoryTest @Autowired constructor(
                 action to executor.submit<Boolean> {
                     try {
                         transaction.executeWithoutResult {
-                            val current = repository.findById(analysis.analysisRequestId).orElseThrow()
+                            val current = repository.findById(checkNotNull(analysis.analysisRequestId)).orElseThrow()
                             loaded.countDown()
                             check(loaded.await(10, TimeUnit.SECONDS)) { "Both transactions must read before transitioning." }
                             if (action == "store") {
-                                check(current.attachTranscript(WORKER, artifact, TRACE, STORED_AT) == ReceptionAnalysisTransition.ADVANCED)
                                 transcriptRepository.saveAndFlush(artifact)
+                                check(current.attachTranscript(WORKER, artifact, TRACE, STORED_AT) == ReceptionAnalysisTransition.ADVANCED)
                             } else {
                                 check(current.expireIfDue(DEADLINE, TRACE))
                                 repository.flush()
@@ -440,8 +441,8 @@ class ReceptionAnalysisRepositoryTest @Autowired constructor(
             }
             val results = futures.map { (action, future) -> action to future.get(15, TimeUnit.SECONDS) }
             val winner = results.single { it.second }.first
-            val saved = repository.findById(analysis.analysisRequestId).orElseThrow()
-            val original = transcriptRepository.findByProducedByAnalysisRequestId(analysis.analysisRequestId)
+            val saved = repository.findById(checkNotNull(analysis.analysisRequestId)).orElseThrow()
+            val original = transcriptRepository.findByProducedByAnalysisRequestId(checkNotNull(analysis.analysisRequestId))
 
             // then
             assertThat(results.count { it.second }).isEqualTo(1)
@@ -468,14 +469,14 @@ class ReceptionAnalysisRepositoryTest @Autowired constructor(
         // when
         repository.saveAndFlush(analysis)
         entityManager.clear()
-        val saved = repository.findByAnalysisRequestIdAndReceptionId(analysis.analysisRequestId, analysis.receptionId)
+        val saved = repository.findByAnalysisRequestIdAndReceptionId(checkNotNull(analysis.analysisRequestId), analysis.receptionId)
             ?: error("Pending intent must be found")
 
         // then
         assertThat(saved.recordingFileId).isEqualTo(analysis.recordingFileId)
         assertThat(saved.receptionVersion).isEqualTo(3)
         assertThat(saved.referenceTime).isEqualTo(REFERENCE_TIME)
-        assertThat(saved.requestedByAdminId).isEqualTo("test-admin")
+        assertThat(saved.requestedByAdminId).isEqualTo(1L)
         assertThat(saved.timeZone).isEqualTo("Asia/Seoul")
         assertThat(saved.mode).isEqualTo("FULL")
         assertThat(saved.isInitial).isTrue()
@@ -489,10 +490,10 @@ class ReceptionAnalysisRepositoryTest @Autowired constructor(
         assertThat(saved.missingFields).isNull()
         assertThat(saved.createdAt).isEqualTo(ACCEPTED_AT)
         assertThat(saved.updatedAt).isEqualTo(ACCEPTED_AT)
-        assertThat(persistenceVersion(saved.analysisRequestId)).isZero()
+        assertThat(persistenceVersion(checkNotNull(saved.analysisRequestId))).isZero()
         assertThat(repository.findByRecordingFileIdAndIsInitialTrue(analysis.recordingFileId)?.analysisRequestId)
             .isEqualTo(analysis.analysisRequestId)
-        assertThat(repository.findByAnalysisRequestIdAndReceptionId(analysis.analysisRequestId, id())).isNull()
+        assertThat(repository.findByAnalysisRequestIdAndReceptionId(checkNotNull(analysis.analysisRequestId), id())).isNull()
     }
 
     @Test
@@ -502,13 +503,13 @@ class ReceptionAnalysisRepositoryTest @Autowired constructor(
         assertThat(analysis.claim("worker-1", STARTED_AT, DEADLINE)).isTrue()
         repository.flush()
         entityManager.clear()
-        val claimed = repository.findById(analysis.analysisRequestId).orElseThrow()
+        val claimed = repository.findById(checkNotNull(analysis.analysisRequestId)).orElseThrow()
 
         // when
         val claimedAgain = claimed.claim("worker-2", DEADLINE.plusSeconds(1), DEADLINE.plusSeconds(60))
         repository.flush()
         entityManager.clear()
-        val saved = repository.findById(analysis.analysisRequestId).orElseThrow()
+        val saved = repository.findById(checkNotNull(analysis.analysisRequestId)).orElseThrow()
 
         // then
         assertThat(claimedAgain).isFalse()
@@ -521,7 +522,7 @@ class ReceptionAnalysisRepositoryTest @Autowired constructor(
         assertThat(saved.leaseExpiresAt).isEqualTo(DEADLINE)
         assertThat(saved.receptionVersion).isEqualTo(3)
         assertThat(saved.referenceTime).isEqualTo(REFERENCE_TIME)
-        assertThat(persistenceVersion(saved.analysisRequestId)).isEqualTo(1)
+        assertThat(persistenceVersion(checkNotNull(saved.analysisRequestId))).isEqualTo(1)
     }
 
     @Test
@@ -539,7 +540,7 @@ class ReceptionAnalysisRepositoryTest @Autowired constructor(
                 worker to executor.submit<Boolean> {
                     try {
                         transaction.execute {
-                            val current = repository.findById(analysis.analysisRequestId).orElseThrow()
+                            val current = repository.findById(checkNotNull(analysis.analysisRequestId)).orElseThrow()
                             loaded.countDown()
                             check(loaded.await(10, TimeUnit.SECONDS)) { "Both transactions must read before claiming." }
                             val claimed = current.claim(worker, STARTED_AT, DEADLINE)
@@ -553,7 +554,7 @@ class ReceptionAnalysisRepositoryTest @Autowired constructor(
             }
             val results = futures.map { (worker, future) -> worker to future.get(15, TimeUnit.SECONDS) }
             val winner = results.single { it.second }.first
-            val saved = repository.findById(analysis.analysisRequestId).orElseThrow()
+            val saved = repository.findById(checkNotNull(analysis.analysisRequestId)).orElseThrow()
 
             // then
             assertThat(results.count { it.second }).isEqualTo(1)
@@ -562,7 +563,7 @@ class ReceptionAnalysisRepositoryTest @Autowired constructor(
             assertThat(saved.startedAt).isEqualTo(STARTED_AT)
             assertThat(saved.leaseExpiresAt).isEqualTo(DEADLINE)
             assertThat(saved.receptionVersion).isEqualTo(3)
-            assertThat(persistenceVersion(saved.analysisRequestId)).isEqualTo(1)
+            assertThat(persistenceVersion(checkNotNull(saved.analysisRequestId))).isEqualTo(1)
         } finally {
             executor.shutdownNow()
         }
@@ -592,11 +593,10 @@ class ReceptionAnalysisRepositoryTest @Autowired constructor(
             )
         }
         val duplicate = ReceptionAnalysis(
-            analysisRequestId = id(),
             receptionId = first.receptionId,
             recordingFileId = first.recordingFileId,
             receptionVersion = 3,
-            requestedByAdminId = "test-admin",
+            requestedByAdminId = 1L,
             referenceTime = REFERENCE_TIME,
             createdAt = ACCEPTED_AT,
         )
@@ -621,11 +621,10 @@ class ReceptionAnalysisRepositoryTest @Autowired constructor(
         // given
         val recording = recording(verified = mismatch != "unverified")
         val invalid = ReceptionAnalysis(
-            analysisRequestId = id(),
             receptionId = if (mismatch == "reception") id() else recording.receptionId,
-            recordingFileId = if (mismatch == "recording") id() else recording.recordingFileId,
+            recordingFileId = checkNotNull(if (mismatch == "recording") id() else recording.recordingFileId),
             receptionVersion = 3,
-            requestedByAdminId = "test-admin",
+            requestedByAdminId = 1L,
             referenceTime = if (mismatch == "reference") REFERENCE_TIME.minusSeconds(1) else REFERENCE_TIME,
             createdAt = ACCEPTED_AT,
         )
@@ -640,11 +639,11 @@ class ReceptionAnalysisRepositoryTest @Autowired constructor(
     @Test
     fun `대기 목록은 최초 분석만 접수 시각과 ID 순서로 페이지 조회한다`() {
         // given
-        val earlierB = analysis("analysis-b")
-        val earlierA = analysis("analysis-a")
-        val later = analysis("analysis-later", ACCEPTED_AT.plusSeconds(1))
+        val earlierB = analysis()
+        val earlierA = analysis()
+        val later = analysis(createdAt = ACCEPTED_AT.plusSeconds(1))
         val processing = analysis().also { it.claim("worker-1", STARTED_AT, DEADLINE) }
-        val reservedNoninitial = analysis("analysis-noninitial").also { ReflectionTestUtils.setField(it, "isInitial", false) }
+        val reservedNoninitial = analysis().also { ReflectionTestUtils.setField(it, "isInitial", false) }
         repository.saveAllAndFlush(listOf(earlierB, later, earlierA, processing, reservedNoninitial))
         entityManager.clear()
 
@@ -659,9 +658,9 @@ class ReceptionAnalysisRepositoryTest @Autowired constructor(
         )
 
         // then
-        assertThat(firstPage.map { it.analysisRequestId }).containsExactly("analysis-a", "analysis-b")
-        assertThat(secondPage.map { it.analysisRequestId }).containsExactly("analysis-later")
-        assertThat(repository.findById(earlierA.analysisRequestId).orElseThrow().status).isEqualTo(ReceptionAnalysisStatus.PENDING)
+        assertThat(firstPage.map { it.analysisRequestId }).containsExactly(earlierB.analysisRequestId, earlierA.analysisRequestId)
+        assertThat(secondPage.map { it.analysisRequestId }).containsExactly(later.analysisRequestId)
+        assertThat(repository.findById(checkNotNull(earlierA.analysisRequestId)).orElseThrow().status).isEqualTo(ReceptionAnalysisStatus.PENDING)
         assertThat(repository.findByRecordingFileIdAndIsInitialTrue(reservedNoninitial.recordingFileId)).isNull()
     }
 
@@ -670,7 +669,7 @@ class ReceptionAnalysisRepositoryTest @Autowired constructor(
         // given
         val analysis = repository.saveAndFlush(analysis())
         val transcript = transcriptRepository.saveAndFlush(
-            ReceptionTranscript(id(), analysis.receptionId, analysis.recordingFileId, analysis.analysisRequestId, "보일러 누수", STARTED_AT),
+            ReceptionTranscript(analysis.receptionId, analysis.recordingFileId, checkNotNull(analysis.analysisRequestId), "보일러 누수", STARTED_AT),
         )
         jdbc.update(
             """
@@ -691,7 +690,7 @@ class ReceptionAnalysisRepositoryTest @Autowired constructor(
         entityManager.clear()
 
         // when
-        val saved = repository.findById(analysis.analysisRequestId).orElseThrow()
+        val saved = repository.findById(checkNotNull(analysis.analysisRequestId)).orElseThrow()
 
         // then
         assertThat(saved.status).isEqualTo(ReceptionAnalysisStatus.SUCCEEDED)
@@ -733,7 +732,7 @@ class ReceptionAnalysisRepositoryTest @Autowired constructor(
                 recording_file_id, reception_id, uploaded_by_admin_id, original_filename,
                 bucket, object_key, content_type, size_bytes, checksum_sha256,
                 status, recording_received_at, created_at, updated_at
-            ) VALUES ('legacy-recording', 'legacy-reception', 'test-admin', 'call.m4a', 'test-bucket',
+            ) VALUES ('legacy-recording', 'legacy-reception', '1', 'call.m4a', 'test-bucket',
                 'legacy/recording', 'audio/mp4', 1, decode(repeat('00', 32), 'hex'), 'UPLOADED', ?, ?, ?)
             """.trimIndent(),
             REFERENCE_TIME.atOffset(ZoneOffset.UTC),
@@ -746,7 +745,7 @@ class ReceptionAnalysisRepositoryTest @Autowired constructor(
                 analysis_request_id, reception_id, recording_file_id, reception_version, requested_by_admin_id,
                 mode, is_initial, reference_time, status, stage, stt_status,
                 claimed_by, lease_expires_at, started_at, created_at, updated_at
-            ) VALUES ('legacy-analysis', 'legacy-reception', 'legacy-recording', 3, 'test-admin',
+            ) VALUES ('legacy-analysis', 'legacy-reception', 'legacy-recording', 3, '1',
                 'FULL', TRUE, ?, 'PROCESSING', 'STT', 'PROCESSING', 'legacy-worker', ?, ?, ?, ?)
             """.trimIndent(),
             REFERENCE_TIME.atOffset(ZoneOffset.UTC),
@@ -783,10 +782,9 @@ class ReceptionAnalysisRepositoryTest @Autowired constructor(
         jdbc.execute("DROP SCHEMA IF EXISTS $SCHEMA CASCADE")
     }
 
-    private fun recording(verified: Boolean = true) = ReceptionRecording(
-        recordingFileId = id(),
-        receptionId = id(),
-        uploadedByAdminId = "test-admin",
+    private fun recording(verified: Boolean = true, receptionId: Long = id()) = ReceptionRecording(
+        receptionId = receptionId,
+        uploadedByAdminId = 1L,
         originalFilename = "call.m4a",
         bucket = "test-bucket",
         objectKey = "recordings/" + id(),
@@ -799,29 +797,29 @@ class ReceptionAnalysisRepositoryTest @Autowired constructor(
         recordingRepository.saveAndFlush(it)
     }
 
-    private fun analysis(analysisId: String = id(), createdAt: Instant = ACCEPTED_AT): ReceptionAnalysis {
-        val recording = recording()
+    private fun analysis(createdAt: Instant = ACCEPTED_AT, receptionId: Long = id()): ReceptionAnalysis {
+        val recording = recording(receptionId = receptionId)
         return ReceptionAnalysis(
-            analysisRequestId = analysisId,
             receptionId = recording.receptionId,
-            recordingFileId = recording.recordingFileId,
+            recordingFileId = checkNotNull(recording.recordingFileId),
             receptionVersion = 3,
-            requestedByAdminId = "test-admin",
+            requestedByAdminId = 1L,
             referenceTime = REFERENCE_TIME,
             createdAt = createdAt,
         )
     }
 
-    private fun awaitingStorage() = analysis().also {
+    private fun awaitingStorage(receptionId: Long = id()) = analysis(receptionId = receptionId).also {
         check(it.claim(WORKER, STARTED_AT, DEADLINE))
         check(it.receiveTranscription(WORKER, ORIGINAL, TRACE, TRANSCRIBED_AT) == ReceptionAnalysisTransition.ADVANCED)
     }
 
-    private fun applicationPair(): Pair<String, String> {
-        val analysis = repository.saveAndFlush(awaitingStorage())
+    private fun applicationPair(): Pair<Long, Long> {
+        val reception = receptionRepository.saveAndFlush(Reception(1L, REFERENCE_TIME.minusSeconds(60)))
+        val analysis = repository.saveAndFlush(awaitingStorage(checkNotNull(reception.receptionId)))
         val artifact = transcript(analysis)
-        check(analysis.attachTranscript(WORKER, artifact, TRACE, STORED_AT) == ReceptionAnalysisTransition.ADVANCED)
         transcriptRepository.saveAndFlush(artifact)
+        check(analysis.attachTranscript(WORKER, artifact, TRACE, STORED_AT) == ReceptionAnalysisTransition.ADVANCED)
         check(analysis.startStructuring(WORKER, TRACE, STRUCTURING_AT) == ReceptionAnalysisTransition.ADVANCED)
         check(
             analysis.receiveStructuredResult(
@@ -831,7 +829,6 @@ class ReceptionAnalysisRepositoryTest @Autowired constructor(
                 STRUCTURED_AT,
             ) == ReceptionAnalysisTransition.ADVANCED,
         )
-        val reception = Reception(analysis.receptionId, analysis.requestedByAdminId, REFERENCE_TIME.minusSeconds(60))
         reception.reserveRecording(1, analysis.recordingFileId, REFERENCE_TIME.minusSeconds(10))
         // 후속 업로드 완료/원문 연결 애플리케이션이 보관할 현재 문맥만 준비한다.
         ReflectionTestUtils.setField(reception, "version", 3)
@@ -839,7 +836,7 @@ class ReceptionAnalysisRepositoryTest @Autowired constructor(
         ReflectionTestUtils.setField(reception, "transcriptFileId", artifact.transcriptFileId)
         ReflectionTestUtils.setField(reception, "updatedAt", STORED_AT)
         receptionRepository.saveAndFlush(reception)
-        return reception.receptionId to analysis.analysisRequestId
+        return checkNotNull(reception.receptionId) to checkNotNull(analysis.analysisRequestId)
     }
 
     private fun structuredOriginal() = ReceptionAiOriginal(
@@ -851,11 +848,10 @@ class ReceptionAnalysisRepositoryTest @Autowired constructor(
         notes = "  방문 전 연락\r\n주차 가능  ",
     )
 
-    private fun transcript(analysis: ReceptionAnalysis, fileId: String = id()) = ReceptionTranscript(
-        transcriptFileId = fileId,
+    private fun transcript(analysis: ReceptionAnalysis) = ReceptionTranscript(
         receptionId = analysis.receptionId,
         recordingFileId = analysis.recordingFileId,
-        producedByAnalysisRequestId = analysis.analysisRequestId,
+        producedByAnalysisRequestId = checkNotNull(analysis.analysisRequestId),
         transcript = ORIGINAL,
         storedAt = STORED_AT,
     )
@@ -866,7 +862,7 @@ class ReceptionAnalysisRepositoryTest @Autowired constructor(
         }
     }
 
-    private fun persistenceVersion(analysisId: String) = jdbc.queryForObject(
+    private fun persistenceVersion(analysisId: Long) = jdbc.queryForObject(
         "SELECT persistence_version FROM $SCHEMA.reception_analysis_requests WHERE analysis_request_id = ?",
         Long::class.java,
         analysisId,
@@ -879,7 +875,9 @@ class ReceptionAnalysisRepositoryTest @Autowired constructor(
         .target(version)
         .load()
 
-    private fun id() = UUID.randomUUID().toString()
+    private val nextId = java.util.concurrent.atomic.AtomicLong(1_000_000)
+
+    private fun id() = nextId.incrementAndGet()
 
     companion object {
         private const val WORKER = "worker-1"

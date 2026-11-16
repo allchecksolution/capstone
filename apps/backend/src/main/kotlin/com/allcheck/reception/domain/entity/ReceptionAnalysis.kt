@@ -11,6 +11,8 @@ import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
+import jakarta.persistence.GeneratedValue
+import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.Index
 import jakarta.persistence.Table
@@ -34,27 +36,29 @@ import java.time.Instant
     ],
 )
 class ReceptionAnalysis(
-    @field:Id
-    @field:Column(name = "analysis_request_id", nullable = false, length = 64, updatable = false)
-    val analysisRequestId: String,
-    @field:Column(name = "reception_id", nullable = false, length = 64, updatable = false)
-    val receptionId: String,
-    @field:Column(name = "recording_file_id", nullable = false, length = 64, updatable = false)
-    val recordingFileId: String,
+    @field:Column(name = "reception_id", nullable = false, updatable = false)
+    val receptionId: Long,
+    @field:Column(name = "recording_file_id", nullable = false, updatable = false)
+    val recordingFileId: Long,
     @field:Column(name = "reception_version", nullable = false, updatable = false)
     val receptionVersion: Int,
-    @field:Column(name = "requested_by_admin_id", nullable = false, length = 64, updatable = false)
-    val requestedByAdminId: String,
+    @field:Column(name = "requested_by_admin_id", nullable = false, updatable = false)
+    val requestedByAdminId: Long,
     @field:Column(name = "reference_time", nullable = false, updatable = false)
     val referenceTime: Instant,
     @field:Column(name = "created_at", nullable = false, updatable = false)
     val createdAt: Instant,
 ) {
+    @field:Id
+    @field:GeneratedValue(strategy = GenerationType.IDENTITY)
+    @field:Column(name = "analysis_request_id", nullable = false, updatable = false)
+    var analysisRequestId: Long? = null
+        protected set
+
     init {
-        require(analysisRequestId.isNotBlank() && analysisRequestId.length <= 64)
-        require(receptionId.isNotBlank() && receptionId.length <= 64)
-        require(recordingFileId.isNotBlank() && recordingFileId.length <= 64)
-        require(requestedByAdminId.isNotBlank() && requestedByAdminId.length <= 64)
+        require(receptionId > 0)
+        require(recordingFileId > 0)
+        require(requestedByAdminId > 0)
         require(receptionVersion >= 1)
         require(!createdAt.isBefore(referenceTime)) { "Analysis acceptance must not precede recording reception." }
     }
@@ -66,8 +70,8 @@ class ReceptionAnalysis(
     @field:Column(name = "is_initial", nullable = false, updatable = false)
     val isInitial: Boolean = true
 
-    @field:Column(name = "source_transcript_file_id", nullable = true, length = 64, updatable = false)
-    private val sourceTranscriptFileId: String? = null
+    @field:Column(name = "source_transcript_file_id", nullable = true, updatable = false)
+    private val sourceTranscriptFileId: Long? = null
 
     @field:Column(name = "time_zone", nullable = false, length = 64, updatable = false)
     val timeZone: String = "Asia/Seoul"
@@ -97,8 +101,8 @@ class ReceptionAnalysis(
     var analysisStatus: ReceptionProcessingStatus = ReceptionProcessingStatus.PENDING
         protected set
 
-    @field:Column(name = "transcript_file_id", nullable = true, length = 64)
-    var transcriptFileId: String? = null
+    @field:Column(name = "transcript_file_id", nullable = true)
+    var transcriptFileId: Long? = null
         protected set
 
     @field:Column(name = "result_applied", nullable = false)
@@ -212,8 +216,9 @@ class ReceptionAnalysis(
     }
 
     /**
-     * ADVANCED에서만 원문 Entity와 이 연결·저장 성공 상태를 같은 DB 트랜잭션으로 저장한다.
-     * 기한 도달 시 FAILED이며 분석 실패·알림 의도를 저장하고 원문은 새로 저장하지 않는다.
+     * 원문 INSERT로 할당받은 ID를 연결한다. 애플리케이션은 삽입 전 실행권·단계·기한을 확인해야 한다.
+     * 원문과 ADVANCED 연결은 같은 트랜잭션으로 커밋한다. 실패/무시이면 새 원문 INSERT도 롤백해야 한다.
+     * 만료 등 종료 기록이 필요하면 원문을 롤백한 뒤 별도 트랜잭션으로 실패·알림 의도를 저장한다.
      * 구조화 호출은 커밋 이후 별도 시작하며 여기서는 STRUCTURE/PENDING으로 준비한다.
      */
     fun attachTranscript(
@@ -235,7 +240,7 @@ class ReceptionAnalysis(
             "Transcript storage time must follow transcription and not exceed the transition time."
         }
 
-        transcriptFileId = transcript.transcriptFileId
+        transcriptFileId = checkNotNull(transcript.transcriptFileId) { "Persist the transcript before attaching its generated ID." }
         transcriptStorageStatus = ReceptionProcessingStatus.SUCCEEDED
         stage = ReceptionAnalysisStage.STRUCTURE
         updatedAt = now

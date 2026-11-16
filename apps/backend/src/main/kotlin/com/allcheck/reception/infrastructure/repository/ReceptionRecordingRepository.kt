@@ -3,12 +3,12 @@ package com.allcheck.reception.infrastructure.repository
 import com.allcheck.reception.domain.entity.ReceptionRecording
 import org.springframework.data.jpa.repository.JpaRepository
 
-interface ReceptionRecordingRepository : JpaRepository<ReceptionRecording, String> {
-    fun findByReceptionId(receptionId: String): ReceptionRecording?
+interface ReceptionRecordingRepository : JpaRepository<ReceptionRecording, Long> {
+    fun findByReceptionId(receptionId: Long): ReceptionRecording?
 
     fun findByRecordingFileIdAndReceptionIdAndUploadedByAdminId(
-        recordingFileId: String,
-        receptionId: String,
-        uploadedByAdminId: String,
+        recordingFileId: Long,
+        receptionId: Long,
+        uploadedByAdminId: Long,
     ): ReceptionRecording?
 }

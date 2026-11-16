@@ -4,6 +4,8 @@ import com.allcheck.reception.domain.vo.ReceptionAnalysisStage
 import com.allcheck.reception.domain.vo.ReceptionAnalysisStatus
 import com.allcheck.reception.domain.vo.ReceptionAnalysisTransition
 import com.allcheck.reception.domain.vo.ReceptionProcessingStatus
+import com.allcheck.reception.fixture.testReceptionAnalysis
+import com.allcheck.reception.fixture.testReceptionTranscript
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -89,11 +91,11 @@ class ReceptionTranscriptionProgressTest {
     fun `다른 문맥이나 잘못된 시각의 원문은 분석을 변경하지 않고 거부한다`(invalid: String) {
         // given
         val analysis = awaitingStorage()
-        val artifact = ReceptionTranscript(
-            transcriptFileId = "transcript-1",
-            receptionId = if (invalid == "reception") "another-reception" else analysis.receptionId,
-            recordingFileId = if (invalid == "recording") "another-recording" else analysis.recordingFileId,
-            producedByAnalysisRequestId = if (invalid == "producer") "another-analysis" else analysis.analysisRequestId,
+        val artifact = testReceptionTranscript(
+            transcriptFileId = 1_004L,
+            receptionId = if (invalid == "reception") 9000001L else analysis.receptionId,
+            recordingFileId = if (invalid == "recording") 9000002L else analysis.recordingFileId,
+            producedByAnalysisRequestId = if (invalid == "producer") 9000003L else analysis.analysisRequestId,
             transcript = ORIGINAL,
             storedAt = when (invalid) {
                 "early-storage" -> TRANSCRIBED_AT.minusSeconds(1)
@@ -190,7 +192,7 @@ class ReceptionTranscriptionProgressTest {
         assertThat(analysis.analysisStatus).isEqualTo(
             if (stage == "STRUCTURE") ReceptionProcessingStatus.FAILED else ReceptionProcessingStatus.NOT_AVAILABLE,
         )
-        assertThat(analysis.transcriptFileId).isEqualTo(if (stage == "STRUCTURE") "transcript-1" else null)
+        assertThat(analysis.transcriptFileId).isEqualTo(if (stage == "STRUCTURE") 1_004L else null)
     }
 
     @Test
@@ -296,13 +298,13 @@ class ReceptionTranscriptionProgressTest {
         assertThat(analysis.leaseExpiresAt).isNull()
     }
 
-    private fun analysis() = ReceptionAnalysis("analysis-1", "reception-1", "recording-1", 3, "admin-1", REFERENCE_TIME, ACCEPTED_AT)
+    private fun analysis() = testReceptionAnalysis(1_005L, 1_001L, 1_007L, 3, 1_003L, REFERENCE_TIME, ACCEPTED_AT)
 
     private fun claimed() = analysis().also { it.claim(WORKER, STARTED_AT, DEADLINE) }
 
     private fun awaitingStorage() = claimed().also { it.receiveTranscription(WORKER, ORIGINAL, TRACE, TRANSCRIBED_AT) }
 
-    private fun transcript() = ReceptionTranscript("transcript-1", "reception-1", "recording-1", "analysis-1", ORIGINAL, STORED_AT)
+    private fun transcript() = testReceptionTranscript(1_004L, 1_001L, 1_007L, 1_005L, ORIGINAL, STORED_AT)
 
     private fun snapshot(analysis: ReceptionAnalysis) = listOf(
         analysis.status,

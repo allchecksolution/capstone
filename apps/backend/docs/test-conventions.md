@@ -95,3 +95,17 @@ and concurrent transcript storage versus timeout without leaving a losing transc
 Structuring tests verify phase/owner/deadline guards, immutable AI results and missing-field lists, initial auto-fill without review confirmation,
 saved administrator-value protection, and stale-result rejection. Database coverage includes atomic reception/attempt completion,
 rollback, one-time concurrent application, and administrator confirmation/reopening that preserves the original AI JSON.
+The current entities and internal references use numeric IDs; domain-only fixtures simulate already assigned IDs,
+while repository and service tests use actual IDENTITY-generated keys. Recording reservation and transcript attachment
+insert first to obtain the ID and commit their linkage in the same transaction. Tests verify concurrent generated-ID uniqueness,
+rollback without ID reuse, V6-to-V7 conversion of empty schemas, numeric reference types and restored foreign keys,
+and safe V7 refusal when existing string-key data needs an explicit mapping. Existing V1-V6 upgrade tests retain their original schema versions.
+
+`ReceptionServiceTest` imports the real review service into a focused JPA context and uses a controlled server clock.
+It runs calls outside the test rollback transaction to verify committed confirmation/reopen results, failed-call preservation,
+owner-scoped 404 responses, persisted overall-analysis readiness, and conflicting service calls from independent transactions.
+It also creates and removes only its own UUID-named schema. Run it with:
+
+```sh
+./gradlew test --tests com.allcheck.reception.application.ReceptionServiceTest
+```

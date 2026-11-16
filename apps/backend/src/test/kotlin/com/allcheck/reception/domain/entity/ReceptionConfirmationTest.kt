@@ -10,6 +10,7 @@ import com.allcheck.reception.domain.vo.ReceptionData
 import com.allcheck.reception.domain.vo.ReceptionReviewStatus
 import com.allcheck.reception.domain.vo.WorkType
 import com.allcheck.reception.exception.ReceptionErrorCode
+import com.allcheck.reception.fixture.testReception
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -29,7 +30,7 @@ class ReceptionConfirmationTest {
     fun `녹음 예약 후 분석 접수 전에는 수동 접수로 오인하여 검토 완료할 수 없다`() {
         // given
         val reception = manualReception()
-        reception.reserveRecording(reception.version, "recording-1", NOW.minusSeconds(60))
+        reception.reserveRecording(reception.version, 1_007L, NOW.minusSeconds(60))
 
         // when & then
         assertRejected(reception, ReceptionErrorCode.REVIEW_NOT_READY) {
@@ -67,9 +68,9 @@ class ReceptionConfirmationTest {
         assertConfirmed(reception, data, expectedVersion = 5)
         assertThat(reception.aiOriginal).isSameAs(original)
         assertThat(reception.aiOriginal?.notes).isEqualTo("방문 30분 전 연락")
-        assertThat(reception.recordingFileId).isEqualTo("recording-1")
-        assertThat(reception.transcriptFileId).isEqualTo("transcript-1")
-        assertThat(reception.latestAnalysisRequestId).isEqualTo("analysis-1")
+        assertThat(reception.recordingFileId).isEqualTo(1_007L)
+        assertThat(reception.transcriptFileId).isEqualTo(1_004L)
+        assertThat(reception.latestAnalysisRequestId).isEqualTo(1_005L)
         assertThat(reception.requestId).isNull()
     }
 
@@ -161,7 +162,7 @@ class ReceptionConfirmationTest {
         // given
         val reception = analyzedReception()
         reception.confirm(reception.version, validData(), ReceptionAnalysisStatus.SUCCEEDED, NOW)
-        ReflectionTestUtils.setField(reception, "requestId", "request-1")
+        ReflectionTestUtils.setField(reception, "requestId", 1_002L)
 
         // when & then
         assertRejected(reception, ReceptionErrorCode.RECEPTION_ALREADY_REGISTERED) {
@@ -316,9 +317,9 @@ class ReceptionConfirmationTest {
         reception.updatedAt,
     )
 
-    private fun manualReception() = Reception(
-        receptionId = "reception-1",
-        ownerAdminId = "admin-1",
+    private fun manualReception() = testReception(
+        receptionId = 1_001L,
+        ownerAdminId = 1_003L,
         receivedAt = NOW.minusSeconds(7200),
         callerPhone = "02-1234-5678",
     )
@@ -326,8 +327,8 @@ class ReceptionConfirmationTest {
     // 아직 없는 업로드·AI 결과 적용 동작을 구현하는 대신 테스트에서 저장된 상태만 준비한다.
     private fun receptionWithAnalysis() = manualReception().also {
         ReflectionTestUtils.setField(it, "version", 3)
-        ReflectionTestUtils.setField(it, "recordingFileId", "recording-1")
-        ReflectionTestUtils.setField(it, "latestAnalysisRequestId", "analysis-1")
+        ReflectionTestUtils.setField(it, "recordingFileId", 1_007L)
+        ReflectionTestUtils.setField(it, "latestAnalysisRequestId", 1_005L)
         ReflectionTestUtils.setField(it, "updatedAt", NOW.minusSeconds(60))
     }
 
@@ -342,7 +343,7 @@ class ReceptionConfirmationTest {
         )
         ReflectionTestUtils.setField(it, "version", 4)
         ReflectionTestUtils.setField(it, "aiOriginal", original)
-        ReflectionTestUtils.setField(it, "transcriptFileId", "transcript-1")
+        ReflectionTestUtils.setField(it, "transcriptFileId", 1_004L)
         ReflectionTestUtils.setField(
             it,
             "finalData",

@@ -2,6 +2,8 @@ package com.allcheck.reception.domain.entity
 
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
+import jakarta.persistence.GeneratedValue
+import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.Index
 import jakarta.persistence.Table
@@ -26,26 +28,28 @@ import java.time.Instant
     ],
 )
 class ReceptionTranscript(
-    @field:Id
-    @field:Column(name = "transcript_file_id", nullable = false, length = 64, updatable = false)
-    val transcriptFileId: String,
-    @field:Column(name = "reception_id", nullable = false, length = 64, updatable = false)
-    val receptionId: String,
-    @field:Column(name = "recording_file_id", nullable = false, length = 64, updatable = false)
-    val recordingFileId: String,
-    @field:Column(name = "produced_by_analysis_request_id", nullable = false, length = 64, updatable = false)
-    val producedByAnalysisRequestId: String,
+    @field:Column(name = "reception_id", nullable = false, updatable = false)
+    val receptionId: Long,
+    @field:Column(name = "recording_file_id", nullable = false, updatable = false)
+    val recordingFileId: Long,
+    @field:Column(name = "produced_by_analysis_request_id", nullable = false, updatable = false)
+    val producedByAnalysisRequestId: Long,
     @field:Column(name = "transcript_text", nullable = false, columnDefinition = "text", updatable = false)
     val transcript: String,
     // 기존 열 이름은 유지한다. 새 원문에서는 S3 업로드가 아닌 DB 보관 시각이다.
     @field:Column(name = "uploaded_at", nullable = false, updatable = false)
     val storedAt: Instant,
 ) {
+    @field:Id
+    @field:GeneratedValue(strategy = GenerationType.IDENTITY)
+    @field:Column(name = "transcript_file_id", nullable = false, updatable = false)
+    var transcriptFileId: Long? = null
+        protected set
+
     init {
-        require(transcriptFileId.isNotBlank() && transcriptFileId.length <= 64)
-        require(receptionId.isNotBlank() && receptionId.length <= 64)
-        require(recordingFileId.isNotBlank() && recordingFileId.length <= 64)
-        require(producedByAnalysisRequestId.isNotBlank() && producedByAnalysisRequestId.length <= 64)
+        require(receptionId > 0)
+        require(recordingFileId > 0)
+        require(producedByAnalysisRequestId > 0)
         require(transcript.isNotBlank()) { "A canonical transcript must contain transcription content." }
         require(transcript.codePointCount(0, transcript.length) <= MAX_CODE_POINTS) { "Transcript exceeds the AI contract limit." }
     }

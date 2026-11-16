@@ -62,7 +62,7 @@ class ReceptionTranscriptRepositoryTest @Autowired constructor(
         repository.saveAndFlush(transcript)
         entityManager.clear()
         val saved = repository.findByTranscriptFileIdAndRecordingFileIdAndReceptionId(
-            transcript.transcriptFileId,
+            checkNotNull(transcript.transcriptFileId),
             source.recordingId,
             source.receptionId,
         ) ?: error("Canonical transcript must be found")
@@ -98,9 +98,9 @@ class ReceptionTranscriptRepositoryTest @Autowired constructor(
         entityManager.clear()
 
         // when & then
-        assertThat(repository.findByTranscriptFileIdAndRecordingFileIdAndReceptionId(transcript.transcriptFileId, id(), source.receptionId))
+        assertThat(repository.findByTranscriptFileIdAndRecordingFileIdAndReceptionId(checkNotNull(transcript.transcriptFileId), id(), source.receptionId))
             .isNull()
-        assertThat(repository.findByTranscriptFileIdAndRecordingFileIdAndReceptionId(transcript.transcriptFileId, source.recordingId, id()))
+        assertThat(repository.findByTranscriptFileIdAndRecordingFileIdAndReceptionId(checkNotNull(transcript.transcriptFileId), source.recordingId, id()))
             .isNull()
         assertThat(repository.findById(id())).isEmpty()
     }
@@ -114,12 +114,20 @@ class ReceptionTranscriptRepositoryTest @Autowired constructor(
         val source = transaction.execute { source() }
         val first = transcript(source, "최초 STT 원문")
         transaction.executeWithoutResult { repository.saveAndFlush(first) }
-        val fileId = if (duplicate == "same-id") first.transcriptFileId else id()
-        val second = ReceptionTranscript(fileId, source.receptionId, source.recordingId, source.analysisId, "바뀐 원문", STORED_AT.plusSeconds(60))
+        val second = ReceptionTranscript(source.receptionId, source.recordingId, source.analysisId, "바뀐 원문", STORED_AT.plusSeconds(60))
 
         // when
         val exception = assertThrows<DataIntegrityViolationException> {
-            transaction.executeWithoutResult { repository.saveAndFlush(second) }
+            transaction.executeWithoutResult {
+                if (duplicate == "same-id") {
+                    jdbc.update(
+                        "INSERT INTO $SCHEMA.reception_transcripts SELECT * FROM $SCHEMA.reception_transcripts WHERE transcript_file_id = ?",
+                        first.transcriptFileId,
+                    )
+                } else {
+                    repository.saveAndFlush(second)
+                }
+            }
         }
         val saved = repository.findByProducedByAnalysisRequestId(source.analysisId) ?: error("Original must remain")
 
@@ -136,7 +144,6 @@ class ReceptionTranscriptRepositoryTest @Autowired constructor(
         // given
         val source = source()
         val invalid = ReceptionTranscript(
-            transcriptFileId = id(),
             receptionId = if (mismatch == "reception") id() else source.receptionId,
             recordingFileId = if (mismatch == "recording") id() else source.recordingId,
             producedByAnalysisRequestId = if (mismatch == "producer") id() else source.analysisId,
@@ -228,11 +235,11 @@ class ReceptionTranscriptRepositoryTest @Autowired constructor(
             SELECT r.reception_id, r.recording_file_id, r.recording_received_at, a.reference_time
             FROM $UPGRADE_SCHEMA.reception_recordings r
             JOIN $UPGRADE_SCHEMA.reception_analysis_requests a ON a.recording_file_id = r.recording_file_id
-            WHERE a.analysis_request_id = ?
+            WHERE a.analysis_request_id = ?::text
             """.trimIndent(),
             { row, _ ->
-                assertThat(row.getString("reception_id")).isEqualTo(source.receptionId)
-                assertThat(row.getString("recording_file_id")).isEqualTo(source.recordingId)
+                assertThat(row.getLong("reception_id")).isEqualTo(source.receptionId)
+                assertThat(row.getLong("recording_file_id")).isEqualTo(source.recordingId)
                 assertThat(row.getObject("reference_time", OffsetDateTime::class.java).toInstant()).isEqualTo(RECEIVED_AT)
                 row.getObject("recording_received_at", OffsetDateTime::class.java).toInstant()
             },
@@ -258,7 +265,7 @@ class ReceptionTranscriptRepositoryTest @Autowired constructor(
         assertThat(migrationAt("3", UNEXPECTED_SCHEMA).info().current()?.version?.version).isEqualTo("3")
         assertThat(
             jdbc.queryForObject(
-                "SELECT object_key FROM $UNEXPECTED_SCHEMA.reception_transcripts WHERE transcript_file_id = ?",
+                "SELECT object_key FROM $UNEXPECTED_SCHEMA.reception_transcripts WHERE transcript_file_id = ?::text",
                 String::class.java,
                 fileId,
             ),
@@ -273,7 +280,6 @@ class ReceptionTranscriptRepositoryTest @Autowired constructor(
     }
 
     private fun transcript(source: Source, text: String = "테스트 STT 원문") = ReceptionTranscript(
-        transcriptFileId = id(),
         receptionId = source.receptionId,
         recordingFileId = source.recordingId,
         producedByAnalysisRequestId = source.analysisId,
@@ -289,7 +295,7 @@ class ReceptionTranscriptRepositoryTest @Autowired constructor(
                 recording_file_id, reception_id, uploaded_by_admin_id, original_filename,
                 bucket, object_key, content_type, size_bytes, checksum_sha256,
                 status, recording_received_at, created_at, updated_at
-            ) VALUES (?, ?, 'test-admin', 'call.m4a', 'test-bucket', ?, 'audio/mp4', 1024, ?,
+            ) VALUES (?, ?, '1', 'call.m4a', 'test-bucket', ?, 'audio/mp4', 1024, ?,
                 'UPLOADED', ?, ?, ?)
             """.trimIndent(),
             source.recordingId,
@@ -305,7 +311,7 @@ class ReceptionTranscriptRepositoryTest @Autowired constructor(
             INSERT INTO $schema.reception_analysis_requests (
                 analysis_request_id, reception_id, recording_file_id, reception_version,
                 requested_by_admin_id, mode, is_initial, reference_time, created_at, updated_at
-            ) VALUES (?, ?, ?, 3, 'test-admin', 'FULL', TRUE, ?, ?, ?)
+            ) VALUES (?, ?, ?, 3, '1', 'FULL', TRUE, ?, ?, ?)
             """.trimIndent(),
             source.analysisId,
             source.receptionId,
@@ -317,7 +323,7 @@ class ReceptionTranscriptRepositoryTest @Autowired constructor(
         return source
     }
 
-    private fun legacyTranscript(source: Source, schema: String): String {
+    private fun legacyTranscript(source: Source, schema: String): Long {
         val fileId = id()
         jdbc.update(
             """
@@ -352,9 +358,11 @@ class ReceptionTranscriptRepositoryTest @Autowired constructor(
         .target(version)
         .load()
 
-    private fun id() = UUID.randomUUID().toString()
+    private val nextId = java.util.concurrent.atomic.AtomicLong(1_000_000)
 
-    private data class Source(val receptionId: String, val recordingId: String, val analysisId: String)
+    private fun id() = nextId.incrementAndGet()
+
+    private data class Source(val receptionId: Long, val recordingId: Long, val analysisId: Long)
 
     companion object {
         private val STORED_AT = Instant.parse("2026-11-16T00:00:00Z")

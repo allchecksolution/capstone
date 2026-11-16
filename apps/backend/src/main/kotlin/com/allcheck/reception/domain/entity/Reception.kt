@@ -14,6 +14,8 @@ import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
+import jakarta.persistence.GeneratedValue
+import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.Index
 import jakarta.persistence.Table
@@ -30,11 +32,8 @@ import java.time.OffsetDateTime
     indexes = [Index(name = "ix_receptions_owner_received", columnList = "owner_admin_id, received_at")],
 )
 class Reception(
-    @field:Id
-    @field:Column(name = "reception_id", nullable = false, length = 64, updatable = false)
-    val receptionId: String,
-    @field:Column(name = "owner_admin_id", nullable = false, length = 64, updatable = false)
-    val ownerAdminId: String,
+    @field:Column(name = "owner_admin_id", nullable = false, updatable = false)
+    val ownerAdminId: Long,
     @field:Column(name = "received_at", nullable = false, updatable = false)
     val receivedAt: Instant,
     /** 통화 메타데이터의 상대 번호. 관리자가 확인하는 finalData.contactPhone과 구분한다. */
@@ -43,6 +42,16 @@ class Reception(
     @field:Column(name = "call_started_at", nullable = true, updatable = false)
     val callStartedAt: OffsetDateTime? = null,
 ) {
+    init {
+        require(ownerAdminId > 0)
+    }
+
+    @field:Id
+    @field:GeneratedValue(strategy = GenerationType.IDENTITY)
+    @field:Column(name = "reception_id", nullable = false, updatable = false)
+    var receptionId: Long? = null
+        protected set
+
     @field:Enumerated(EnumType.STRING)
     @field:Column(name = "review_status", nullable = false, length = 20)
     var reviewStatus: ReceptionReviewStatus = ReceptionReviewStatus.DRAFT
@@ -70,21 +79,21 @@ class Reception(
         protected set
 
     /** 미완료 업로드 예약도 식별한다. ID 존재만으로 원본 재생 가능 여부를 판단하지 않는다. */
-    @field:Column(name = "recording_file_id", nullable = true, length = 64)
-    var recordingFileId: String? = null
+    @field:Column(name = "recording_file_id", nullable = true)
+    var recordingFileId: Long? = null
         protected set
 
     /** DB STT 원문의 식별자이며 S3 파일을 의미하지 않는다. */
-    @field:Column(name = "transcript_file_id", nullable = true, length = 64)
-    var transcriptFileId: String? = null
+    @field:Column(name = "transcript_file_id", nullable = true)
+    var transcriptFileId: Long? = null
         protected set
 
-    @field:Column(name = "latest_analysis_request_id", nullable = true, length = 64)
-    var latestAnalysisRequestId: String? = null
+    @field:Column(name = "latest_analysis_request_id", nullable = true)
+    var latestAnalysisRequestId: Long? = null
         protected set
 
-    @field:Column(name = "request_id", nullable = true, length = 64, unique = true)
-    var requestId: String? = null
+    @field:Column(name = "request_id", nullable = true, unique = true)
+    var requestId: Long? = null
         protected set
 
     @field:Column(name = "confirmed_at", nullable = true)
@@ -100,7 +109,7 @@ class Reception(
      * 애플리케이션은 녹음 메타데이터 생성과 이 변경을 같은 트랜잭션으로 저장해야 한다.
      * 미완료 업로드의 URL 재발급은 새 예약을 만들지 않고 기존 파일을 사용한다.
      */
-    fun reserveRecording(expectedVersion: Int, recordingFileId: String, now: Instant) {
+    fun reserveRecording(expectedVersion: Int, recordingFileId: Long, now: Instant) {
         if (expectedVersion != version) {
             throw BusinessException(GlobalErrorCode.VERSION_CONFLICT)
         }
@@ -113,7 +122,7 @@ class Reception(
         if (this.recordingFileId != null) {
             throw BusinessException(ReceptionErrorCode.RECORDING_ALREADY_EXISTS)
         }
-        require(recordingFileId.isNotBlank() && recordingFileId.length <= 64)
+        require(recordingFileId > 0)
 
         val nextVersion = Math.incrementExact(version)
 
