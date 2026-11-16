@@ -4895,11 +4895,7 @@ components:
         - contactPhone
       properties:
         workType:
-          type: string
-          enum:
-            - EXTERIOR_LEAK
-            - INTERIOR_LEAK
-            - BLOCKAGE
+          $ref: '#/components/schemas/WorkType'
         symptoms:
           type: string
           minLength: 1
@@ -5665,8 +5661,8 @@ components:
         totalPages: {type: integer, minimum: 0}
     WorkType:
       type: string
-      enum: [EXTERIOR_LEAK, INTERIOR_LEAK, BLOCKAGE]
-      description: 외벽누수, 내벽누수, 막힘. 기사 전문 분야와 같은 값을 쓴다.
+      enum: [EXTERIOR_LEAK, INTERIOR_LEAK, BLOCKAGE, BOILER, WATERPROOFING]
+      description: 외벽 누수(EXTERIOR_LEAK), 내벽 누수(INTERIOR_LEAK), 막힘(BLOCKAGE), 보일러(BOILER), 방수(WATERPROOFING). 기사 전문 분야와 같은 값을 쓴다.
     RoundStatus:
       type: string
       enum: [SEARCHING, OFFERING, ASSIGNED, NO_CANDIDATES, DELIVERY_FAILED, NO_ACCEPT, ROUND_CLOSED]

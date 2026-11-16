@@ -84,3 +84,5 @@ atomic recording reservation linkage and metadata persistence/rollback,
 and V1-to-V2 / V2-to-V3 upgrades that preserve existing recording metadata and first completion timestamps.
 Transcript tests cover exact text/line-break/Unicode preservation, source foreign keys, duplicate-insert protection,
 and V3-to-V4 migration with existing recording/analysis records. An additional isolated schema verifies that unexpected legacy S3 transcript rows stop V4 without losing existing data.
+Work-type coverage verifies all five types in AI-original/final-data JSONB round trips and confirmation/reopen persistence,
+rejects unsupported types, and checks V4-to-V5 expansion while preserving existing confirmed intake data.

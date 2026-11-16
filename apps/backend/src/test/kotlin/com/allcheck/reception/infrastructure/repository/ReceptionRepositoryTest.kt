@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.EnumSource
 import org.junit.jupiter.params.provider.ValueSource
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration
@@ -114,12 +115,13 @@ class ReceptionRepositoryTest @Autowired constructor(
         ).isTrue()
     }
 
-    @Test
-    fun `원본과 최신값의 오프셋을 보존하며 확정과 해제를 저장한다`() {
+    @ParameterizedTest
+    @EnumSource(WorkType::class)
+    fun `다섯 작업 유형의 원본과 최신값을 보존하며 확정과 해제를 저장한다`(workType: WorkType) {
         // given
         val reception = newReception()
         val original = ReceptionAiOriginal(
-            workType = WorkType.EXTERIOR_LEAK,
+            workType = workType,
             symptoms = "AI 추출 증상",
             desiredVisitFrom = OffsetDateTime.parse("2026-11-15T14:00:00+09:00"),
             desiredVisitTo = OffsetDateTime.parse("2026-11-15T16:00:00+09:00"),
@@ -130,7 +132,7 @@ class ReceptionRepositoryTest @Autowired constructor(
         ReflectionTestUtils.setField(reception, "recordingFileId", "recording-1")
         ReflectionTestUtils.setField(reception, "transcriptFileId", "transcript-1")
         ReflectionTestUtils.setField(reception, "latestAnalysisRequestId", "analysis-1")
-        reception.confirm(reception.version, reviewedData(), ReceptionAnalysisStatus.SUCCEEDED, NOW)
+        reception.confirm(reception.version, reviewedData().copy(workType = workType), ReceptionAnalysisStatus.SUCCEEDED, NOW)
 
         // when
         repository.saveAndFlush(reception)
@@ -145,6 +147,7 @@ class ReceptionRepositoryTest @Autowired constructor(
         assertThat(confirmed.finalData.desiredVisitTo).isEqualTo(reviewedData().desiredVisitTo)
         assertThat(confirmed.finalData.contactPhone).isEqualTo(reviewedData().contactPhone)
         assertThat(confirmed.finalData.notes).isEqualTo(reviewedData().notes)
+        assertThat(confirmed.finalData.workType).isEqualTo(workType)
         assertThat(confirmed.aiOriginal).isEqualTo(original)
 
         // when
@@ -232,7 +235,7 @@ class ReceptionRepositoryTest @Autowired constructor(
     }
 
     @ParameterizedTest
-    @ValueSource(strings = ["missing-data", "invalid-version", "draft-with-request"])
+    @ValueSource(strings = ["missing-data", "invalid-version", "draft-with-request", "unknown-work-type"])
     fun `DB는 불완전한 확정과 잘못된 버전 및 미확정 의뢰 연결을 거부한다`(invalidState: String) {
         // given
         val reception = repository.saveAndFlush(newReception())
@@ -240,12 +243,17 @@ class ReceptionRepositoryTest @Autowired constructor(
             "missing-data" -> "review_status = 'CONFIRMED', confirmed_at = ?, updated_at = ?"
             "invalid-version" -> "version = 0"
             "draft-with-request" -> "request_id = 'request-invalid'"
+            "unknown-work-type" -> "final_data = jsonb_set(final_data, '{workType}', '\"UNKNOWN\"'::jsonb)"
             else -> error("Unknown constraint case")
         }
         val arguments = if (invalidState == "missing-data") {
             arrayOf(NOW.atOffset(ZoneOffset.UTC), NOW.atOffset(ZoneOffset.UTC), reception.receptionId)
         } else {
             arrayOf(reception.receptionId)
+        }
+        if (invalidState == "unknown-work-type") {
+            reception.confirm(1, reviewedData(), analysisStatus = null, now = NOW)
+            repository.flush()
         }
 
         // when
@@ -305,17 +313,73 @@ class ReceptionRepositoryTest @Autowired constructor(
         assertThat(jdbc.queryForObject("SELECT count(*) FROM $UPGRADE_SCHEMA.receptions", Long::class.java)).isZero()
     }
 
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    fun `V5는 기존 확정값을 보존하고 보일러와 방수 유형의 저장을 허용한다`() {
+        // given
+        migrationAt("4", WORK_TYPE_UPGRADE_SCHEMA).migrate()
+        val originalData = """
+            {"workType":"BLOCKAGE","symptoms":"배수 불가","address":"서울시 강남구 테스트 주소",
+             "desiredVisitFrom":"2026-11-15T14:00:00+09:00","desiredVisitTo":"2026-11-15T16:00:00+09:00",
+             "contactPhone":"010-1234-5678","notes":"기존 메모"}
+        """.trimIndent()
+        jdbc.update(
+            """
+            INSERT INTO $WORK_TYPE_UPGRADE_SCHEMA.receptions (
+                reception_id, owner_admin_id, received_at, review_status, version, final_data, confirmed_at, updated_at
+            ) VALUES ('legacy-type', 'test-admin', ?, 'CONFIRMED', 2, ?::jsonb, ?, ?)
+            """.trimIndent(),
+            NOW.minusSeconds(60).atOffset(ZoneOffset.UTC),
+            originalData,
+            NOW.atOffset(ZoneOffset.UTC),
+            NOW.atOffset(ZoneOffset.UTC),
+        )
+        assertThrows<DataIntegrityViolationException> {
+            jdbc.update(
+                "UPDATE $WORK_TYPE_UPGRADE_SCHEMA.receptions SET final_data = jsonb_set(final_data, '{workType}', '\"BOILER\"'::jsonb)",
+            )
+        }
+
+        // when
+        val upgraded = migrationAt("5", WORK_TYPE_UPGRADE_SCHEMA)
+        upgraded.migrate()
+
+        // then
+        assertThat(upgraded.validateWithResult().validationSuccessful).isTrue()
+        assertThat(upgraded.info().current()?.version?.version).isEqualTo("5")
+        assertThat(
+            jdbc.queryForObject(
+                "SELECT final_data = ?::jsonb AND version = 2 FROM $WORK_TYPE_UPGRADE_SCHEMA.receptions WHERE reception_id = 'legacy-type'",
+                Boolean::class.java,
+                originalData,
+            ),
+        ).isTrue()
+        for (workType in listOf("BOILER", "WATERPROOFING")) {
+            jdbc.update(
+                "UPDATE $WORK_TYPE_UPGRADE_SCHEMA.receptions SET final_data = jsonb_set(final_data, '{workType}', to_jsonb(?::text)) WHERE reception_id = 'legacy-type'",
+                workType,
+            )
+            assertThat(
+                jdbc.queryForObject(
+                    "SELECT final_data ->> 'workType' FROM $WORK_TYPE_UPGRADE_SCHEMA.receptions WHERE reception_id = 'legacy-type'",
+                    String::class.java,
+                ),
+            ).isEqualTo(workType)
+        }
+    }
+
     @AfterAll
     fun removeOwnedTestSchemas() {
         // 두 이름 모두 이 테스트 실행에서 생성한 UUID이며 외부 설정으로 바꾸지 않는다.
         jdbc.execute("DROP SCHEMA IF EXISTS $UPGRADE_SCHEMA CASCADE")
+        jdbc.execute("DROP SCHEMA IF EXISTS $WORK_TYPE_UPGRADE_SCHEMA CASCADE")
         jdbc.execute("DROP SCHEMA IF EXISTS $SCHEMA CASCADE")
     }
 
-    private fun migrationAt(version: String) = Flyway.configure()
+    private fun migrationAt(version: String, schema: String = UPGRADE_SCHEMA) = Flyway.configure()
         .dataSource(dataSource)
-        .schemas(UPGRADE_SCHEMA)
-        .defaultSchema(UPGRADE_SCHEMA)
+        .schemas(schema)
+        .defaultSchema(schema)
         .target(version)
         .load()
 
@@ -337,6 +401,7 @@ class ReceptionRepositoryTest @Autowired constructor(
         private val NOW = Instant.parse("2026-11-15T06:00:00Z")
         private val SCHEMA = "reception_test_" + UUID.randomUUID().toString().replace("-", "")
         private val UPGRADE_SCHEMA = SCHEMA + "_upgrade"
+        private val WORK_TYPE_UPGRADE_SCHEMA = SCHEMA + "_work_type"
 
         @JvmStatic
         @DynamicPropertySource

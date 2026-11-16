@@ -248,6 +248,15 @@ intake = dict(workType="BLOCKAGE", symptoms="싱크대 배수 불가", address="
               desiredVisitFrom="2026-11-13T14:00:00+09:00",
               desiredVisitTo="2026-11-13T16:00:00+09:00", contactPhone="010-1234-5678")
 case(backend, "ReceptionFields", intake)
+for work_type in ["BOILER", "WATERPROOFING"]:
+    case(backend, "ReceptionFields", dict(intake, workType=work_type))
+    case(backend, "ConfirmReception", dict(expectedVersion=4, finalData=dict(intake, workType=work_type)))
+    for document in [backend, ai]:
+        case(document, "WorkType", work_type)
+        case(document, "ReceptionDraftFields", {"workType": work_type})
+for document in [backend, ai]:
+    case(document, "WorkType", "UNKNOWN", False)
+case(backend, "ReceptionFields", dict(intake, workType="UNKNOWN"), False)
 case(backend, "ReceptionFields", dict(intake, notes="방문 30분 전 연락"))
 for field in intake:
     missing = dict(intake)

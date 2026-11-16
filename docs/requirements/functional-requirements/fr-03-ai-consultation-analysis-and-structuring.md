@@ -12,4 +12,5 @@
 업무 정책은 [BR-09](../../../apps/backend/docs/business-specification.md#br-09), AI 요청·응답은 [AI OpenAPI](../../../apps/ai/docs/openapi.yaml)를 따른다.
 
 검토 화면의 최초 AI 결과 자동 채움과 관리자 저장값 보호는 [BR-04](../../../apps/backend/docs/business-specification.md#br-04)를 따른다.
+작업 유형은 막힘·외벽 누수·내벽 누수·보일러·방수 5개이며, 관리자 검토·의뢰·기사 전문 분야에도 같은 분류를 사용한다.
 현재 AI 추출 계약에는 연락처가 포함되지 않는다. 연락처 자동 확보 방법은 프런트 검토 과제이며, 확정 시 연락처 필수 검증과 구분한다.

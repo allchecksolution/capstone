@@ -4,4 +4,6 @@ enum class WorkType {
     EXTERIOR_LEAK,
     INTERIOR_LEAK,
     BLOCKAGE,
+    BOILER,
+    WATERPROOFING,
 }

@@ -184,7 +184,9 @@ components:
       - EXTERIOR_LEAK
       - INTERIOR_LEAK
       - BLOCKAGE
-      description: 외벽누수, 내벽누수, 막힘. 기사 전문 분야와 같은 값을 쓴다.
+      - BOILER
+      - WATERPROOFING
+      description: 외벽 누수(EXTERIOR_LEAK), 내벽 누수(INTERIOR_LEAK), 막힘(BLOCKAGE), 보일러(BOILER), 방수(WATERPROOFING). 기사 전문 분야와 같은 값을 쓴다.
     ReceptionDraftFields:
       type: object
       additionalProperties: false
