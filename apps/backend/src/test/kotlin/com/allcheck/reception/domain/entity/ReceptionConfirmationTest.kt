@@ -26,6 +26,18 @@ import java.util.stream.Stream
 
 class ReceptionConfirmationTest {
     @Test
+    fun `녹음 예약 후 분석 접수 전에는 수동 접수로 오인하여 검토 완료할 수 없다`() {
+        // given
+        val reception = manualReception()
+        reception.reserveRecording(reception.version, "recording-1", NOW.minusSeconds(60))
+
+        // when & then
+        assertRejected(reception, ReceptionErrorCode.REVIEW_NOT_READY) {
+            reception.confirm(reception.version, validData(), analysisStatus = null, now = NOW)
+        }
+    }
+
+    @Test
     fun `수동 접수는 전체 최종값으로 검토 완료하고 버전과 서버 시각을 함께 반영한다`() {
         // given
         val reception = manualReception()

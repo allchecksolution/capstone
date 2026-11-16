@@ -101,6 +101,7 @@ paths:
       summary: 검토한 접수 정보 확정
       description: 본인 DRAFT 접수의 검토 완료를 처리한다. 화면에서 수정·보완한 전체 finalData와 상세 조회의 expectedVersion을 한 요청으로 받는다. 별도 PATCH나 임시 저장을 먼저 호출하지 않는다.
         분석 시도가 아직 PENDING/PROCESSING이면 필드가 완전해도 409 REVIEW_NOT_READY로 거부한다. AI 분석 성공 후 검토·수정하거나, 처리 실패 확정 후 수동 보완하여 제출한다.
+        녹음 예약 후 업로드 검증·최초 분석 접수를 기다리는 상태도 REVIEW_NOT_READY이며, 분석 시도가 없다는 이유로 수동 접수로 취급하지 않는다.
         필수값·시각 구간·소유권·버전·현재 상태를 검증한 뒤 finalData 저장, CONFIRMED 전환, confirmedAt, version 증가를 함께 커밋한다. 실패하면 편집값 일부나 검토 상태만 저장하지 않는다.
         finalData는 완전한 최종값이며 notes를 보내지 않으면 최종 notes도 없다. AI 원본·STT·녹음은 변경하지 않는다.
         STT/AI 실패 시 수동 입력도 허용한다. 작업 유형·증상·주소·정확한 방문 시작/종료 시각·contactPhone이 필수이고 종료 시각은 시작 이후이면서 검토 완료 처리 시 서버 현재 시각보다 뒤여야 한다.

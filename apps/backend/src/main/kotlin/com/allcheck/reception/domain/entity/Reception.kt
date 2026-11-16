@@ -124,7 +124,7 @@ class Reception(
 
     /**
      * 애플리케이션은 소유권 확인 후 현재 분석 시도의 상태와 서버 시각을 전달해야 한다.
-     * analysisStatus의 null은 분석 시도가 없는 수동 접수에만 사용하며 클라이언트가 지정하지 않는다.
+     * analysisStatus의 null은 녹음 예약과 분석 시도가 없는 수동 접수에만 사용하며 클라이언트가 지정하지 않는다.
      * 모든 검증·변환을 마친 다음 값을 함께 변경한다. DB 트랜잭션·경합 제어는 애플리케이션과 저장소에서 담당한다.
      */
     fun confirm(
@@ -228,7 +228,7 @@ class Reception(
     private fun validateReviewReadiness(analysisStatus: ReceptionAnalysisStatus?) {
         if (analysisStatus == ReceptionAnalysisStatus.PENDING ||
             analysisStatus == ReceptionAnalysisStatus.PROCESSING ||
-            (latestAnalysisRequestId != null && analysisStatus == null)
+            ((recordingFileId != null || latestAnalysisRequestId != null) && analysisStatus == null)
         ) {
             throw BusinessException(ReceptionErrorCode.REVIEW_NOT_READY)
         }
