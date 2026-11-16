@@ -1791,6 +1791,9 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/IdentityError"
+              example:
+                code: KAKAO_SERVICE_UNAVAILABLE
+                message: 카카오 인증을 확인할 수 없습니다. 잠시 후 다시 시도해 주세요.
   /auth/accounts/me:
     get:
       operationId: getMyAuthAccount

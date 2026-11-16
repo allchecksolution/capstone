@@ -68,3 +68,9 @@ reception:
     upload-url-ttl: ${RECEPTION_RECORDING_UPLOAD_URL_TTL:15m}
     playback-url-ttl: ${RECEPTION_RECORDING_PLAYBACK_URL_TTL:10m}
     ai-download-url-ttl: ${RECEPTION_RECORDING_AI_DOWNLOAD_URL_TTL:10m}
+
+identity:
+  kakao:
+    app-id: ${KAKAO_APP_ID:}
+    connect-timeout: ${KAKAO_CONNECT_TIMEOUT:PT2S}
+    read-timeout: ${KAKAO_READ_TIMEOUT:PT5S}

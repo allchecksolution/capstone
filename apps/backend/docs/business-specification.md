@@ -85,6 +85,7 @@ The following is the initial design of the key Aggregates.
 | Area | Project policy |
 |---|---|
 | Internal AI authentication | Backend→AI uses `X-Internal-Api-Key` separately from user JWTs. Missing/invalid keys return 401; an authenticated service without permission receives 403. Secrets are managed through Infisical. |
+| Kakao authentication | Validate the SDK Access Token against Kakao and the configured numeric application ID before resolving an Account. The client returns only a verified SocialLogin and performs no database changes. Provider failure classification and configuration follow the [Identity API Contract](../../../docs/api/identity-contract.md#카카오-검증-클라이언트). |
 | Sensitive business data | Do not log internal keys, presigned URLs/signatures, FCM tokens, recording contents, or STT originals. Push carries resource identifiers; original contents require an authorized query. |
 | Migration versions | Begin at `V1` and allocate the next unused positive integer (`V2`, `V3`, ...). Do not use timestamp/date versions or renumber an applied migration. |
 | Internal and external reception IDs | Generated primary keys and their internal references use Long/BIGINT with IDENTITY by default, following Persistence Conventions. At API/AI boundaries, format the numeric IDs as rec_{id}, file_rec_{id}, anl_{id}, and file_stt_{id}. AI treats these strings as opaque and returns them unchanged. Keep authenticated administrator resolution separate from external ID parsing; a parsed ID does not establish ownership. |

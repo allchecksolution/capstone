@@ -145,7 +145,7 @@ Access Token 기본 15분, 세션 절대 수명 기본 14일, 여러 기기 로�
 
 1. **완료:** 이 계약의 API 형식·기사 상태 조회 분리와 세션 정책을 확정했다.
 2. **완료:** Account·외부 로그인 연결·AuthSession 모델, Repository, V2 Flyway 마이그레이션을 구현했다.
-3. 카카오 검증 클라이언트와 정상·만료·타 앱·장애 테스트를 구현한다.
+3. **완료:** 카카오 검증 클라이언트와 정상·만료·타 앱·장애·설정 검증 테스트를 구현했다.
 4. 카카오 로그인과 토큰 발급을 구현하고 중복 계정 생성 경쟁을 검증한다.
 5. JWT 요청 인증과 `/auth/accounts/me`를 연결해 실제 앱 인증을 확인한다.
 6. 갱신·로그아웃·동시 갱신·폐기 세션 차단을 검증한다.
@@ -177,3 +177,39 @@ $env:IDENTITY_TEST_DATABASE_URL = 'jdbc:postgresql://localhost:15432/allcheck_id
 이 테스트는 Flyway로 생성한 스키마를 Hibernate `validate`로 확인하고, 실제 DB의 유니크·외래키·계정 유형 제약과 독립 트랜잭션의 동시 갱신 충돌을 검증한다. 테스트 자체는 Flyway clean이나 기존 데이터 전체 삭제를 수행하지 않는다.
 
 2026-11-17 검증 결과: Java 21·Gradle 9.8.2와 분리된 임시 PostgreSQL 18에서 `ktlintCheck test`를 실행해 전체 92개 테스트가 통과했다. Flyway V1·V2 적용, Hibernate 스키마 검증, 동시 갱신의 단일 커밋을 확인했다. 로컬 Compose의 PostgreSQL 17에서는 아직 실행하지 않았다.
+
+## 카카오 검증 클라이언트
+
+`identity.infrastructure.kakao.KakaoClient.verify(accessToken)`은 고정된 `https://kapi.kakao.com/v1/user/access_token_info`에 GET 요청을 보낸다. 토큰은 Authorization Bearer 헤더에만 넣으며 URL·로그·DB에 기록하지 않는다. HTTP 리다이렉트를 따르지 않고 연결·응답 대기 타임아웃을 적용한다.
+
+응답의 `id`, `app_id`, `expires_in`을 정수로 확인한다. 양수 회원번호와 설정된 앱 ID의 일치, 남은 유효시간을 검증한 후 `SocialLogin`만 반환한다. 문자열·소수·누락 필드를 임의 변환해서 인증하지 않는다. 사용자 프로필 API 호출, 계정 조회·생성 및 서비스 토큰 발급은 이 클라이언트의 책임에 포함하지 않는다.
+
+설정은 `identity.kakao` 아래에서 바인딩한다.
+
+| 환경 변수 | 의미 | 기본값 |
+|---|---|---|
+| `KAKAO_APP_ID` | Kakao Developers에 등록한 앱의 숫자 ID. Native App Key·REST API Key와 다름 | 없음 |
+| `KAKAO_CONNECT_TIMEOUT` | 카카오 연결 대기 시간 | `PT2S` |
+| `KAKAO_READ_TIMEOUT` | 카카오 응답 대기 시간 | `PT5S` |
+
+앱 ID가 미설정이면 백엔드는 시작할 수 있지만 카카오 인증은 외부 요청 없이 503으로 차단한다. 0·음수·문자열 앱 ID와 0·음수 타임아웃은 설정 오류로 시작을 중단한다. 실제 SDK 연결 검증 전에 본인 앱의 `KAKAO_APP_ID`를 환경에 설정해야 한다. 테스트용 숫자 ID를 운영 설정의 기본값으로 사용하지 않는다.
+
+카카오의 [액세스 토큰 정보 조회 문서](https://developers.kakao.com/docs/ko/kakaologin/rest-api#req-access-token-info)에 따라 다음처럼 실패를 분류한다.
+
+| 카카오 응답 또는 상황 | 서비스 오류 코드 | HTTP 상태 |
+|---|---|---|
+| HTTP 401, HTTP 400의 `code=-401` 또는 `code=-2` | `KAKAO_AUTH_FAILED` | 401 |
+| 성공 응답이지만 토큰 만료 또는 다른 앱 ID | `KAKAO_AUTH_FAILED` | 401 |
+| HTTP 400의 `code=-1` 또는 알 수 없는 오류 | `KAKAO_SERVICE_UNAVAILABLE` | 503 |
+| 연결 실패·타임아웃·5xx·429·리다이렉트·비정상 성공 응답 | `KAKAO_SERVICE_UNAVAILABLE` | 503 |
+| 서버 앱 ID 미설정 | `KAKAO_SERVICE_UNAVAILABLE` | 503 |
+
+공통 `BusinessException`·`ErrorResponse`를 사용한다. 외부 오류 메시지·응답 본문은 공개 메시지로 전달하지 않으며, 공통 예외 처리기는 원본 cause 대신 서비스 오류 코드만 로그에 기록한다. 카카오 오류가 발생했다고 기존 계정이나 세션을 변경하지 않는다.
+
+아래 테스트는 실제 카카오 API·자격 증명·DB 없이 가짜 HTTP 응답으로 요청 형식과 오류 분류를 검증한다. 네트워크 타임아웃은 가짜 전송 예외로 검증하며 실제 카카오 연결 속도·가용성을 측정하는 테스트는 아니다.
+
+```powershell
+.\gradlew.bat ktlintCheck test --tests 'com.allcheck.identity.infrastructure.kakao.*' --tests 'com.allcheck.ModularityTests'
+```
+
+2026-11-17 검증 결과: 카카오 클라이언트·설정 테스트 55개가 통과했다. Java 21과 분리된 임시 PostgreSQL 18에서 `ktlintCheck test`를 실행해 기존 테스트를 포함한 전체 147개가 통과했으며 실패·오류·건너뜀은 없었다. 실제 카카오 SDK 토큰을 이용한 연결 검증은 로그인 API를 연결하는 4단계 이후에 수행한다.
