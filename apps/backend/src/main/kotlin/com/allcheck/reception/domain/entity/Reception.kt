@@ -3,9 +3,11 @@ package com.allcheck.reception.domain.entity
 import com.allcheck.global.exception.BusinessException
 import com.allcheck.global.exception.GlobalErrorCode
 import com.allcheck.reception.domain.vo.ReceptionAiOriginal
+import com.allcheck.reception.domain.vo.ReceptionAnalysisStage
 import com.allcheck.reception.domain.vo.ReceptionAnalysisStatus
 import com.allcheck.reception.domain.vo.ReceptionConfirmationData
 import com.allcheck.reception.domain.vo.ReceptionData
+import com.allcheck.reception.domain.vo.ReceptionProcessingStatus
 import com.allcheck.reception.domain.vo.ReceptionReviewStatus
 import com.allcheck.reception.exception.ReceptionErrorCode
 import jakarta.persistence.Column
@@ -179,6 +181,48 @@ class Reception(
         confirmedAt = null
         updatedAt = now
         version = nextVersion
+    }
+
+    /** 분석 시도의 applyResultTo에서만 호출한다. 두 Aggregate는 같은 트랜잭션으로 저장한다. */
+    internal fun applyAnalysisResult(analysis: ReceptionAnalysis, now: Instant): Boolean {
+        if (reviewStatus != ReceptionReviewStatus.DRAFT ||
+            requestId != null ||
+            aiOriginal != null ||
+            analysis.receptionId != receptionId ||
+            analysis.requestedByAdminId != ownerAdminId ||
+            analysis.receptionVersion != version ||
+            analysis.analysisRequestId != latestAnalysisRequestId ||
+            analysis.recordingFileId != recordingFileId ||
+            analysis.transcriptFileId == null ||
+            analysis.transcriptFileId != transcriptFileId ||
+            analysis.status != ReceptionAnalysisStatus.PROCESSING ||
+            analysis.stage != ReceptionAnalysisStage.RESULT_APPLICATION ||
+            analysis.analysisStatus != ReceptionProcessingStatus.SUCCEEDED
+        ) {
+            return false
+        }
+        val original = checkNotNull(analysis.aiOriginal)
+        require(!now.isBefore(updatedAt)) { "Analysis application time must not precede the reception update." }
+        val nextVersion = Math.incrementExact(version)
+        // 독립 임시 저장이 없는 MVP에서는 검토 완료로 저장된 전체 값이 비어 있지 않다.
+        val nextData = if (finalData == ReceptionData()) {
+            ReceptionData(
+                workType = original.workType,
+                symptoms = original.symptoms,
+                address = original.address,
+                desiredVisitFrom = original.desiredVisitFrom,
+                desiredVisitTo = original.desiredVisitTo,
+                notes = original.notes,
+            )
+        } else {
+            finalData
+        }
+
+        aiOriginal = original
+        finalData = nextData
+        version = nextVersion
+        updatedAt = now
+        return true
     }
 
     private fun validateReviewReadiness(analysisStatus: ReceptionAnalysisStatus?) {

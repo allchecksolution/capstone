@@ -6,6 +6,7 @@ import com.allcheck.reception.domain.vo.ReceptionAnalysisStage
 import com.allcheck.reception.domain.vo.ReceptionAnalysisStatus
 import com.allcheck.reception.domain.vo.ReceptionAnalysisTransition
 import com.allcheck.reception.domain.vo.ReceptionProcessingStatus
+import com.allcheck.reception.domain.vo.ReceptionStructuredResult
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.EnumType
@@ -196,7 +197,7 @@ class ReceptionAnalysis(
             sttStatus = ReceptionProcessingStatus.FAILED
             transcriptStorageStatus = ReceptionProcessingStatus.NOT_AVAILABLE
             analysisStatus = ReceptionProcessingStatus.NOT_AVAILABLE
-            finishFailure(ReceptionAnalysisFailureReason.STT_NO_CONTENT, traceId, now)
+            finishUnapplied(ReceptionAnalysisFailureReason.STT_NO_CONTENT, traceId, now)
             return ReceptionAnalysisTransition.FAILED
         }
         require(transcript.codePointCount(0, transcript.length) <= ReceptionTranscript.MAX_CODE_POINTS) {
@@ -253,8 +254,114 @@ class ReceptionAnalysis(
 
         transcriptStorageStatus = ReceptionProcessingStatus.FAILED
         analysisStatus = ReceptionProcessingStatus.NOT_AVAILABLE
-        finishFailure(ReceptionAnalysisFailureReason.TRANSCRIPT_STORAGE_FAILED, traceId, now)
+        finishUnapplied(ReceptionAnalysisFailureReason.TRANSCRIPT_STORAGE_FAILED, traceId, now)
         return true
+    }
+
+    /** 원문 보관 커밋 이후에만 시작한다. 이 변경도 커밋한 뒤 외부 구조화 API를 호출한다. */
+    fun startStructuring(workerId: String, traceId: String, now: Instant): ReceptionAnalysisTransition {
+        if (!isOwnedProcessingStage(workerId, ReceptionAnalysisStage.STRUCTURE) ||
+            analysisStatus != ReceptionProcessingStatus.PENDING
+        ) {
+            return ReceptionAnalysisTransition.IGNORED
+        }
+        validateTransition(traceId, now)
+        if (expireIfDue(now, traceId)) {
+            return ReceptionAnalysisTransition.FAILED
+        }
+        check(sttStatus == ReceptionProcessingStatus.SUCCEEDED)
+        check(transcriptStorageStatus == ReceptionProcessingStatus.SUCCEEDED && transcriptFileId != null)
+
+        analysisStatus = ReceptionProcessingStatus.PROCESSING
+        updatedAt = now
+        return ReceptionAnalysisTransition.ADVANCED
+    }
+
+    /** 분석 시도의 응답 원본을 보관한다. 현재 접수에 적용되기 전까지 전체 분석은 PROCESSING이다. */
+    fun receiveStructuredResult(
+        workerId: String,
+        result: ReceptionStructuredResult,
+        traceId: String,
+        now: Instant,
+    ): ReceptionAnalysisTransition {
+        if (!isOwnedProcessingStage(workerId, ReceptionAnalysisStage.STRUCTURE) ||
+            analysisStatus != ReceptionProcessingStatus.PROCESSING
+        ) {
+            return ReceptionAnalysisTransition.IGNORED
+        }
+        validateTransition(traceId, now)
+        if (expireIfDue(now, traceId)) {
+            return ReceptionAnalysisTransition.FAILED
+        }
+        val missing = result.missingFields
+
+        aiOriginal = result.aiOriginal
+        storedMissingFields = missing
+        analysisStatus = ReceptionProcessingStatus.SUCCEEDED
+        stage = ReceptionAnalysisStage.RESULT_APPLICATION
+        updatedAt = now
+        return ReceptionAnalysisTransition.ADVANCED
+    }
+
+    fun failStructuring(
+        workerId: String,
+        reason: ReceptionAnalysisFailureReason,
+        traceId: String,
+        now: Instant,
+    ): Boolean {
+        if (!isOwnedProcessingStage(workerId, ReceptionAnalysisStage.STRUCTURE) ||
+            analysisStatus != ReceptionProcessingStatus.PROCESSING
+        ) {
+            return false
+        }
+        validateTransition(traceId, now)
+        if (expireIfDue(now, traceId)) {
+            return true
+        }
+        require(reason == ReceptionAnalysisFailureReason.AI_STRUCTURING_FAILED || reason == ReceptionAnalysisFailureReason.AI_TIMEOUT)
+
+        analysisStatus = ReceptionProcessingStatus.FAILED
+        finishUnapplied(reason, traceId, now)
+        return true
+    }
+
+    /**
+     * 접수 변경·분석 종료·알림 발행 의도를 같은 애플리케이션 트랜잭션에서 저장해야 한다.
+     * 시각/버전/자료 연결이 유효한 결과만 한 번 적용하며, 오래된 결과는 접수를 바꾸지 않고 DISCARDED로 닫는다.
+     */
+    fun applyResultTo(
+        reception: Reception,
+        workerId: String,
+        traceId: String,
+        now: Instant,
+    ): ReceptionAnalysisTransition {
+        if (!isOwnedProcessingStage(workerId, ReceptionAnalysisStage.RESULT_APPLICATION) ||
+            analysisStatus != ReceptionProcessingStatus.SUCCEEDED
+        ) {
+            return ReceptionAnalysisTransition.IGNORED
+        }
+        validateTransition(traceId, now)
+        if (expireIfDue(now, traceId)) {
+            return ReceptionAnalysisTransition.FAILED
+        }
+        if (!reception.applyAnalysisResult(this, now)) {
+            finishUnapplied(
+                ReceptionAnalysisFailureReason.STALE_ANALYSIS_RESULT,
+                traceId,
+                now,
+                terminalStatus = ReceptionAnalysisStatus.DISCARDED,
+            )
+            return ReceptionAnalysisTransition.FAILED
+        }
+
+        status = ReceptionAnalysisStatus.SUCCEEDED
+        stage = ReceptionAnalysisStage.COMPLETED
+        resultApplied = true
+        completedAt = now
+        updatedAt = now
+        claimedBy = null
+        leaseExpiresAt = null
+        return ReceptionAnalysisTransition.ADVANCED
     }
 
     /**
@@ -283,7 +390,7 @@ class ReceptionAnalysis(
             }
             else -> analysisStatus = ReceptionProcessingStatus.FAILED
         }
-        finishFailure(ReceptionAnalysisFailureReason.ANALYSIS_TIMEOUT, traceId, now)
+        finishUnapplied(ReceptionAnalysisFailureReason.ANALYSIS_TIMEOUT, traceId, now)
         return true
     }
 
@@ -301,8 +408,13 @@ class ReceptionAnalysis(
         require(!now.isBefore(updatedAt)) { "Analysis transition time must not precede its last update." }
     }
 
-    private fun finishFailure(reason: ReceptionAnalysisFailureReason, traceId: String, now: Instant) {
-        status = ReceptionAnalysisStatus.FAILED
+    private fun finishUnapplied(
+        reason: ReceptionAnalysisFailureReason,
+        traceId: String,
+        now: Instant,
+        terminalStatus: ReceptionAnalysisStatus = ReceptionAnalysisStatus.FAILED,
+    ) {
+        status = terminalStatus
         errorCode = reason.name
         errorMessage = reason.message
         this.traceId = traceId

@@ -1,13 +1,20 @@
 package com.allcheck.reception.infrastructure.repository
 
 import com.allcheck.global.config.HibernateConfig
+import com.allcheck.reception.domain.entity.Reception
 import com.allcheck.reception.domain.entity.ReceptionAnalysis
 import com.allcheck.reception.domain.entity.ReceptionRecording
 import com.allcheck.reception.domain.entity.ReceptionTranscript
+import com.allcheck.reception.domain.vo.ReceptionAiOriginal
+import com.allcheck.reception.domain.vo.ReceptionAnalysisFailureReason
 import com.allcheck.reception.domain.vo.ReceptionAnalysisStage
 import com.allcheck.reception.domain.vo.ReceptionAnalysisStatus
 import com.allcheck.reception.domain.vo.ReceptionAnalysisTransition
+import com.allcheck.reception.domain.vo.ReceptionConfirmationData
+import com.allcheck.reception.domain.vo.ReceptionData
 import com.allcheck.reception.domain.vo.ReceptionProcessingStatus
+import com.allcheck.reception.domain.vo.ReceptionReviewStatus
+import com.allcheck.reception.domain.vo.ReceptionStructuredResult
 import com.allcheck.reception.domain.vo.WorkType
 import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat
@@ -56,6 +63,7 @@ import javax.sql.DataSource
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class ReceptionAnalysisRepositoryTest @Autowired constructor(
     private val repository: ReceptionAnalysisRepository,
+    private val receptionRepository: ReceptionRepository,
     private val recordingRepository: ReceptionRecordingRepository,
     private val transcriptRepository: ReceptionTranscriptRepository,
     private val entityManager: EntityManager,
@@ -63,6 +71,197 @@ class ReceptionAnalysisRepositoryTest @Autowired constructor(
     private val transactionManager: PlatformTransactionManager,
 ) {
     private val jdbc by lazy { JdbcTemplate(dataSource) }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    fun `AI 원본 자동 채움과 분석 성공을 함께 저장하고 이후 검토는 최신값만 바꾼다`() {
+        // given
+        val transaction = TransactionTemplate(transactionManager)
+        val (receptionId, analysisId) = transaction.execute { applicationPair() }
+
+        // when
+        transaction.executeWithoutResult {
+            val analysis = repository.findById(analysisId).orElseThrow()
+            val reception = receptionRepository.findById(receptionId).orElseThrow()
+            assertThat(analysis.applyResultTo(reception, WORKER, TRACE, APPLIED_AT)).isEqualTo(ReceptionAnalysisTransition.ADVANCED)
+        }
+        val applied = receptionRepository.findById(receptionId).orElseThrow()
+        val finished = repository.findById(analysisId).orElseThrow()
+
+        // then
+        assertThat(applied.version).isEqualTo(4)
+        assertThat(applied.aiOriginal).isEqualTo(structuredOriginal())
+        assertThat(applied.finalData.workType).isEqualTo(WorkType.WATERPROOFING)
+        assertThat(applied.finalData.notes).isEqualTo(structuredOriginal().notes)
+        assertThat(applied.finalData.desiredVisitFrom).isEqualTo(structuredOriginal().desiredVisitFrom)
+        assertThat(applied.finalData.contactPhone).isNull()
+        assertThat(applied.reviewStatus).isEqualTo(ReceptionReviewStatus.DRAFT)
+        assertThat(finished.status).isEqualTo(ReceptionAnalysisStatus.SUCCEEDED)
+        assertThat(finished.resultApplied).isTrue()
+        assertThat(finished.receptionVersion).isEqualTo(3)
+
+        // when
+        transaction.executeWithoutResult {
+            val reception = receptionRepository.findById(receptionId).orElseThrow()
+            val analysis = repository.findById(analysisId).orElseThrow()
+            val data = ReceptionConfirmationData(
+                WorkType.BOILER,
+                "관리자 수정 증상",
+                "관리자 수정 주소",
+                OffsetDateTime.parse("2026-11-17T14:00:00+09:00"),
+                OffsetDateTime.parse("2026-11-17T16:00:00+09:00"),
+                "010-1234-5678",
+                "관리자 수정 메모",
+            )
+            reception.confirm(4, data, analysis.status, APPLIED_AT.plusSeconds(1))
+            reception.reopen(5, APPLIED_AT.plusSeconds(2))
+            reception.confirm(6, data.copy(notes = null), analysis.status, APPLIED_AT.plusSeconds(3))
+        }
+        val reviewed = receptionRepository.findById(receptionId).orElseThrow()
+
+        // then
+        assertThat(reviewed.aiOriginal).isEqualTo(structuredOriginal())
+        assertThat(reviewed.finalData.workType).isEqualTo(WorkType.BOILER)
+        assertThat(reviewed.finalData.contactPhone).isEqualTo("010-1234-5678")
+        assertThat(reviewed.finalData.notes).isNull()
+        assertThat(reviewed.version).isEqualTo(7)
+        assertThat(reviewed.reviewStatus).isEqualTo(ReceptionReviewStatus.CONFIRMED)
+        assertThat(repository.findById(analysisId).orElseThrow().aiOriginal).isEqualTo(structuredOriginal())
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    fun `결과 반영 뒤 트랜잭션이 실패하면 접수 자동 채움과 분석 종료를 함께 롤백한다`() {
+        // given
+        val transaction = TransactionTemplate(transactionManager)
+        val (receptionId, analysisId) = transaction.execute { applicationPair() }
+
+        // when
+        assertThrows<IllegalStateException> {
+            transaction.executeWithoutResult {
+                val analysis = repository.findById(analysisId).orElseThrow()
+                val reception = receptionRepository.findById(receptionId).orElseThrow()
+                check(analysis.applyResultTo(reception, WORKER, TRACE, APPLIED_AT) == ReceptionAnalysisTransition.ADVANCED)
+                repository.flush()
+                error("Force rollback after result application")
+            }
+        }
+        val reception = receptionRepository.findById(receptionId).orElseThrow()
+        val analysis = repository.findById(analysisId).orElseThrow()
+
+        // then
+        assertThat(reception.version).isEqualTo(3)
+        assertThat(reception.aiOriginal).isNull()
+        assertThat(reception.finalData).isEqualTo(ReceptionData())
+        assertThat(analysis.status).isEqualTo(ReceptionAnalysisStatus.PROCESSING)
+        assertThat(analysis.stage).isEqualTo(ReceptionAnalysisStage.RESULT_APPLICATION)
+        assertThat(analysis.resultApplied).isFalse()
+        assertThat(analysis.aiOriginal).isEqualTo(structuredOriginal())
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    fun `동시 결과 반영은 접수 버전 증가와 분석 성공을 한 번만 커밋한다`() {
+        // given
+        val transaction = TransactionTemplate(transactionManager)
+        val (receptionId, analysisId) = transaction.execute { applicationPair() }
+        val loaded = CountDownLatch(2)
+        val executor = Executors.newFixedThreadPool(2)
+
+        try {
+            // when
+            val futures = List(2) {
+                executor.submit<Boolean> {
+                    try {
+                        transaction.executeWithoutResult {
+                            val analysis = repository.findById(analysisId).orElseThrow()
+                            val reception = receptionRepository.findById(receptionId).orElseThrow()
+                            loaded.countDown()
+                            check(loaded.await(10, TimeUnit.SECONDS)) { "Both transactions must read before application." }
+                            check(analysis.applyResultTo(reception, WORKER, TRACE, APPLIED_AT) == ReceptionAnalysisTransition.ADVANCED)
+                            repository.flush()
+                        }
+                        true
+                    } catch (_: OptimisticLockingFailureException) {
+                        false
+                    }
+                }
+            }
+            val committed = futures.map { it.get(15, TimeUnit.SECONDS) }
+            val reception = receptionRepository.findById(receptionId).orElseThrow()
+            val analysis = repository.findById(analysisId).orElseThrow()
+
+            // then
+            assertThat(committed.count { it }).isEqualTo(1)
+            assertThat(reception.version).isEqualTo(4)
+            assertThat(reception.aiOriginal).isEqualTo(structuredOriginal())
+            assertThat(analysis.status).isEqualTo(ReceptionAnalysisStatus.SUCCEEDED)
+            assertThat(analysis.resultApplied).isTrue()
+            assertThat(analysis.completedAt).isEqualTo(APPLIED_AT)
+        } finally {
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    fun `더 최신인 접수는 보존하고 오래된 구조화 시도만 미반영 종료한다`() {
+        // given
+        val transaction = TransactionTemplate(transactionManager)
+        val (receptionId, analysisId) = transaction.execute {
+            val pair = applicationPair()
+            val reception = receptionRepository.findById(pair.first).orElseThrow()
+            // 정상 UI의 처리 중 편집 흐름이 아니라 더 최신의 저장 상태에 대한 방어조건이다.
+            ReflectionTestUtils.setField(reception, "version", 4)
+            ReflectionTestUtils.setField(reception, "finalData", ReceptionData(notes = "보존할 최신값"))
+            pair
+        }
+
+        // when
+        transaction.executeWithoutResult {
+            val analysis = repository.findById(analysisId).orElseThrow()
+            val reception = receptionRepository.findById(receptionId).orElseThrow()
+            assertThat(analysis.applyResultTo(reception, WORKER, TRACE, APPLIED_AT)).isEqualTo(ReceptionAnalysisTransition.FAILED)
+        }
+        val reception = receptionRepository.findById(receptionId).orElseThrow()
+        val discarded = repository.findById(analysisId).orElseThrow()
+
+        // then
+        assertThat(reception.version).isEqualTo(4)
+        assertThat(reception.aiOriginal).isNull()
+        assertThat(reception.finalData.notes).isEqualTo("보존할 최신값")
+        assertThat(discarded.status).isEqualTo(ReceptionAnalysisStatus.DISCARDED)
+        assertThat(discarded.stage).isEqualTo(ReceptionAnalysisStage.RESULT_APPLICATION)
+        assertThat(discarded.analysisStatus).isEqualTo(ReceptionProcessingStatus.SUCCEEDED)
+        assertThat(discarded.errorCode).isEqualTo("STALE_ANALYSIS_RESULT")
+        assertThat(discarded.resultApplied).isFalse()
+        assertThat(discarded.claimedBy).isNull()
+        assertThat(discarded.leaseExpiresAt).isNull()
+    }
+
+    @Test
+    fun `구조화 실패를 저장해도 DB 원문과 이전 성공 상태는 보존한다`() {
+        // given
+        val analysis = repository.saveAndFlush(awaitingStorage())
+        val original = transcript(analysis)
+        analysis.attachTranscript(WORKER, original, TRACE, STORED_AT)
+        transcriptRepository.saveAndFlush(original)
+        analysis.startStructuring(WORKER, TRACE, STRUCTURING_AT)
+
+        // when
+        assertThat(analysis.failStructuring(WORKER, ReceptionAnalysisFailureReason.AI_TIMEOUT, TRACE, STRUCTURED_AT)).isTrue()
+        repository.flush()
+        entityManager.clear()
+        val failed = repository.findById(analysis.analysisRequestId).orElseThrow()
+
+        // then
+        assertThat(failed.status).isEqualTo(ReceptionAnalysisStatus.FAILED)
+        assertThat(failed.errorCode).isEqualTo("AI_TIMEOUT")
+        assertThat(failed.analysisStatus).isEqualTo(ReceptionProcessingStatus.FAILED)
+        assertThat(failed.transcriptStorageStatus).isEqualTo(ReceptionProcessingStatus.SUCCEEDED)
+        assertThat(failed.sttStatus).isEqualTo(ReceptionProcessingStatus.SUCCEEDED)
+        assertThat(transcriptRepository.findById(checkNotNull(failed.transcriptFileId)).orElseThrow().transcript).isEqualTo(ORIGINAL)
+    }
 
     @Test
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -618,6 +817,40 @@ class ReceptionAnalysisRepositoryTest @Autowired constructor(
         check(it.receiveTranscription(WORKER, ORIGINAL, TRACE, TRANSCRIBED_AT) == ReceptionAnalysisTransition.ADVANCED)
     }
 
+    private fun applicationPair(): Pair<String, String> {
+        val analysis = repository.saveAndFlush(awaitingStorage())
+        val artifact = transcript(analysis)
+        check(analysis.attachTranscript(WORKER, artifact, TRACE, STORED_AT) == ReceptionAnalysisTransition.ADVANCED)
+        transcriptRepository.saveAndFlush(artifact)
+        check(analysis.startStructuring(WORKER, TRACE, STRUCTURING_AT) == ReceptionAnalysisTransition.ADVANCED)
+        check(
+            analysis.receiveStructuredResult(
+                WORKER,
+                ReceptionStructuredResult(structuredOriginal(), emptyList()),
+                TRACE,
+                STRUCTURED_AT,
+            ) == ReceptionAnalysisTransition.ADVANCED,
+        )
+        val reception = Reception(analysis.receptionId, analysis.requestedByAdminId, REFERENCE_TIME.minusSeconds(60))
+        reception.reserveRecording(1, analysis.recordingFileId, REFERENCE_TIME.minusSeconds(10))
+        // 후속 업로드 완료/원문 연결 애플리케이션이 보관할 현재 문맥만 준비한다.
+        ReflectionTestUtils.setField(reception, "version", 3)
+        ReflectionTestUtils.setField(reception, "latestAnalysisRequestId", analysis.analysisRequestId)
+        ReflectionTestUtils.setField(reception, "transcriptFileId", artifact.transcriptFileId)
+        ReflectionTestUtils.setField(reception, "updatedAt", STORED_AT)
+        receptionRepository.saveAndFlush(reception)
+        return reception.receptionId to analysis.analysisRequestId
+    }
+
+    private fun structuredOriginal() = ReceptionAiOriginal(
+        workType = WorkType.WATERPROOFING,
+        symptoms = "AI 원본 증상",
+        address = "AI 원본 주소",
+        desiredVisitFrom = OffsetDateTime.parse("2026-11-17T14:00:00+09:00"),
+        desiredVisitTo = OffsetDateTime.parse("2026-11-17T16:00:00+09:00"),
+        notes = "  방문 전 연락\r\n주차 가능  ",
+    )
+
     private fun transcript(analysis: ReceptionAnalysis, fileId: String = id()) = ReceptionTranscript(
         transcriptFileId = fileId,
         receptionId = analysis.receptionId,
@@ -657,6 +890,9 @@ class ReceptionAnalysisRepositoryTest @Autowired constructor(
         private val STARTED_AT = ACCEPTED_AT.plusSeconds(1)
         private val TRANSCRIBED_AT = STARTED_AT.plusSeconds(1)
         private val STORED_AT = TRANSCRIBED_AT.plusSeconds(1)
+        private val STRUCTURING_AT = STORED_AT.plusSeconds(1)
+        private val STRUCTURED_AT = STRUCTURING_AT.plusSeconds(1)
+        private val APPLIED_AT = STRUCTURED_AT.plusSeconds(1)
         private val DEADLINE = STARTED_AT.plusSeconds(60)
         private val SCHEMA = "analysis_test_" + UUID.randomUUID().toString().replace("-", "")
         private val UPGRADE_SCHEMA = SCHEMA + "_upgrade"

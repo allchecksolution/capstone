@@ -3516,7 +3516,7 @@ paths:
                     completedAt: '2026-11-13T14:02:00+09:00'
                     error:
                       code: AI_TIMEOUT
-                      message: 구조화 응답을 받지 못했습니다. 원격 완료 여부는 알 수 없습니다.
+                      message: AI 서버 응답을 받지 못했습니다. 원격 완료 여부는 알 수 없습니다.
                       traceId: trace_example_01
                 discarded:
                   value:
@@ -3538,6 +3538,24 @@ paths:
                       code: STALE_ANALYSIS_RESULT
                       message: 접수가 변경되어 결과를 반영하지 않았습니다.
                       traceId: trace_example_01
+                resultReady:
+                  summary: 구조화 성공 — 접수에 반영하기 전까지 전체 시도는 처리 중
+                  value:
+                    analysisRequestId: anl_01
+                    receptionId: rec_01
+                    receptionVersion: 3
+                    recordingFileId: file_rec_01
+                    mode: FULL
+                    status: PROCESSING
+                    stage: RESULT_APPLICATION
+                    sttStatus: SUCCEEDED
+                    transcriptStorageStatus: SUCCEEDED
+                    analysisStatus: SUCCEEDED
+                    transcriptFileId: file_stt_01
+                    resultApplied: false
+                    requestedAt: '2026-11-13T14:00:00+09:00'
+                    completedAt: null
+                    error: null
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -7140,6 +7158,8 @@ components:
         ANALYSIS_TIMEOUT은 분석 작업 전체의 처리 기한 만료이며 HTTP 호출 타임아웃인 AI_TIMEOUT과 구분한다.
         기한에 도달한 PROCESSING은 FAILED로 종료하며 늦은 결과는 적용하지 않는다. 이전 단계의 성공과 이미 보관한 원문은 유지한다.
         구체적인 기한은 실측 후 결정하며 예시 시각은 운영 기본값을 의미하지 않는다.
+        구조화 단계 analysisStatus가 SUCCEEDED여도 접수에 반영되기 전의 status는 PROCESSING이다.
+        관리자 검토 준비 여부는 단계 성공만으로 판단하지 않고 전체 시도의 종료와 현재 접수 상태를 기준으로 판단한다.
       oneOf:
       - properties:
           status:

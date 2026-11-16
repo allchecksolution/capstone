@@ -92,3 +92,6 @@ V5-to-V6 migration preserves existing processing state, worker identity, claim d
 STT progression tests cover blank-text failure, exact deadline boundaries, claim ownership, source linkage, and terminal-state immutability.
 Database tests verify atomic transcript/linkage storage, rollback with a preserved STT-success checkpoint,
 and concurrent transcript storage versus timeout without leaving a losing transcript row or dangling linkage.
+Structuring tests verify phase/owner/deadline guards, immutable AI results and missing-field lists, initial auto-fill without review confirmation,
+saved administrator-value protection, and stale-result rejection. Database coverage includes atomic reception/attempt completion,
+rollback, one-time concurrent application, and administrator confirmation/reopening that preserves the original AI JSON.
