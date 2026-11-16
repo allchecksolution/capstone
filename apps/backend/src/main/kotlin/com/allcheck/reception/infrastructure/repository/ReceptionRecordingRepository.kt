@@ -1,4 +1,14 @@
 package com.allcheck.reception.infrastructure.repository
 
-/** 녹음 메타데이터 저장소 골격. Entity 매핑 후 Spring Data JPA를 연결한다. */
-interface ReceptionRecordingRepository
+import com.allcheck.reception.domain.entity.ReceptionRecording
+import org.springframework.data.jpa.repository.JpaRepository
+
+interface ReceptionRecordingRepository : JpaRepository<ReceptionRecording, String> {
+    fun findByReceptionId(receptionId: String): ReceptionRecording?
+
+    fun findByRecordingFileIdAndReceptionIdAndUploadedByAdminId(
+        recordingFileId: String,
+        receptionId: String,
+        uploadedByAdminId: String,
+    ): ReceptionRecording?
+}

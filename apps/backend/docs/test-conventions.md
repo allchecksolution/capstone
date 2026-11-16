@@ -68,11 +68,11 @@ Write tests with the characteristics of Kotlin and Spring Boot in mind, and veri
 
 ## Running Reception Persistence Tests
 
-`ReceptionRepositoryTest` uses PostgreSQL 17 from the [local Compose configuration](../../../infra/compose/compose.local.yml).
+`ReceptionRepositoryTest` and `ReceptionRecordingRepositoryTest` use PostgreSQL 17 from the [local Compose configuration](../../../infra/compose/compose.local.yml).
 Start it with `npm run db:up` from the repository root, then run from `apps/backend/`:
 
 ```sh
-./gradlew test --tests com.allcheck.reception.infrastructure.repository.ReceptionRepositoryTest
+./gradlew test --tests 'com.allcheck.reception.infrastructure.repository.*'
 ```
 
 The test profile uses the local database connection by default. Set `TEST_DATABASE_URL`, `TEST_DATABASE_USERNAME`,
@@ -80,4 +80,4 @@ and `TEST_DATABASE_PASSWORD` to use another PostgreSQL test database.
 Each run creates UUID-named schemas, applies the real Flyway migrations, validates JPA mappings, and removes only those schemas afterward.
 The existing application schema and its tables are not reset or migrated by this test.
 The tests cover JSONB round trips, owner-scoped queries and counts, database constraints, concurrent writes from independent transactions,
-and a V1-to-V2 upgrade that preserves existing recording metadata.
+and V1-to-V2 / V2-to-V3 upgrades that preserve existing recording metadata and first completion timestamps.
