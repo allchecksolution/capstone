@@ -6,6 +6,7 @@ import com.allcheck.reception.domain.entity.ReceptionRecording
 import com.allcheck.reception.domain.entity.ReceptionTranscript
 import com.allcheck.reception.domain.vo.ReceptionAnalysisStage
 import com.allcheck.reception.domain.vo.ReceptionAnalysisStatus
+import com.allcheck.reception.domain.vo.ReceptionAnalysisTransition
 import com.allcheck.reception.domain.vo.ReceptionProcessingStatus
 import com.allcheck.reception.domain.vo.WorkType
 import jakarta.persistence.EntityManager
@@ -62,6 +63,203 @@ class ReceptionAnalysisRepositoryTest @Autowired constructor(
     private val transactionManager: PlatformTransactionManager,
 ) {
     private val jdbc by lazy { JdbcTemplate(dataSource) }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    fun `원문 본문과 분석 연결 및 보관 성공 상태를 함께 커밋한다`() {
+        // given
+        val transaction = TransactionTemplate(transactionManager)
+        val analysis = transaction.execute { repository.saveAndFlush(awaitingStorage()) }
+        val artifact = transcript(analysis)
+
+        // when
+        transaction.executeWithoutResult {
+            val current = repository.findById(analysis.analysisRequestId).orElseThrow()
+            assertThat(current.attachTranscript(WORKER, artifact, TRACE, STORED_AT)).isEqualTo(ReceptionAnalysisTransition.ADVANCED)
+            transcriptRepository.saveAndFlush(artifact)
+        }
+        val saved = repository.findById(analysis.analysisRequestId).orElseThrow()
+        val original = transcriptRepository.findByProducedByAnalysisRequestId(analysis.analysisRequestId)
+            ?: error("Canonical original must be stored")
+
+        // then
+        assertThat(saved.stage).isEqualTo(ReceptionAnalysisStage.STRUCTURE)
+        assertThat(saved.status).isEqualTo(ReceptionAnalysisStatus.PROCESSING)
+        assertThat(saved.sttStatus).isEqualTo(ReceptionProcessingStatus.SUCCEEDED)
+        assertThat(saved.transcriptStorageStatus).isEqualTo(ReceptionProcessingStatus.SUCCEEDED)
+        assertThat(saved.analysisStatus).isEqualTo(ReceptionProcessingStatus.PENDING)
+        assertThat(saved.transcriptFileId).isEqualTo(original.transcriptFileId)
+        assertThat(original.transcript).isEqualTo(ORIGINAL)
+        assertThat(original.storedAt).isEqualTo(STORED_AT)
+        assertThat(saved.receptionVersion).isEqualTo(3)
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    fun `원문 저장 실패는 연결까지 롤백하고 별도 실패 기록에서 STT 성공을 유지한다`() {
+        // given
+        val transaction = TransactionTemplate(transactionManager)
+        val existing = transaction.execute {
+            val producer = repository.saveAndFlush(awaitingStorage())
+            val original = transcript(producer)
+            assertThat(producer.attachTranscript(WORKER, original, TRACE, STORED_AT)).isEqualTo(ReceptionAnalysisTransition.ADVANCED)
+            transcriptRepository.saveAndFlush(original)
+        }
+        val analysis = transaction.execute { repository.saveAndFlush(awaitingStorage()) }
+        val colliding = transcript(analysis, existing.transcriptFileId)
+
+        // when
+        assertThrows<DataIntegrityViolationException> {
+            transaction.executeWithoutResult {
+                val current = repository.findById(analysis.analysisRequestId).orElseThrow()
+                assertThat(current.attachTranscript(WORKER, colliding, TRACE, STORED_AT)).isEqualTo(ReceptionAnalysisTransition.ADVANCED)
+                transcriptRepository.saveAndFlush(colliding)
+            }
+        }
+        val afterRollback = repository.findById(analysis.analysisRequestId).orElseThrow()
+
+        // then
+        assertThat(afterRollback.stage).isEqualTo(ReceptionAnalysisStage.TRANSCRIPT_STORAGE)
+        assertThat(afterRollback.sttStatus).isEqualTo(ReceptionProcessingStatus.SUCCEEDED)
+        assertThat(afterRollback.transcriptStorageStatus).isEqualTo(ReceptionProcessingStatus.PROCESSING)
+        assertThat(afterRollback.transcriptFileId).isNull()
+        assertThat(transcriptRepository.findByProducedByAnalysisRequestId(analysis.analysisRequestId)).isNull()
+
+        // when
+        transaction.executeWithoutResult {
+            val current = repository.findById(analysis.analysisRequestId).orElseThrow()
+            assertThat(current.failTranscriptStorage(WORKER, TRACE, STORED_AT.plusSeconds(1))).isTrue()
+        }
+        val failed = repository.findById(analysis.analysisRequestId).orElseThrow()
+
+        // then
+        assertThat(failed.status).isEqualTo(ReceptionAnalysisStatus.FAILED)
+        assertThat(failed.errorCode).isEqualTo("TRANSCRIPT_STORAGE_FAILED")
+        assertThat(failed.sttStatus).isEqualTo(ReceptionProcessingStatus.SUCCEEDED)
+        assertThat(failed.transcriptStorageStatus).isEqualTo(ReceptionProcessingStatus.FAILED)
+        assertThat(failed.analysisStatus).isEqualTo(ReceptionProcessingStatus.NOT_AVAILABLE)
+        assertThat(failed.transcriptFileId).isNull()
+        assertThat(failed.claimedBy).isNull()
+        assertThat(failed.leaseExpiresAt).isNull()
+        assertThat(transcriptRepository.findById(existing.transcriptFileId).orElseThrow().transcript).isEqualTo(ORIGINAL)
+    }
+
+    @Test
+    fun `빈 STT 결과의 최초 실패와 시각을 저장하고 늦은 결과는 DB를 변경하지 않는다`() {
+        // given
+        val analysis = analysis().also { it.claim(WORKER, STARTED_AT, DEADLINE) }
+        repository.saveAndFlush(analysis)
+
+        // when
+        assertThat(analysis.receiveTranscription(WORKER, " \r\n\u00A0", TRACE, TRANSCRIBED_AT)).isEqualTo(ReceptionAnalysisTransition.FAILED)
+        repository.flush()
+        entityManager.clear()
+        val failed = repository.findById(analysis.analysisRequestId).orElseThrow()
+        assertThat(failed.receiveTranscription(WORKER, ORIGINAL, "late-trace", DEADLINE)).isEqualTo(ReceptionAnalysisTransition.IGNORED)
+        assertThat(failed.expireIfDue(DEADLINE, "late-trace")).isFalse()
+        repository.flush()
+        entityManager.clear()
+        val saved = repository.findById(analysis.analysisRequestId).orElseThrow()
+
+        // then
+        assertThat(saved.status).isEqualTo(ReceptionAnalysisStatus.FAILED)
+        assertThat(saved.errorCode).isEqualTo("STT_NO_CONTENT")
+        assertThat(saved.traceId).isEqualTo(TRACE)
+        assertThat(saved.stage).isEqualTo(ReceptionAnalysisStage.STT)
+        assertThat(saved.sttStatus).isEqualTo(ReceptionProcessingStatus.FAILED)
+        assertThat(saved.transcriptStorageStatus).isEqualTo(ReceptionProcessingStatus.NOT_AVAILABLE)
+        assertThat(saved.analysisStatus).isEqualTo(ReceptionProcessingStatus.NOT_AVAILABLE)
+        assertThat(saved.completedAt).isEqualTo(TRANSCRIBED_AT)
+        assertThat(saved.transcriptFileId).isNull()
+        assertThat(transcriptRepository.findByProducedByAnalysisRequestId(saved.analysisRequestId)).isNull()
+        assertThat(persistenceVersion(saved.analysisRequestId)).isEqualTo(1)
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    fun `원문 보관 뒤 기한이 만료되어도 원문과 앞 단계 성공을 유지한다`() {
+        // given
+        val transaction = TransactionTemplate(transactionManager)
+        val analysis = transaction.execute {
+            val current = repository.saveAndFlush(awaitingStorage())
+            val artifact = transcript(current)
+            assertThat(current.attachTranscript(WORKER, artifact, TRACE, STORED_AT)).isEqualTo(ReceptionAnalysisTransition.ADVANCED)
+            transcriptRepository.saveAndFlush(artifact)
+            current
+        }
+
+        // when
+        transaction.executeWithoutResult {
+            val current = repository.findById(analysis.analysisRequestId).orElseThrow()
+            assertThat(current.expireIfDue(DEADLINE, TRACE)).isTrue()
+        }
+        val failed = repository.findById(analysis.analysisRequestId).orElseThrow()
+        val original = transcriptRepository.findById(checkNotNull(failed.transcriptFileId)).orElseThrow()
+
+        // then
+        assertThat(failed.status).isEqualTo(ReceptionAnalysisStatus.FAILED)
+        assertThat(failed.stage).isEqualTo(ReceptionAnalysisStage.STRUCTURE)
+        assertThat(failed.errorCode).isEqualTo("ANALYSIS_TIMEOUT")
+        assertThat(failed.sttStatus).isEqualTo(ReceptionProcessingStatus.SUCCEEDED)
+        assertThat(failed.transcriptStorageStatus).isEqualTo(ReceptionProcessingStatus.SUCCEEDED)
+        assertThat(failed.analysisStatus).isEqualTo(ReceptionProcessingStatus.FAILED)
+        assertThat(original.transcript).isEqualTo(ORIGINAL)
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    fun `원문 저장과 만료가 경합해도 패자의 원문 행이나 분석 연결을 남기지 않는다`() {
+        // given
+        val transaction = TransactionTemplate(transactionManager)
+        val analysis = transaction.execute { repository.saveAndFlush(awaitingStorage()) }
+        val artifact = transcript(analysis)
+        val loaded = CountDownLatch(2)
+        val executor = Executors.newFixedThreadPool(2)
+
+        try {
+            // when
+            val futures = listOf("store", "expire").map { action ->
+                action to executor.submit<Boolean> {
+                    try {
+                        transaction.executeWithoutResult {
+                            val current = repository.findById(analysis.analysisRequestId).orElseThrow()
+                            loaded.countDown()
+                            check(loaded.await(10, TimeUnit.SECONDS)) { "Both transactions must read before transitioning." }
+                            if (action == "store") {
+                                check(current.attachTranscript(WORKER, artifact, TRACE, STORED_AT) == ReceptionAnalysisTransition.ADVANCED)
+                                transcriptRepository.saveAndFlush(artifact)
+                            } else {
+                                check(current.expireIfDue(DEADLINE, TRACE))
+                                repository.flush()
+                            }
+                        }
+                        true
+                    } catch (_: OptimisticLockingFailureException) {
+                        false
+                    }
+                }
+            }
+            val results = futures.map { (action, future) -> action to future.get(15, TimeUnit.SECONDS) }
+            val winner = results.single { it.second }.first
+            val saved = repository.findById(analysis.analysisRequestId).orElseThrow()
+            val original = transcriptRepository.findByProducedByAnalysisRequestId(analysis.analysisRequestId)
+
+            // then
+            assertThat(results.count { it.second }).isEqualTo(1)
+            if (winner == "store") {
+                assertThat(saved.status).isEqualTo(ReceptionAnalysisStatus.PROCESSING)
+                assertThat(saved.transcriptFileId).isEqualTo(artifact.transcriptFileId)
+                assertThat(original?.transcript).isEqualTo(ORIGINAL)
+            } else {
+                assertThat(saved.status).isEqualTo(ReceptionAnalysisStatus.FAILED)
+                assertThat(saved.errorCode).isEqualTo("ANALYSIS_TIMEOUT")
+                assertThat(saved.transcriptFileId).isNull()
+                assertThat(original).isNull()
+            }
+        } finally {
+            executor.shutdownNow()
+        }
+    }
 
     @Test
     fun `최초 실행 의도를 고정 문맥과 함께 보관하고 접수가 일치할 때 조회한다`() {
@@ -415,6 +613,20 @@ class ReceptionAnalysisRepositoryTest @Autowired constructor(
         )
     }
 
+    private fun awaitingStorage() = analysis().also {
+        check(it.claim(WORKER, STARTED_AT, DEADLINE))
+        check(it.receiveTranscription(WORKER, ORIGINAL, TRACE, TRANSCRIBED_AT) == ReceptionAnalysisTransition.ADVANCED)
+    }
+
+    private fun transcript(analysis: ReceptionAnalysis, fileId: String = id()) = ReceptionTranscript(
+        transcriptFileId = fileId,
+        receptionId = analysis.receptionId,
+        recordingFileId = analysis.recordingFileId,
+        producedByAnalysisRequestId = analysis.analysisRequestId,
+        transcript = ORIGINAL,
+        storedAt = STORED_AT,
+    )
+
     private fun assertSqlState(exception: DataIntegrityViolationException, state: String) {
         assertThat(exception.mostSpecificCause).isInstanceOfSatisfying(SQLException::class.java) {
             assertThat(it.sqlState).isEqualTo(state)
@@ -437,9 +649,14 @@ class ReceptionAnalysisRepositoryTest @Autowired constructor(
     private fun id() = UUID.randomUUID().toString()
 
     companion object {
+        private const val WORKER = "worker-1"
+        private const val TRACE = "test-trace"
+        private const val ORIGINAL = "  고객: 물이 샙니다.\r\n관리자: 방문하겠습니다.\n고객: 🙂 감사합니다.  "
         private val REFERENCE_TIME = Instant.parse("2026-11-16T00:00:00Z")
         private val ACCEPTED_AT = REFERENCE_TIME.plusSeconds(1)
         private val STARTED_AT = ACCEPTED_AT.plusSeconds(1)
+        private val TRANSCRIBED_AT = STARTED_AT.plusSeconds(1)
+        private val STORED_AT = TRANSCRIBED_AT.plusSeconds(1)
         private val DEADLINE = STARTED_AT.plusSeconds(60)
         private val SCHEMA = "analysis_test_" + UUID.randomUUID().toString().replace("-", "")
         private val UPGRADE_SCHEMA = SCHEMA + "_upgrade"

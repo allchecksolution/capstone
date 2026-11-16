@@ -374,12 +374,14 @@ case(backend, "AnalysisView", dict(failed, resultApplied=True), False)
 case(backend, "AnalysisView", dict(failed, completedAt=None), False)
 case(backend, "AnalysisView", dict(failed, status="UNKNOWN"), False)
 case(backend, "AnalysisView", dict(failed, transcriptFileId=None), False)
-storage_failed = dict(
-    pending, status="FAILED", stage="TRANSCRIPT_STORAGE", sttStatus="SUCCEEDED",
-    transcriptStorageStatus="FAILED", analysisStatus="NOT_AVAILABLE",
-    completedAt="2026-11-13T14:01:00+09:00",
-    error={"code": "TRANSCRIPT_STORAGE_FAILED", "message": "원문 저장에 실패했습니다.", "traceId": "trace_example_01"})
+storage_failed = deepcopy(views["transcriptStorageFailed"]["value"])
 case(backend, "AnalysisView", storage_failed)
+case(backend, "AnalysisView", dict(storage_failed, sttStatus="FAILED"), False)
+case(backend, "AnalysisView", dict(storage_failed, transcriptFileId="file_stt_01"), False)
+case(backend, "AnalysisView", dict(storage_failed, stage="STRUCTURE"), False)
+case(backend, "AnalysisView", dict(storage_failed, analysisStatus="PROCESSING"), False)
+timed_out = deepcopy(views["analysisTimedOut"]["value"])
+case(backend, "AnalysisView", dict(timed_out, status="DISCARDED", stage="RESULT_APPLICATION"), False)
 case(backend, "AnalysisView", dict(pending, mode="STRUCTURE_ONLY"), False)
 case(backend, "AnalysisView", dict(
     pending, mode="STRUCTURE_ONLY", sttStatus="SUCCEEDED", transcriptStorageStatus="SUCCEEDED",

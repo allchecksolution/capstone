@@ -47,7 +47,7 @@ class ReceptionTranscript(
         require(recordingFileId.isNotBlank() && recordingFileId.length <= 64)
         require(producedByAnalysisRequestId.isNotBlank() && producedByAnalysisRequestId.length <= 64)
         require(transcript.isNotBlank()) { "A canonical transcript must contain transcription content." }
-        require(transcript.codePointCount(0, transcript.length) <= 100_000) { "Transcript exceeds the AI contract limit." }
+        require(transcript.codePointCount(0, transcript.length) <= MAX_CODE_POINTS) { "Transcript exceeds the AI contract limit." }
     }
 
     // V1 파일 메타데이터와의 호환 정보만 계산한다. S3 객체나 복사본은 만들지 않는다.
@@ -73,4 +73,8 @@ class ReceptionTranscript(
     @field:Version
     @field:Column(name = "persistence_version", nullable = false)
     private var persistenceVersion: Long? = null
+
+    companion object {
+        const val MAX_CODE_POINTS = 100_000
+    }
 }

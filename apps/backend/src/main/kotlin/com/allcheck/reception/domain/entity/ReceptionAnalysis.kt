@@ -1,8 +1,10 @@
 package com.allcheck.reception.domain.entity
 
 import com.allcheck.reception.domain.vo.ReceptionAiOriginal
+import com.allcheck.reception.domain.vo.ReceptionAnalysisFailureReason
 import com.allcheck.reception.domain.vo.ReceptionAnalysisStage
 import com.allcheck.reception.domain.vo.ReceptionAnalysisStatus
+import com.allcheck.reception.domain.vo.ReceptionAnalysisTransition
 import com.allcheck.reception.domain.vo.ReceptionProcessingStatus
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
@@ -171,5 +173,142 @@ class ReceptionAnalysis(
         startedAt = now
         updatedAt = now
         return true
+    }
+
+    /**
+     * 원문을 변경하거나 Entity에 임시 보관하지 않는다. ADVANCED에서만 같은 문자열을 DB 원문으로 만든다.
+     * 전사 성공 체크포인트와 실제 원문 저장을 구분하여 DB 저장 실패 시에도 STT 성공 사실을 유지한다.
+     */
+    fun receiveTranscription(
+        workerId: String,
+        transcript: String,
+        traceId: String,
+        now: Instant,
+    ): ReceptionAnalysisTransition {
+        if (!isOwnedProcessingStage(workerId, ReceptionAnalysisStage.STT)) {
+            return ReceptionAnalysisTransition.IGNORED
+        }
+        validateTransition(traceId, now)
+        if (expireIfDue(now, traceId)) {
+            return ReceptionAnalysisTransition.FAILED
+        }
+        if (transcript.isBlank()) {
+            sttStatus = ReceptionProcessingStatus.FAILED
+            transcriptStorageStatus = ReceptionProcessingStatus.NOT_AVAILABLE
+            analysisStatus = ReceptionProcessingStatus.NOT_AVAILABLE
+            finishFailure(ReceptionAnalysisFailureReason.STT_NO_CONTENT, traceId, now)
+            return ReceptionAnalysisTransition.FAILED
+        }
+        require(transcript.codePointCount(0, transcript.length) <= ReceptionTranscript.MAX_CODE_POINTS) {
+            "Transcript exceeds the AI contract limit."
+        }
+
+        sttStatus = ReceptionProcessingStatus.SUCCEEDED
+        transcriptStorageStatus = ReceptionProcessingStatus.PROCESSING
+        stage = ReceptionAnalysisStage.TRANSCRIPT_STORAGE
+        updatedAt = now
+        return ReceptionAnalysisTransition.ADVANCED
+    }
+
+    /**
+     * ADVANCED에서만 원문 Entity와 이 연결·저장 성공 상태를 같은 DB 트랜잭션으로 저장한다.
+     * 기한 도달 시 FAILED이며 분석 실패·알림 의도를 저장하고 원문은 새로 저장하지 않는다.
+     * 구조화 호출은 커밋 이후 별도 시작하며 여기서는 STRUCTURE/PENDING으로 준비한다.
+     */
+    fun attachTranscript(
+        workerId: String,
+        transcript: ReceptionTranscript,
+        traceId: String,
+        now: Instant,
+    ): ReceptionAnalysisTransition {
+        if (!isOwnedProcessingStage(workerId, ReceptionAnalysisStage.TRANSCRIPT_STORAGE)) {
+            return ReceptionAnalysisTransition.IGNORED
+        }
+        validateTransition(traceId, now)
+        if (expireIfDue(now, traceId)) {
+            return ReceptionAnalysisTransition.FAILED
+        }
+        require(transcript.producedByAnalysisRequestId == analysisRequestId)
+        require(transcript.receptionId == receptionId && transcript.recordingFileId == recordingFileId)
+        require(!transcript.storedAt.isBefore(updatedAt) && !transcript.storedAt.isAfter(now)) {
+            "Transcript storage time must follow transcription and not exceed the transition time."
+        }
+
+        transcriptFileId = transcript.transcriptFileId
+        transcriptStorageStatus = ReceptionProcessingStatus.SUCCEEDED
+        stage = ReceptionAnalysisStage.STRUCTURE
+        updatedAt = now
+        return ReceptionAnalysisTransition.ADVANCED
+    }
+
+    /** DB 원문 저장 트랜잭션을 롤백한 뒤, 별도 트랜잭션에서 실패와 알림 발행 의도를 함께 저장해야 한다. */
+    fun failTranscriptStorage(workerId: String, traceId: String, now: Instant): Boolean {
+        if (!isOwnedProcessingStage(workerId, ReceptionAnalysisStage.TRANSCRIPT_STORAGE)) {
+            return false
+        }
+        validateTransition(traceId, now)
+        if (expireIfDue(now, traceId)) {
+            return true
+        }
+
+        transcriptStorageStatus = ReceptionProcessingStatus.FAILED
+        analysisStatus = ReceptionProcessingStatus.NOT_AVAILABLE
+        finishFailure(ReceptionAnalysisFailureReason.TRANSCRIPT_STORAGE_FAILED, traceId, now)
+        return true
+    }
+
+    /**
+     * 기한과 같거나 지난 PROCESSING을 종료한다. 원격 실행의 중단·취소를 의미하지 않으며 재실행하지 않는다.
+     * 이미 보관한 원문과 성공한 앞 단계는 보존한다. 실패 변경·알림 의도의 원자적 저장은 애플리케이션의 책임이다.
+     */
+    fun expireIfDue(now: Instant, traceId: String): Boolean {
+        if (status != ReceptionAnalysisStatus.PROCESSING || !isInitial || mode != "FULL") {
+            return false
+        }
+        val deadline = checkNotNull(leaseExpiresAt)
+        if (now.isBefore(deadline)) {
+            return false
+        }
+        validateTransition(traceId, now)
+
+        when {
+            sttStatus != ReceptionProcessingStatus.SUCCEEDED -> {
+                sttStatus = ReceptionProcessingStatus.FAILED
+                transcriptStorageStatus = ReceptionProcessingStatus.NOT_AVAILABLE
+                analysisStatus = ReceptionProcessingStatus.NOT_AVAILABLE
+            }
+            transcriptStorageStatus != ReceptionProcessingStatus.SUCCEEDED -> {
+                transcriptStorageStatus = ReceptionProcessingStatus.FAILED
+                analysisStatus = ReceptionProcessingStatus.NOT_AVAILABLE
+            }
+            else -> analysisStatus = ReceptionProcessingStatus.FAILED
+        }
+        finishFailure(ReceptionAnalysisFailureReason.ANALYSIS_TIMEOUT, traceId, now)
+        return true
+    }
+
+    private fun isOwnedProcessingStage(
+        workerId: String,
+        expectedStage: ReceptionAnalysisStage,
+    ): Boolean = status == ReceptionAnalysisStatus.PROCESSING &&
+        isInitial &&
+        mode == "FULL" &&
+        claimedBy == workerId &&
+        stage == expectedStage
+
+    private fun validateTransition(traceId: String, now: Instant) {
+        require(traceId.isNotBlank())
+        require(!now.isBefore(updatedAt)) { "Analysis transition time must not precede its last update." }
+    }
+
+    private fun finishFailure(reason: ReceptionAnalysisFailureReason, traceId: String, now: Instant) {
+        status = ReceptionAnalysisStatus.FAILED
+        errorCode = reason.name
+        errorMessage = reason.message
+        this.traceId = traceId
+        completedAt = now
+        updatedAt = now
+        claimedBy = null
+        leaseExpiresAt = null
     }
 }

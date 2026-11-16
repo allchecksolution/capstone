@@ -89,3 +89,6 @@ rejects unsupported types, and checks V4-to-V5 expansion while preserving existi
 Analysis tests cover persisted pending intents, fixed verified-recording context, one initial attempt per recording even after failure,
 ordered pending queries, and a single successful execution-claim commit across independent transactions.
 V5-to-V6 migration preserves existing processing state, worker identity, claim deadlines, and captured reception versions.
+STT progression tests cover blank-text failure, exact deadline boundaries, claim ownership, source linkage, and terminal-state immutability.
+Database tests verify atomic transcript/linkage storage, rollback with a preserved STT-success checkpoint,
+and concurrent transcript storage versus timeout without leaving a losing transcript row or dangling linkage.
