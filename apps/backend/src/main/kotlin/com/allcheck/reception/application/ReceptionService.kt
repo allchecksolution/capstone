@@ -5,17 +5,20 @@ import com.allcheck.global.exception.GlobalErrorCode
 import com.allcheck.reception.domain.entity.Reception
 import com.allcheck.reception.domain.vo.ReceptionAnalysisStatus
 import com.allcheck.reception.domain.vo.ReceptionConfirmationData
+import com.allcheck.reception.domain.vo.ReceptionCreationData
 import com.allcheck.reception.domain.vo.ReceptionExternalId
 import com.allcheck.reception.exception.ReceptionErrorCode
 import com.allcheck.reception.infrastructure.repository.ReceptionAnalysisRepository
 import com.allcheck.reception.infrastructure.repository.ReceptionRepository
 import com.allcheck.reception.presentation.dto.response.ReceptionConfirmedResponse
+import com.allcheck.reception.presentation.dto.response.ReceptionDetailResponse
 import com.allcheck.reception.presentation.dto.response.ReceptionFieldsResponse
 import com.allcheck.reception.presentation.dto.response.ReceptionReopenedResponse
 import org.springframework.dao.OptimisticLockingFailureException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
+import java.time.temporal.ChronoUnit
 
 /** 호출자는 인증 문맥에서 얻은 관리자 ID를 전달한다. 외부 Request DTO나 클라이언트의 분석 상태를 받지 않는다. */
 @Service
@@ -24,7 +27,14 @@ class ReceptionService(
     private val receptionRepository: ReceptionRepository,
     private val analysisRepository: ReceptionAnalysisRepository,
     private val clock: Clock,
+    private val queries: ReceptionQueryService,
 ) {
+    @Transactional
+    fun create(adminId: Long, data: ReceptionCreationData): ReceptionDetailResponse {
+        val reception = receptionRepository.saveAndFlush(Reception(adminId, clock.instant().truncatedTo(ChronoUnit.MICROS), data.callerPhone, data.callStartedAt))
+        return queries.detail(adminId, checkNotNull(reception.receptionId))
+    }
+
     @Transactional
     fun confirm(
         adminId: Long,
@@ -42,7 +52,7 @@ class ReceptionService(
             receptionId = ReceptionExternalId.RECEPTION.format(checkNotNull(reception.receptionId)),
             reviewStatus = reception.reviewStatus,
             version = reception.version,
-            confirmedAt = checkNotNull(reception.confirmedAt),
+            confirmedAt = checkNotNull(reception.confirmedAt).truncatedTo(ChronoUnit.MICROS),
             finalData = ReceptionFieldsResponse.from(reception.finalData),
         )
     }
@@ -58,7 +68,7 @@ class ReceptionService(
             receptionId = ReceptionExternalId.RECEPTION.format(checkNotNull(reception.receptionId)),
             reviewStatus = reception.reviewStatus,
             version = reception.version,
-            updatedAt = reception.updatedAt,
+            updatedAt = reception.updatedAt.truncatedTo(ChronoUnit.MICROS),
             confirmedAt = reception.confirmedAt,
             finalData = ReceptionFieldsResponse.from(reception.finalData),
         )

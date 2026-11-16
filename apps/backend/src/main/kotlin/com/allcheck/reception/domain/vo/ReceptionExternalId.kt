@@ -9,6 +9,7 @@ enum class ReceptionExternalId(private val prefix: String) {
     RECORDING("file_rec_"),
     ANALYSIS("anl_"),
     TRANSCRIPT("file_stt_"),
+    REQUEST("req_"),
     ;
 
     fun format(id: Long): String {

@@ -215,6 +215,31 @@ class ReceptionAnalysis(
         return ReceptionAnalysisTransition.ADVANCED
     }
 
+    /** 원문 INSERT 전에 확인한다. 만료 시에는 원문을 생성하지 않고 실패만 저장한다. */
+    fun prepareTranscriptStorage(workerId: String, traceId: String, now: Instant): ReceptionAnalysisTransition {
+        if (!isOwnedProcessingStage(workerId, ReceptionAnalysisStage.TRANSCRIPT_STORAGE)) return ReceptionAnalysisTransition.IGNORED
+        validateTransition(traceId, now)
+        if (expireIfDue(now, traceId)) return ReceptionAnalysisTransition.FAILED
+        return ReceptionAnalysisTransition.ADVANCED
+    }
+
+    fun failTranscription(
+        workerId: String,
+        reason: ReceptionAnalysisFailureReason,
+        traceId: String,
+        now: Instant,
+    ): Boolean {
+        if (!isOwnedProcessingStage(workerId, ReceptionAnalysisStage.STT)) return false
+        require(reason == ReceptionAnalysisFailureReason.AI_STT_FAILED || reason == ReceptionAnalysisFailureReason.AI_TIMEOUT)
+        validateTransition(traceId, now)
+        if (expireIfDue(now, traceId)) return true
+        sttStatus = ReceptionProcessingStatus.FAILED
+        transcriptStorageStatus = ReceptionProcessingStatus.NOT_AVAILABLE
+        analysisStatus = ReceptionProcessingStatus.NOT_AVAILABLE
+        finishUnapplied(reason, traceId, now)
+        return true
+    }
+
     /**
      * 원문 INSERT로 할당받은 ID를 연결한다. 애플리케이션은 삽입 전 실행권·단계·기한을 확인해야 한다.
      * 원문과 ADVANCED 연결은 같은 트랜잭션으로 커밋한다. 실패/무시이면 새 원문 INSERT도 롤백해야 한다.

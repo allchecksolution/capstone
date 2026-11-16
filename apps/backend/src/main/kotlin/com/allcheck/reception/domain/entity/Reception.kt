@@ -9,6 +9,7 @@ import com.allcheck.reception.domain.vo.ReceptionConfirmationData
 import com.allcheck.reception.domain.vo.ReceptionData
 import com.allcheck.reception.domain.vo.ReceptionProcessingStatus
 import com.allcheck.reception.domain.vo.ReceptionReviewStatus
+import com.allcheck.reception.domain.vo.RecordingUploadStatus
 import com.allcheck.reception.exception.ReceptionErrorCode
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
@@ -131,6 +132,58 @@ class Reception(
         version = nextVersion
     }
 
+    /** 검증 완료 녹음·PENDING 시도 INSERT와 같은 트랜잭션으로 최초 분석 연결을 저장한다. */
+    fun acceptInitialAnalysis(
+        expectedVersion: Int,
+        recording: ReceptionRecording,
+        analysis: ReceptionAnalysis,
+        now: Instant,
+    ) {
+        if (expectedVersion != version) throw BusinessException(GlobalErrorCode.VERSION_CONFLICT)
+        if (requestId != null) throw BusinessException(ReceptionErrorCode.RECEPTION_ALREADY_REGISTERED)
+        if (reviewStatus != ReceptionReviewStatus.DRAFT) throw BusinessException(ReceptionErrorCode.RECEPTION_ALREADY_CONFIRMED)
+        check(latestAnalysisRequestId == null) { "An initial analysis is already linked." }
+        require(!now.isBefore(updatedAt))
+        require(recording.recordingFileId == recordingFileId && recording.receptionId == receptionId)
+        require(recording.uploadedByAdminId == ownerAdminId && recording.status == RecordingUploadStatus.UPLOADED)
+        require(analysis.receptionId == receptionId && analysis.recordingFileId == recordingFileId)
+        require(analysis.requestedByAdminId == ownerAdminId && analysis.status == ReceptionAnalysisStatus.PENDING)
+        require(analysis.referenceTime == recording.recordingReceivedAt && analysis.createdAt == now)
+        val nextVersion = Math.incrementExact(version)
+        require(analysis.receptionVersion == nextVersion)
+        val analysisId = checkNotNull(analysis.analysisRequestId)
+
+        latestAnalysisRequestId = analysisId
+        version = nextVersion
+        updatedAt = now
+    }
+
+    /** 현재 시도의 정식 원문 연결. 처리 단계만 바뀌므로 업무 버전은 증가시키지 않는다. */
+    fun attachCanonicalTranscript(analysis: ReceptionAnalysis, transcript: ReceptionTranscript, now: Instant): Boolean {
+        if (reviewStatus != ReceptionReviewStatus.DRAFT ||
+            requestId != null ||
+            analysis.status != ReceptionAnalysisStatus.PROCESSING ||
+            analysis.transcriptStorageStatus != ReceptionProcessingStatus.SUCCEEDED ||
+            analysis.receptionId != receptionId ||
+            analysis.requestedByAdminId != ownerAdminId ||
+            analysis.analysisRequestId != latestAnalysisRequestId ||
+            analysis.recordingFileId != recordingFileId ||
+            analysis.receptionVersion != version ||
+            transcript.receptionId != receptionId ||
+            transcript.recordingFileId != recordingFileId ||
+            transcript.producedByAnalysisRequestId != analysis.analysisRequestId ||
+            analysis.transcriptFileId != transcript.transcriptFileId
+        ) {
+            return false
+        }
+        val transcriptId = checkNotNull(transcript.transcriptFileId)
+        if (transcriptFileId != null) return transcriptFileId == transcriptId
+        require(!now.isBefore(updatedAt))
+        transcriptFileId = transcriptId
+        updatedAt = now
+        return true
+    }
+
     /**
      * 애플리케이션은 소유권 확인 후 현재 분석 시도의 상태와 서버 시각을 전달해야 한다.
      * analysisStatus의 null은 녹음 예약과 분석 시도가 없는 수동 접수에만 사용하며 클라이언트가 지정하지 않는다.
@@ -188,6 +241,23 @@ class Reception(
 
         reviewStatus = ReceptionReviewStatus.DRAFT
         confirmedAt = null
+        updatedAt = now
+        version = nextVersion
+    }
+
+    /** 확정된 스냅샷 조회와 의뢰 등록에 현재 시각의 방문 종료 조건을 다시 적용하지 않는다. */
+    fun confirmedData(expectedVersion: Int): ReceptionData {
+        if (expectedVersion != version) throw BusinessException(GlobalErrorCode.VERSION_CONFLICT)
+        if (requestId != null) throw BusinessException(ReceptionErrorCode.RECEPTION_ALREADY_REGISTERED)
+        if (reviewStatus != ReceptionReviewStatus.CONFIRMED) throw BusinessException(ReceptionErrorCode.RECEPTION_NOT_CONFIRMED)
+        return finalData
+    }
+
+    fun registerRequest(expectedVersion: Int, requestId: Long, now: Instant) {
+        confirmedData(expectedVersion)
+        require(requestId > 0 && !now.isBefore(updatedAt))
+        val nextVersion = Math.incrementExact(version)
+        this.requestId = requestId
         updatedAt = now
         version = nextVersion
     }
