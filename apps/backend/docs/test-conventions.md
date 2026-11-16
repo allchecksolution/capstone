@@ -109,3 +109,19 @@ It also creates and removes only its own UUID-named schema. Run it with:
 ```sh
 ./gradlew test --tests com.allcheck.reception.application.ReceptionServiceTest
 ```
+
+`ReceptionPipelineTransactionsTest` verifies the recording acceptance, STT checkpoint, canonical DB transcript,
+structuring, result application, and durable completion-event transactions together. It also covers owner-scoped
+material queries and atomic request registration through `ReceptionOperations`. The request module must call
+registration inside its own transaction; request insertion and reception linkage either commit together or both
+roll back. Registration and reopening cannot both win against one confirmed version. Elapsed visit windows do
+not prevent registration of an already confirmed snapshot.
+
+`ReceptionCommandServiceTest` verifies database transaction-scoped advisory locking, successful command receipts,
+unchanged first-response replay, payload mismatch rejection, rollback, and current ownership checks on replay.
+`ReceptionApiIntegrationTest` exercises real HTTP serialization, authorization, validation, generated OpenAPI,
+and review flows against PostgreSQL with a test-only administrator identity adapter.
+
+Full application and security tests also use owned UUID-named schemas. The `test` profile does not enable local
+Swagger automatically; tests that verify the documentation endpoints enable it explicitly. Run all backend
+coverage with `./gradlew ktlintCheck test`; it must not migrate or clear the local application's public schema.

@@ -1,8 +1,11 @@
 package com.allcheck.global.security
 
 import com.allcheck.global.security.jwt.JwtTokenProvider
+import com.allcheck.support.PostgresTestSchema
 import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import org.springframework.beans.factory.annotation.Autowired
@@ -13,6 +16,10 @@ import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.security.test.context.support.WithMockUser
+import org.springframework.test.annotation.DirtiesContext
+import org.springframework.test.context.ActiveProfiles
+import org.springframework.test.context.DynamicPropertyRegistry
+import org.springframework.test.context.DynamicPropertySource
 import org.springframework.test.context.TestPropertySource
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
@@ -23,17 +30,51 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RestController
+import javax.sql.DataSource
 
 @SpringBootTest
+@ActiveProfiles("test")
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @AutoConfigureMockMvc
-@TestPropertySource("classpath:jwt-test.properties")
+@TestPropertySource(
+    locations = ["classpath:jwt-test.properties"],
+    properties = ["springdoc.api-docs.enabled=true", "springdoc.swagger-ui.enabled=true"],
+)
 @Import(SecurityConfigTest.TestController::class)
 class SecurityConfigTest {
+    @Autowired
+    private lateinit var dataSource: DataSource
+
+    @AfterAll
+    fun removeTestSchema() {
+        database.remove(dataSource)
+    }
+
+    companion object {
+        private val database = PostgresTestSchema("security_context")
+
+        @JvmStatic
+        @DynamicPropertySource
+        fun properties(registry: DynamicPropertyRegistry) {
+            database.register(registry)
+        }
+    }
+
     @Autowired
     private lateinit var mockMvc: MockMvc
 
     @Autowired
     private lateinit var jwtTokenProvider: JwtTokenProvider
+
+    @Test
+    @WithMockUser(roles = ["ADMIN"])
+    fun `접수의 실제 관리자 식별 연동이 없으면 사용자명을 임의 ID로 해석하지 않고 503을 반환한다`() {
+        // when & then
+        mockMvc.perform(get("/api/v1/receptions"))
+            .andExpect(status().isServiceUnavailable)
+            .andExpect(content().json("""{"code":"RECEPTION_IDENTITY_UNAVAILABLE","message":"관리자 인증 연동이 준비되지 않았습니다."}"""))
+    }
 
     @ParameterizedTest
     @ValueSource(strings = ["/api/v1/security-tests/protected", "/api/v1/not-allowlisted", "/actuator/env", "/login", "/logout"])

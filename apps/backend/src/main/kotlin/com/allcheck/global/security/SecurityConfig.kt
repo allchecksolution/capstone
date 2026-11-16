@@ -46,6 +46,8 @@ class SecurityConfig(
                 authorize(HttpMethod.GET, "/v3/api-docs/**", permitAll)
 
                 // 기본 인증 요구
+                authorize("/api/v1/receptions", hasRole("ADMIN"))
+                authorize("/api/v1/receptions/**", hasRole("ADMIN"))
                 authorize(anyRequest, authenticated)
             }
             exceptionHandling {

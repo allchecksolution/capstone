@@ -174,42 +174,38 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: '#/components/schemas/ReceptionHttpError'
               example:
                 code: UNAUTHENTICATED
                 message: 인증이 필요합니다.
-                traceId: trace_example_01
         '403':
           description: 이 작업을 수행할 권한이 없습니다.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: '#/components/schemas/ReceptionHttpError'
               example:
-                code: FORBIDDEN
+                code: ACCESS_DENIED
                 message: 이 작업을 수행할 권한이 없습니다.
-                traceId: trace_example_01
         '404':
-          $ref: '#/components/responses/ReceptionNotFound'
+          $ref: '#/components/responses/ReceptionHttpNotFound'
         '409':
           description: REVIEW_NOT_READY(처리 중) / VERSION_CONFLICT / RECEPTION_ALREADY_CONFIRMED / RECEPTION_ALREADY_REGISTERED / 멱등성 충돌
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: '#/components/schemas/ReceptionHttpError'
               examples:
                 processing:
                   summary: 분석 진행 중 — 검토 완료 불가
                   value:
                     code: REVIEW_NOT_READY
                     message: 분석 처리가 끝난 뒤 검토를 완료해 주세요.
-                    traceId: trace_example_01
                 versionConflict:
                   summary: 다른 처리로 버전 변경
                   value:
                     code: VERSION_CONFLICT
                     message: 최신 버전과 상태를 다시 조회해 주세요.
-                    traceId: trace_example_01
           headers:
             Retry-After:
               description: OPERATION_IN_PROGRESS일 때 재시도 대기 초. 그 외 충돌에는 생략.
@@ -221,21 +217,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: '#/components/schemas/ReceptionHttpError'
               example:
                 code: INVALID_INPUT_VALUE
                 message: 입력값이 올바르지 않습니다.
-                traceId: trace_example_01
         '503':
           description: 일시 장애입니다. 같은 키로 재시도해 주세요.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: '#/components/schemas/ReceptionHttpError'
               example:
                 code: TEMPORARILY_UNAVAILABLE
                 message: 일시 장애입니다. 같은 키로 재시도해 주세요.
-                traceId: trace_example_01
   /service-requests:
     get:
       operationId: listServiceRequests
@@ -2409,7 +2403,7 @@ paths:
                 items:
                 - receptionId: rec_01
                   receivedAt: '2026-10-31T08:40:00+09:00'
-                  callerPhoneMasked: 010-****-1234
+                  callerPhoneMasked: "***-****-1234"
                   reviewStatus: DRAFT
                   recordingStatus: SUCCEEDED
                   sttStatus: SUCCEEDED
@@ -2417,7 +2411,7 @@ paths:
                   version: 1
                 - receptionId: rec_02
                   receivedAt: '2026-10-31T09:10:00+09:00'
-                  callerPhoneMasked: 010-****-5678
+                  callerPhoneMasked: "***-****-5678"
                   reviewStatus: DRAFT
                   recordingStatus: SUCCEEDED
                   sttStatus: FAILED
@@ -2429,13 +2423,13 @@ paths:
                   totalElements: 2
                   totalPages: 1
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ReceptionHttpUnauthorized'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/ReceptionHttpForbidden'
         '400':
-          $ref: '#/components/responses/ValidationFailed'
+          $ref: '#/components/responses/ReceptionHttpValidationFailed'
         '503':
-          $ref: '#/components/responses/ServiceUnavailable'
+          $ref: '#/components/responses/ReceptionHttpServiceUnavailable'
     post:
       operationId: createReception
       x-access-scope: RECEPTION_OWNER
@@ -2468,7 +2462,7 @@ paths:
               example:
                 receptionId: rec_01
                 receivedAt: '2026-11-13T14:00:00+09:00'
-                callerPhoneMasked: 010-****-1234
+                callerPhoneMasked: "***-****-1234"
                 reviewStatus: DRAFT
                 recordingStatus: NOT_AVAILABLE
                 sttStatus: NOT_AVAILABLE
@@ -2492,15 +2486,15 @@ paths:
               schema:
                 type: boolean
         '400':
-          $ref: '#/components/responses/ValidationFailed'
+          $ref: '#/components/responses/ReceptionHttpValidationFailed'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ReceptionHttpUnauthorized'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/ReceptionHttpForbidden'
         '409':
-          $ref: '#/components/responses/VersionConflict'
+          $ref: '#/components/responses/ReceptionHttpVersionConflict'
         '503':
-          $ref: '#/components/responses/ServiceUnavailable'
+          $ref: '#/components/responses/ReceptionHttpServiceUnavailable'
   /receptions/{receptionId}:
     get:
       operationId: getReception
@@ -2543,7 +2537,7 @@ paths:
                   value:
                     receptionId: rec_01
                     receivedAt: '2026-10-31T08:40:00+09:00'
-                    callerPhoneMasked: 010-****-1234
+                    callerPhoneMasked: "***-****-1234"
                     reviewStatus: DRAFT
                     recordingStatus: SUCCEEDED
                     sttStatus: SUCCEEDED
@@ -2576,7 +2570,7 @@ paths:
                   value:
                     receptionId: rec_03
                     receivedAt: '2026-11-13T14:00:00+09:00'
-                    callerPhoneMasked: 010-****-1234
+                    callerPhoneMasked: "***-****-1234"
                     reviewStatus: DRAFT
                     recordingStatus: SUCCEEDED
                     sttStatus: PROCESSING
@@ -2599,7 +2593,7 @@ paths:
                   value:
                     receptionId: rec_02
                     receivedAt: '2026-10-31T09:10:00+09:00'
-                    callerPhoneMasked: 010-****-5678
+                    callerPhoneMasked: "***-****-5678"
                     reviewStatus: DRAFT
                     recordingStatus: SUCCEEDED
                     sttStatus: FAILED
@@ -2618,13 +2612,13 @@ paths:
                     timeZone: Asia/Seoul
                     transcriptStorageStatus: NOT_AVAILABLE
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ReceptionHttpUnauthorized'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/ReceptionHttpForbidden'
         '404':
-          $ref: '#/components/responses/ReceptionNotFound'
+          $ref: '#/components/responses/ReceptionHttpNotFound'
         '503':
-          $ref: '#/components/responses/ServiceUnavailable'
+          $ref: '#/components/responses/ReceptionHttpServiceUnavailable'
     patch:
       operationId: updateReception
       x-access-scope: RECEPTION_OWNER
@@ -2769,21 +2763,21 @@ paths:
                   contactPhone: 010-1234-5678
                   notes: 방문 전 연락
         '400':
-          $ref: '#/components/responses/ValidationFailed'
+          $ref: '#/components/responses/ReceptionHttpValidationFailed'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ReceptionHttpUnauthorized'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/ReceptionHttpForbidden'
         '404':
-          $ref: '#/components/responses/ReceptionNotFound'
+          $ref: '#/components/responses/ReceptionHttpNotFound'
         '409':
           description: VERSION_CONFLICT / RECEPTION_NOT_CONFIRMED / RECEPTION_ALREADY_REGISTERED / 멱등성 충돌.
           content:
             application/json:
-              schema: {$ref: '#/components/schemas/Error'}
-              example: {code: RECEPTION_ALREADY_REGISTERED, message: 의뢰로 등록된 접수는 변경할 수 없습니다., traceId: trace_example_01}
+              schema: {$ref: '#/components/schemas/ReceptionHttpError'}
+              example: {code: RECEPTION_ALREADY_REGISTERED, message: 의뢰로 등록된 접수는 변경할 수 없습니다.}
         '503':
-          $ref: '#/components/responses/ServiceUnavailable'
+          $ref: '#/components/responses/ReceptionHttpServiceUnavailable'
   /receptions/{receptionId}/recordings/upload-requests:
     post:
       operationId: createRecordingUploadRequest
@@ -3550,13 +3544,13 @@ paths:
                     completedAt: null
                     error: null
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ReceptionHttpUnauthorized'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/ReceptionHttpForbidden'
         '404':
-          $ref: '#/components/responses/NotFound'
+          $ref: '#/components/responses/ReceptionHttpNotFound'
         '503':
-          $ref: '#/components/responses/ServiceUnavailable'
+          $ref: '#/components/responses/ReceptionHttpServiceUnavailable'
   /push-devices/{installationId}:
     put:
       operationId: registerPushDevice
@@ -4869,6 +4863,60 @@ components:
       description: 한 번에 가져올 메시지 수.
       schema: {type: integer, minimum: 1, maximum: 100, default: 30}
   responses:
+    ReceptionHttpUnauthorized:
+      description: 접수 HTTP 401 응답. 검토·중복·처리 충돌은 code로 구분한다.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ReceptionHttpError'
+          example:
+            code: UNAUTHENTICATED
+            message: 인증이 필요합니다.
+    ReceptionHttpForbidden:
+      description: 접수 HTTP 403 응답. 검토·중복·처리 충돌은 code로 구분한다.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ReceptionHttpError'
+          example:
+            code: ACCESS_DENIED
+            message: 접근 권한이 없습니다.
+    ReceptionHttpNotFound:
+      description: 접수 HTTP 404 응답. 검토·중복·처리 충돌은 code로 구분한다.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ReceptionHttpError'
+          example:
+            code: RECEPTION_NOT_FOUND
+            message: 접수를 찾을 수 없습니다.
+    ReceptionHttpValidationFailed:
+      description: 접수 HTTP 400 응답. 검토·중복·처리 충돌은 code로 구분한다.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ReceptionHttpError'
+          example:
+            code: INVALID_INPUT_VALUE
+            message: 입력값이 올바르지 않습니다.
+    ReceptionHttpVersionConflict:
+      description: 접수 HTTP 409 응답. 검토·중복·처리 충돌은 code로 구분한다.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ReceptionHttpError'
+          example:
+            code: VERSION_CONFLICT
+            message: 접수 버전 또는 처리 상태 충돌. 현재 상태를 조회한 뒤 다시 요청한다.
+    ReceptionHttpServiceUnavailable:
+      description: 접수 HTTP 503 응답. 검토·중복·처리 충돌은 code로 구분한다.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ReceptionHttpError'
+          example:
+            code: RECEPTION_IDENTITY_UNAVAILABLE
+            message: 관리자 인증 연동이 준비되지 않았습니다.
     Unauthorized:
       description: 인증이 필요하거나 토큰이 만료·무효입니다.
       content:
@@ -4942,6 +4990,23 @@ components:
           schema: {$ref: "#/components/schemas/Error"}
           example: {code: TEMPORARILY_UNAVAILABLE, message: 일시 장애입니다. 잠시 후 다시 시도해 주세요., traceId: trace_example_01}
   schemas:
+    ReceptionHttpError:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      description: 구현된 접수 HTTP API의 공통 오류 응답. 분석 리소스 안의 error.traceId와 구분한다.
+      properties:
+        code: {type: string, minLength: 1}
+        message: {type: string, minLength: 1}
+        details:
+          type: [array, "null"]
+          items:
+            type: object
+            additionalProperties: false
+            required: [field, reason]
+            properties:
+              field: {type: string}
+              reason: {type: string}
     ReceptionFields:
       type: object
       additionalProperties: false
@@ -6222,6 +6287,9 @@ components:
       - timeZone
       - transcriptStorageStatus
       properties:
+        reviewEditable:
+          type: boolean
+          description: DRAFT이며 의뢰 미등록이고 업로드·분석이 종료되어 입력 가능한지 여부. 필수값 충족 여부와 별개다.
         receptionId:
           $ref: '#/components/schemas/Id'
         receivedAt:
@@ -6781,10 +6849,10 @@ components:
       required: []
       properties:
         callerPhone:
-          type: string
+          type: [string, "null"]
           pattern: ^[0-9+-]{9,20}$
         callStartedAt:
-          $ref: '#/components/schemas/DateTime'
+          $ref: '#/components/schemas/NullableDateTime'
           description: 확보 가능한 실제 통화 시작 시각 메타데이터. MVP 상대 날짜 기준으로 사용하지 않는다.
       description: 관리자 접수 생성. 수동 입력은 빈 객체로도 시작할 수 있다. receivedAt은 Backend 수신 시각이다.
     RecordingUploadRequest:
@@ -7116,6 +7184,18 @@ components:
       - completedAt
       - error
       properties:
+        aiOriginal:
+          description: 이 시도가 받은 구조화 원본. 접수에 미반영된 결과와 반영된 원본을 구분한다.
+          oneOf:
+          - $ref: '#/components/schemas/ReceptionDraftFields'
+          - type: 'null'
+        missingFields:
+          type: [array, "null"]
+          uniqueItems: true
+          items:
+            type: string
+            enum: [workType, symptoms, address, desiredVisitFrom, desiredVisitTo]
+          description: AI가 반환한 목록. Backend의 검토 완료 필수값 검사와 별개다.
         analysisRequestId:
           $ref: '#/components/schemas/Id'
         receptionId:
