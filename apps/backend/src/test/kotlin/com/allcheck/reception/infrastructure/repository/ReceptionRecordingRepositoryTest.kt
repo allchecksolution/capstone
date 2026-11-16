@@ -1,6 +1,7 @@
 package com.allcheck.reception.infrastructure.repository
 
 import com.allcheck.global.config.HibernateConfig
+import com.allcheck.reception.domain.entity.Reception
 import com.allcheck.reception.domain.entity.ReceptionRecording
 import com.allcheck.reception.domain.vo.RecordingUploadStatus
 import jakarta.persistence.EntityManager
@@ -48,11 +49,123 @@ import javax.sql.DataSource
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class ReceptionRecordingRepositoryTest @Autowired constructor(
     private val repository: ReceptionRecordingRepository,
+    private val receptionRepository: ReceptionRepository,
     private val entityManager: EntityManager,
     private val dataSource: DataSource,
     private val transactionManager: PlatformTransactionManager,
 ) {
     private val jdbc by lazy { JdbcTemplate(dataSource) }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    fun `접수의 예약 연결과 파일 메타데이터를 같은 트랜잭션으로 저장한다`() {
+        // given
+        val reception = Reception(id(), id(), CREATED_AT.minusSeconds(60))
+        val transaction = TransactionTemplate(transactionManager)
+        transaction.executeWithoutResult { receptionRepository.saveAndFlush(reception) }
+        val recording = recording(receptionId = reception.receptionId, uploadedByAdminId = reception.ownerAdminId)
+
+        // when
+        transaction.executeWithoutResult {
+            val current = receptionRepository.findById(reception.receptionId).orElseThrow()
+            current.reserveRecording(1, recording.recordingFileId, CREATED_AT)
+            repository.saveAndFlush(recording)
+        }
+        val saved = receptionRepository.findById(reception.receptionId).orElseThrow()
+        val reserved = repository.findByReceptionId(reception.receptionId) ?: error("Reservation must be saved")
+
+        // then
+        assertThat(saved.recordingFileId).isEqualTo(reserved.recordingFileId)
+        assertThat(saved.version).isEqualTo(2)
+        assertThat(saved.updatedAt).isEqualTo(CREATED_AT)
+        assertThat(saved.latestAnalysisRequestId).isNull()
+        assertThat(reserved.uploadedByAdminId).isEqualTo(saved.ownerAdminId)
+        assertThat(reserved.status).isEqualTo(RecordingUploadStatus.PENDING)
+        assertThat(reserved.recordingReceivedAt).isNull()
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    fun `파일 메타데이터 저장이 실패하면 접수의 예약 연결과 버전도 롤백한다`() {
+        // given
+        val reception = Reception(id(), id(), CREATED_AT.minusSeconds(60))
+        val transaction = TransactionTemplate(transactionManager)
+        val existing = recording()
+        transaction.executeWithoutResult {
+            receptionRepository.saveAndFlush(reception)
+            repository.saveAndFlush(existing)
+        }
+        val conflicting = recording(
+            receptionId = reception.receptionId,
+            uploadedByAdminId = reception.ownerAdminId,
+            objectKey = existing.objectKey,
+        )
+
+        // when
+        val exception = assertThrows<DataIntegrityViolationException> {
+            transaction.executeWithoutResult {
+                val current = receptionRepository.findById(reception.receptionId).orElseThrow()
+                current.reserveRecording(1, conflicting.recordingFileId, CREATED_AT)
+                receptionRepository.flush()
+                repository.saveAndFlush(conflicting)
+            }
+        }
+        val saved = receptionRepository.findById(reception.receptionId).orElseThrow()
+
+        // then
+        assertSqlState(exception, "23505")
+        assertThat(saved.recordingFileId).isNull()
+        assertThat(saved.version).isEqualTo(1)
+        assertThat(saved.updatedAt).isEqualTo(reception.receivedAt)
+        assertThat(repository.findByReceptionId(reception.receptionId)).isNull()
+        assertThat(repository.existsById(existing.recordingFileId)).isTrue()
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    fun `동시 예약은 접수 연결과 파일 메타데이터 한 쌍만 남긴다`() {
+        // given
+        val reception = Reception(id(), id(), CREATED_AT.minusSeconds(60))
+        val transaction = TransactionTemplate(transactionManager)
+        transaction.executeWithoutResult { receptionRepository.saveAndFlush(reception) }
+        val candidates = List(2) { recording(receptionId = reception.receptionId, uploadedByAdminId = reception.ownerAdminId) }
+        val loaded = CountDownLatch(2)
+        val executor = Executors.newFixedThreadPool(2)
+
+        try {
+            // when
+            val futures = candidates.map { recording ->
+                recording.recordingFileId to executor.submit<Boolean> {
+                    try {
+                        transaction.executeWithoutResult {
+                            val current = receptionRepository.findById(reception.receptionId).orElseThrow()
+                            loaded.countDown()
+                            check(loaded.await(10, TimeUnit.SECONDS)) { "Both transactions must read before writing." }
+                            current.reserveRecording(1, recording.recordingFileId, CREATED_AT)
+                            receptionRepository.flush()
+                            repository.saveAndFlush(recording)
+                        }
+                        true
+                    } catch (_: OptimisticLockingFailureException) {
+                        false
+                    }
+                }
+            }
+            val results = futures.map { (fileId, future) -> fileId to future.get(15, TimeUnit.SECONDS) }
+            val winner = results.single { it.second }.first
+            val saved = receptionRepository.findById(reception.receptionId).orElseThrow()
+            val reserved = repository.findByReceptionId(reception.receptionId) ?: error("One reservation must be saved")
+
+            // then
+            assertThat(results.count { it.second }).isEqualTo(1)
+            assertThat(saved.recordingFileId).isEqualTo(winner)
+            assertThat(saved.version).isEqualTo(2)
+            assertThat(reserved.recordingFileId).isEqualTo(winner)
+            assertThat(repository.findAllById(candidates.map { it.recordingFileId })).hasSize(1)
+        } finally {
+            executor.shutdownNow()
+        }
+    }
 
     @Test
     fun `예약 메타데이터를 보관하고 접수와 업로더가 일치할 때만 조회한다`() {
@@ -294,10 +407,11 @@ class ReceptionRecordingRepositoryTest @Autowired constructor(
     private fun recording(
         receptionId: String = id(),
         objectKey: String = "recordings/${id()}.m4a",
+        uploadedByAdminId: String = id(),
     ) = ReceptionRecording(
         recordingFileId = id(),
         receptionId = receptionId,
-        uploadedByAdminId = id(),
+        uploadedByAdminId = uploadedByAdminId,
         originalFilename = "call.m4a",
         bucket = "test-bucket",
         objectKey = objectKey,

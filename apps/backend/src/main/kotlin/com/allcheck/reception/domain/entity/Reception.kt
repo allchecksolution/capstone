@@ -94,6 +94,33 @@ class Reception(
         protected set
 
     /**
+     * 소유권 확인 후 서버에서 생성한 파일 ID를 예약한다. 아직 검증 완료 원본이나 분석을 뜻하지 않는다.
+     * 애플리케이션은 녹음 메타데이터 생성과 이 변경을 같은 트랜잭션으로 저장해야 한다.
+     * 미완료 업로드의 URL 재발급은 새 예약을 만들지 않고 기존 파일을 사용한다.
+     */
+    fun reserveRecording(expectedVersion: Int, recordingFileId: String, now: Instant) {
+        if (expectedVersion != version) {
+            throw BusinessException(GlobalErrorCode.VERSION_CONFLICT)
+        }
+        if (requestId != null) {
+            throw BusinessException(ReceptionErrorCode.RECEPTION_ALREADY_REGISTERED)
+        }
+        if (reviewStatus != ReceptionReviewStatus.DRAFT) {
+            throw BusinessException(ReceptionErrorCode.RECEPTION_ALREADY_CONFIRMED)
+        }
+        if (this.recordingFileId != null) {
+            throw BusinessException(ReceptionErrorCode.RECORDING_ALREADY_EXISTS)
+        }
+        require(recordingFileId.isNotBlank() && recordingFileId.length <= 64)
+
+        val nextVersion = Math.incrementExact(version)
+
+        this.recordingFileId = recordingFileId
+        updatedAt = now
+        version = nextVersion
+    }
+
+    /**
      * 애플리케이션은 소유권 확인 후 현재 분석 시도의 상태와 서버 시각을 전달해야 한다.
      * analysisStatus의 null은 분석 시도가 없는 수동 접수에만 사용하며 클라이언트가 지정하지 않는다.
      * 모든 검증·변환을 마친 다음 값을 함께 변경한다. DB 트랜잭션·경합 제어는 애플리케이션과 저장소에서 담당한다.

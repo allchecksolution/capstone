@@ -80,4 +80,5 @@ and `TEST_DATABASE_PASSWORD` to use another PostgreSQL test database.
 Each run creates UUID-named schemas, applies the real Flyway migrations, validates JPA mappings, and removes only those schemas afterward.
 The existing application schema and its tables are not reset or migrated by this test.
 The tests cover JSONB round trips, owner-scoped queries and counts, database constraints, concurrent writes from independent transactions,
+atomic recording reservation linkage and metadata persistence/rollback,
 and V1-to-V2 / V2-to-V3 upgrades that preserve existing recording metadata and first completion timestamps.
