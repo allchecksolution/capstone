@@ -19,3 +19,16 @@ Thumbs.db
 # Removed WebView apps: exclude leftover local APKs and Gradle caches.
 /apps/admin/
 /apps/driver/
+
+# Terraform: keep providers locked, exclude local state, plans and environment values.
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+*.tfvars.json
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
