@@ -17,7 +17,7 @@ class AiConnectionConfig {
     fun receptionAiConnection(
         @Value("\${reception.ai.base-url}") baseUrl: String,
         @Value("\${reception.ai.internal-api-key}") apiKey: String,
-        @Value("\${reception.ai.contract}") contract: String,
+        @Value("\${reception.ai.contract:analysis-request-id-v1}") contract: String,
         @Value("\${reception.ai.connect-timeout}") connectTimeout: Duration,
         @Value("\${reception.ai.stt-timeout}") sttTimeout: Duration,
         @Value("\${reception.ai.structure-timeout}") structureTimeout: Duration,

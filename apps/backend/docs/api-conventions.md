@@ -79,7 +79,7 @@ External integrations and the analysis worker are disabled by default. Enable ea
 | Enable flag | Required environment settings | Behavior |
 |---|---|---|
 | `S3_ENABLED=true` | `S3_REGION`, `S3_REQUEST_TIMEOUT`, `RECEPTION_RECORDING_BUCKET`, and an AWS SDK default-chain credential source | Private S3 HEAD with SHA256 and PUT/GET signing. No embedded credentials, bucket creation, ACL grants, or public URL fallback. |
-| `RECEPTION_AI_ENABLED=true` | `RECEPTION_AI_BASE_URL`, `RECEPTION_AI_INTERNAL_API_KEY`, `RECEPTION_AI_CONTRACT=analysis-request-id-v1`, `RECEPTION_AI_CONNECT_TIMEOUT`, `RECEPTION_AI_STT_TIMEOUT`, `RECEPTION_AI_STRUCTURE_TIMEOUT` | Synchronous RestClient requests, internal API key, strict response/correlation checks, no redirects or application-level AI retries. |
+| `RECEPTION_AI_ENABLED=true` | `RECEPTION_AI_BASE_URL`, `RECEPTION_AI_INTERNAL_API_KEY`, `RECEPTION_AI_CONNECT_TIMEOUT`, `RECEPTION_AI_STT_TIMEOUT`, `RECEPTION_AI_STRUCTURE_TIMEOUT` | Synchronous RestClient requests, internal API key, strict response/correlation checks, no redirects or application-level AI retries. |
 | `RECEPTION_WORKER_ENABLED=true` | Both preceding integrations enabled, `RECEPTION_WORKER_CONCURRENCY`, `RECEPTION_WORKER_EXECUTION_BUDGET`, `RECEPTION_WORKER_POLL_INTERVAL` | Bounded local execution capacity backed by durable DB PENDING work and a timeout monitor. Only a committed claim may call AI. PROCESSING work is never automatically re-executed. |
 
 Use Spring duration syntax such as `30s` or `2m`; examples are syntax only, not approved production values.
@@ -93,8 +93,7 @@ and `HeadObject` with checksum mode enabled. A missing object or invalid/missing
 `FILE_UPLOAD_NOT_VERIFIED`; S3 permission/service failures are a safe 503 `RECORDING_STORAGE_UNAVAILABLE`.
 New uploads require a WAV filename and one of its four documented MIME aliases. A conditional range GET of the first 12 bytes verifies the WAVE container signature; it is not a full audio decoder or duration measurement. The AI service still validates decodability. Maximum size/duration and supported codec constraints are not inferred or imposed without a decision.
 
-Actual AWS/AI network integration, production JWT identity mapping, FCM/device delivery, and retention/cleanup
-remain deployment/integration work. Local integration tests use offline S3 signing and a loopback AI HTTP server.
+Actual AWS/AI network verification, production JWT identity mapping, the Identity push-device adapter, Firebase credentials, and retention/cleanup remain deployment/integration work. Local integration tests use offline S3 signing and a loopback AI HTTP server.
 
 The unchanged original filename is sufficient input for server-side contact extraction. Parsing it on Backend
 keeps platform behavior consistent; parsing the random S3 key is impossible, and copying the name to S3 metadata
@@ -112,3 +111,20 @@ retains WAV/header verification, recording TTLs, and mapping neutral storage fai
 The former `RECEPTION_STORAGE_ENABLED`, `RECEPTION_STORAGE_REGION`, `RECEPTION_STORAGE_REQUEST_TIMEOUT`,
 and `RECEPTION_STORAGE_BUCKET` settings are replaced by the common SDK settings and reception bucket above.
 Terraform for private storage is under `infra/terraform/s3`; its outputs match these bindings.
+
+Completion notifications use `global.notification.FcmClient` and shared `global.config.FcmConfig` for technical
+HTTP/OAuth handling. Reception owns durable event expansion, per-installation claims and retry outcomes.
+FCM uses Google Application Default Credentials (for example a runtime-mounted service-account file referenced
+by GOOGLE_APPLICATION_CREDENTIALS); secrets are not stored in YAML, Terraform outputs, database rows, or Git.
+
+To activate transport, set FCM_ENABLED=true, FCM_PROJECT_ID, FCM_CONNECT_TIMEOUT, and FCM_REQUEST_TIMEOUT.
+To activate the reception worker, also provide the Identity implementation of ReceptionPushDevices and set
+RECEPTION_PUSH_ENABLED=true, RECEPTION_PUSH_POLL_INTERVAL, and RECEPTION_PUSH_CLAIM_TTL. The claim TTL
+must exceed the request timeout. These runtime durations remain explicit deployment choices.
+Retries default to three total attempts with one-minute base backoff; Retry-After can extend the delay.
+A dedicated one-thread executor keeps remote sends off the scheduler/DB transaction, with durable pending work
+in the database. OAuth completion is followed by a final execution/access/binding check before the HTTP send.
+
+The `analysisRequestId` AI envelope is confirmed. RECEPTION_AI_CONTRACT is optional and defaults to
+analysis-request-id-v1; setting an incompatible contract fails startup. STT/analyze endpoints are still to be
+deployed by the AI service (the current AI application only implements health).

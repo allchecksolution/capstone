@@ -8,12 +8,11 @@ import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.Table
 import jakarta.persistence.UniqueConstraint
-import org.hibernate.annotations.Immutable
+import jakarta.persistence.Version
 import java.time.Instant
 
 /** 분석 종료와 같은 트랜잭션에 저장하는 발행 의도. 기기 토큰·원문·서명 URL을 담지 않는다. */
 @Entity
-@Immutable
 @Table(name = "reception_analysis_events", uniqueConstraints = [UniqueConstraint(name = "uq_reception_analysis_events_attempt", columnNames = ["analysis_request_id"])])
 class ReceptionAnalysisEvent(
     @field:Column(name = "analysis_request_id", nullable = false, updatable = false)
@@ -33,11 +32,29 @@ class ReceptionAnalysisEvent(
     var eventId: Long? = null
         protected set
 
-    @field:Column(name = "status", nullable = false, length = 20, updatable = false)
-    val status: String = "PENDING"
+    @field:Column(name = "status", nullable = false, length = 20)
+    var status: String = "PENDING"
+        protected set
 
-    @field:Column(name = "updated_at", nullable = false, updatable = false)
-    val updatedAt: Instant = createdAt
+    @field:Column(name = "completed_at")
+    var completedAt: Instant? = null
+        protected set
+
+    @field:Column(name = "updated_at", nullable = false)
+    var updatedAt: Instant = createdAt
+        protected set
+
+    @field:Version
+    @field:Column(name = "persistence_version", nullable = false)
+    private var persistenceVersion: Long? = null
+
+    fun finishExpansion(hasRecipients: Boolean, now: Instant) {
+        check(status == "PENDING")
+        require(!now.isBefore(createdAt))
+        status = if (hasRecipients) "EXPANDED" else "SKIPPED"
+        completedAt = now
+        updatedAt = now
+    }
 
     companion object {
         fun completed(analysis: ReceptionAnalysis, now: Instant): ReceptionAnalysisEvent {

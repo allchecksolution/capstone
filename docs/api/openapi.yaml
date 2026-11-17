@@ -58,7 +58,7 @@ x-reception-analysis-push:
     receptionId: rec_01
     analysisRequestId: anl_01
   description: 결과와 발송 의도를 같은 DB 트랜잭션에 저장하고 커밋 뒤 발송. 푸시 실패는 AI 결과와 분리하며 재분석을 유발하지 않는다. 서비스 접수는 기기 수신·읽음을 뜻하지 않는다.
-    eventId로 중복 처리하고 재진입 시 서버 최신 상태를 조회한다.
+    eventId로 중복 처리하고 재진입 시 서버 최신 상태를 조회한다. 일시 장애·결과 불명은 기본 총 3회까지 재시도하며 기본 대기는 1분·2분이다. 더 긴 Retry-After를 우선하고 현재 기기 소유권을 재확인한다. 재시도해도 분석은 다시 실행하지 않는다.
 servers:
   - url: https://api.example.invalid/api/v1
     description: 문서용 예시 주소

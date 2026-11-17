@@ -149,3 +149,10 @@ Shared S3 tests verify that image uploads and other buckets use the same SDK con
 format rules, and that create-only versus replace signing is chosen by the caller. `S3ConfigTest` verifies
 independence from reception feature flags. Architecture coverage rejects global-to-business-module dependencies.
 Offline AWS test fixtures live in `support.S3TestFixtures`, so generic tests do not depend on reception tests.
+
+`FcmClientTest` uses loopback HTTP to verify OAuth headers, safe provider error classification, Retry-After,
+redirect refusal, and execution cancellation after credential preparation. `ReceptionPushIntegrationTest` uses
+its own PostgreSQL schema to verify atomic expansion, per-device ownership and token rotation/logout, bounded
+retries without AI reruns, unknown-outcome recovery, old-worker rejection, and independent concurrent claims.
+All full-context schemas explicitly disable production integrations/workers even if the development shell enables
+them. Tests inject only fake device bindings and loopback FCM transport; no actual notification is sent.

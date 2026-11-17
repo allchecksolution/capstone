@@ -348,14 +348,14 @@ Administrator access to retained records after driver withdrawal, and personal d
 - In the MVP, perform only the initial automatically accepted analysis. Do not implement a public reanalysis endpoint, another FULL execution, or STRUCTURE_ONLY execution. After failed, discarded, or inaccurate analysis, use administrator editing/manual entry and the same review/confirmation flow. Retrying an incomplete upload and replaying upload completion are still supported and must not create a second analysis. Existing draft contracts and V1 mode columns for reanalysis are reserved references outside the MVP.
 - Relative dates use the first verified recording-delivery timestamp, expressed in Asia/Seoul with its matching offset. Keep it across upload retries and duplicate completion notifications. Actual call time interpretation is a later verification task.
 - Commit final success/failure and push publication intent together, then send FCM notifications to all currently registered devices of the original recording uploader. Check access again before sending; deduplicate the logical event and per-device delivery independently of AI execution.
-- The implemented analysis transaction appends one durable completion event per terminal attempt. Actual FCM delivery remains pending the identity/device integration and delivery/retry policy; an event in PENDING is not proof that a push was sent. Notification availability must not change the analysis outcome or prevent authorized detail refreshes.
+- The analysis transaction appends one durable completion event per terminal attempt. Expand it atomically into one delivery per currently registered installation, then claim each delivery in a committed transaction before remote send. Recheck current reception ownership/current attempt and device binding before each attempt and again after OAuth preparation. An event in PENDING/EXPANDED does not prove a push was sent. Notification availability never changes the analysis outcome or prevents authorized detail refreshes.
 - A current DISCARDED attempt publishes a failure notification explaining non-application; the app always resolves the current server state.
 - Keep notification failures separate from analysis outcomes. Provider acceptance, device receipt, and user viewing are distinct. Push contains event/reception/attempt IDs; the app retrieves authoritative current results and also refreshes on re-entry. Old or duplicate notifications cannot replace newer results.
 - Recording Presigned URL lifetimes default to 15 minutes for upload, 10 minutes for administrator playback, and 10 minutes for AI download. Keep each configurable through `RECEPTION_RECORDING_UPLOAD_URL_TTL`, `RECEPTION_RECORDING_PLAYBACK_URL_TTL`, and `RECEPTION_RECORDING_AI_DOWNLOAD_URL_TTL`. Effective validity may be shorter when signing credentials expire or S3 policy imposes a shorter limit; playback seeking/reconnection after expiry requires renewed authorized access. S3 integration must use these settings when issuing URLs.
 - These lifetimes are project defaults. AWS documents the request-time expiration check, credential limits, and maximum validity in [Presigned URL behavior](https://docs.aws.amazon.com/AmazonS3/latest/userguide/using-presigned-url.html).
-- New administrator recording uploads accept WAV only, with `.wav` extension (case-insensitive) and `audio/wav`, `audio/x-wav`, `audio/wave`, or `audio/vnd.wave`. Verify the stored object's WAVE container header as well as MIME, size, and SHA256. Do not infer a specific codec, sample rate, maximum size, or duration from the extension. Size/duration limits, HTTP deadlines, retention/deletion schedules, and push retransmission settings remain explicit TODOs. API details belong to [Backend OpenAPI](../../../docs/api/openapi.yaml) and [AI OpenAPI](../../ai/docs/openapi.yaml).
+- New administrator recording uploads accept WAV only, with `.wav` extension (case-insensitive) and `audio/wav`, `audio/x-wav`, `audio/wave`, or `audio/vnd.wave`. Verify the stored object's WAVE container header as well as MIME, size, and SHA256. Do not infer a specific codec, sample rate, maximum size, or duration from the extension. Size/duration limits, HTTP deadlines, and retention/deletion schedules remain explicit TODOs. API details belong to [Backend OpenAPI](../../../docs/api/openapi.yaml) and [AI OpenAPI](../../ai/docs/openapi.yaml).
 - Recording upload grants are an explicit exception to exact HTTP response replay: reuse the reserved file/object/metadata and idempotency fingerprint, but issue a fresh signed URL on every initial or renewal request. Never persist signed URLs in the database. Revalidate current ownership and PENDING upload status before signing; a completed recording returns FILE_ALREADY_UPLOADED. A different request body under the same key remains IDEMPOTENCY_KEY_REUSED. A signing failure may occur after durable reservation; retry the same key or use the existing file renewal endpoint without creating another recording or analysis.
-- The Backend AI client implements the `analysisRequestId` envelope in the current AI OpenAPI and rejects the separately supplied `jobId` example. Confirm the deployed AI envelope before enabling that client. A contract mismatch is not automatically aliased or treated as a successful extraction.
+- The confirmed Backend-to-AI wire contract is the current AI OpenAPI `analysisRequestId` envelope, including unchanged reception/version/recording and transcript identities. The earlier `jobId` example is not the selected contract. Reject mismatches instead of silently aliasing identifiers. Real AI server deployment and latency verification remain integration work.
 
 STT storage decision: use database text storage for the immutable original and provide it through the authorized reception detail API. STT Presigned GET URLs and the previous S3 transcript-file access flow are outside the MVP. V4 aligns the S3-based V1 transcript table without rewriting V1-V3 or changing recording/analysis source foreign keys. The user confirmed no STT originals have been stored; no content import is required. If unexpected legacy transcript rows exist, migration must fail rather than invent content or delete originals.
 
@@ -393,3 +393,28 @@ New transcript rows require the unchanged nonblank text, its reception/recording
 [UC-14]: ../../../docs/requirements/use-cases/uc-14-driver-profile-settings.md
 [UC-15]: ../../../docs/requirements/use-cases/uc-15-driver-account-withdrawal.md
 [UC-16]: ../../../docs/requirements/use-cases/uc-16-admin-driver-chat.md
+
+### Reception Completion Push
+
+- The Identity module owns administrator/device registration. `ReceptionPushDevices` supplies active installations,
+  resolves the current owned token at send time, and conditionally invalidates only the rejected token.
+  Reception does not read or mutate Identity's device table directly. An adapter and configured FCM project/ADC
+  credentials are required before enabling the push worker; no default user-ID/token inference is provided.
+- Send only the four string fields eventId, eventType, receptionId, and analysisRequestId through FCM HTTP v1.
+  Record PROVIDER_ACCEPTED separately from device receipt/viewing, and never put originals, contact details,
+  signed URLs, device tokens, or OAuth credentials in delivery/event payload storage or logs.
+- Default to three total attempts. Retry temporary HTTP 429/5xx, transport/unknown outcomes, and temporary
+  authentication availability with a one-minute base delay and short exponential backoff (one then two minutes
+  for the default). Honor a longer Retry-After in seconds or HTTP-date form. Max attempts and base delay are
+  configurable through RECEPTION_PUSH_MAX_ATTEMPTS and RECEPTION_PUSH_RETRY_DELAY. No in-memory retry loop.
+- Keep retry due times/counts in the database. An interrupted/expired claim records unknown remote outcome
+  and schedules a bounded retry. An old worker cannot overwrite a newer claim or terminal result.
+  Event/installation uniqueness and optimistic versions prevent duplicate expansion and simultaneous sends.
+- Retries after unknown remote outcomes provide at-least-once attempts, not an exactly-once FCM guarantee.
+  Reuse the stable eventId for app deduplication and authoritative result refresh. Never rerun AI for push errors.
+- An unregistered token is a permanent failure with conditional Identity invalidation. Other permanent provider
+  errors stop that delivery. A revoked/rebound installation or stale reception event is SKIPPED; a token rotated
+  during OAuth preparation is not sent and the next bounded attempt resolves the latest token.
+
+References: [FCM HTTP v1](https://firebase.google.com/docs/cloud-messaging/send/v1-api),
+[FCM error/retry guidance](https://firebase.google.com/docs/cloud-messaging/error-codes).
