@@ -18,6 +18,7 @@ import org.springframework.security.web.SecurityFilterChain
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter
 import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher
 import org.springframework.security.web.util.matcher.DispatcherTypeRequestMatcher
+import org.springframework.security.web.util.matcher.OrRequestMatcher
 
 @Configuration
 @EnableWebSecurity
@@ -30,7 +31,11 @@ class SecurityConfig(
 ) {
     @Bean
     fun securityFilterChain(http: HttpSecurity): SecurityFilterChain {
-        val kakaoLogin = PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, "/api/v1/auth/sessions/kakao")
+        val credentialRequests = OrRequestMatcher(
+            PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, "/api/v1/auth/sessions/kakao"),
+            PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, "/api/v1/auth/tokens/refresh"),
+            PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, "/api/v1/auth/sessions/logout"),
+        )
         http {
             sessionManagement {
                 sessionCreationPolicy = SessionCreationPolicy.STATELESS
@@ -53,7 +58,7 @@ class SecurityConfig(
                 authorize(HttpMethod.GET, "/v3/api-docs", permitAll)
                 authorize(HttpMethod.GET, "/v3/api-docs/**", permitAll)
 
-                authorize(kakaoLogin, permitAll)
+                authorize(credentialRequests, permitAll)
 
                 // 기본 인증 요구
                 authorize("/api/v1/receptions", hasRole("ADMIN"))
@@ -65,7 +70,7 @@ class SecurityConfig(
                 accessDeniedHandler = customAccessDeniedHandler
             }
             addFilterBefore<UsernamePasswordAuthenticationFilter>(
-                JwtAuthenticationFilter(jwtTokenProvider, identityOperations, customAuthenticationEntryPoint, kakaoLogin),
+                JwtAuthenticationFilter(jwtTokenProvider, identityOperations, customAuthenticationEntryPoint, credentialRequests),
             )
         }
         return http.build()

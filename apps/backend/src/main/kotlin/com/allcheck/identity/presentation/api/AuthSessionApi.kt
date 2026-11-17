@@ -2,6 +2,7 @@ package com.allcheck.identity.presentation.api
 
 import com.allcheck.global.exception.ErrorResponse
 import com.allcheck.identity.presentation.dto.request.KakaoLoginRequest
+import com.allcheck.identity.presentation.dto.request.RefreshTokenRequest
 import com.allcheck.identity.presentation.dto.response.TokenPairResponse
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.media.Content
@@ -30,4 +31,13 @@ interface AuthSessionApi {
         ApiResponse(responseCode = "503", description = "카카오 인증 확인 불가", content = [Content(schema = Schema(implementation = ErrorResponse::class))]),
     )
     fun kakaoLogin(@Valid @RequestBody request: KakaoLoginRequest): ResponseEntity<TokenPairResponse>
+
+    @PostMapping("/logout")
+    @Operation(summary = "Refresh Token에 해당하는 세션 로그아웃", operationId = "logout")
+    @SecurityRequirements
+    @ApiResponses(
+        ApiResponse(responseCode = "204", description = "로그아웃 완료. 무효·만료·폐기된 토큰도 다른 세션 변경 없이 동일 응답", content = [Content()]),
+        ApiResponse(responseCode = "400", description = "입력 형식 오류", content = [Content(schema = Schema(implementation = ErrorResponse::class))]),
+    )
+    fun logout(@Valid @RequestBody request: RefreshTokenRequest): ResponseEntity<Void>
 }

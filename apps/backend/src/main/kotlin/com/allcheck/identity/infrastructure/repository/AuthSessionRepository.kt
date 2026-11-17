@@ -3,12 +3,21 @@ package com.allcheck.identity.infrastructure.repository
 import com.allcheck.identity.domain.entity.Account
 import com.allcheck.identity.domain.entity.AuthSession
 import com.allcheck.identity.domain.vo.RefreshTokenHash
+import jakarta.persistence.LockModeType
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Lock
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 
 interface AuthSessionRepository : JpaRepository<AuthSession, String> {
     fun findByRefreshTokenHash(refreshTokenHash: RefreshTokenHash): AuthSession?
+
+    @Query("select session.accountId from AuthSession session where session.refreshTokenHash = :hash")
+    fun findAccountIdByRefreshTokenHash(@Param("hash") hash: RefreshTokenHash): String?
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select session from AuthSession session where session.refreshTokenHash = :hash")
+    fun findByRefreshTokenHashForUpdate(@Param("hash") hash: RefreshTokenHash): AuthSession?
 
     fun findAllByAccountId(accountId: String): List<AuthSession>
 

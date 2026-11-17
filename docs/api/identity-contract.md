@@ -148,7 +148,7 @@ Access Token 기본 15분, 세션 절대 수명 기본 14일, 여러 기기 로�
 3. **완료:** 카카오 검증 클라이언트와 정상·만료·타 앱·장애·설정 검증 테스트를 구현했다.
 4. **완료:** 카카오 로그인 API·계정 조회/생성·세션 저장·서비스 토큰 발급을 구현하고 동시 로그인과 롤백을 검증했다.
 5. **완료:** JWT 요청 인증과 `/auth/accounts/me`를 연결하고 현재 계정·세션 상태에 따른 요청 차단을 검증했다.
-6. 갱신·로그아웃·동시 갱신·폐기 세션 차단을 검증한다.
+6. **완료:** 갱신·로그아웃 API와 동시 갱신·폐기 세션 차단·실패 시 롤백을 구현하고 검증했다.
 7. driver 가입·승인·반려·탈퇴 및 업무 권한을 연결한다.
 8. 관리자 ID/PW 인증과 사전 계정 발급을 연결한다. 역할별 업무 권한 차등·요청 제한의 미확정 정책은 해당 작업 전에 확인한다.
 
@@ -241,7 +241,7 @@ JWT는 HS256을 사용하고 `sub`(내부 계정 ID), `sid`(세션 ID), `iss`, `
 
 2026-11-17 검증 결과: Java 21·분리된 PostgreSQL 18에서 전체 `ktlintCheck test` **181개 통과, 실패·오류·건너뜀 0**. 카카오 자체 검증만 테스트 대역으로 바꾸고 실제 계정·세션 저장과 HTTP/Spring Security 경로를 검증했다. 실제 카카오 SDK 토큰을 이용한 연결 및 PostgreSQL 17 검증은 아직 수행하지 않았다.
 
-자격 증명으로 호출하는 인증 경로 중 현재는 카카오 로그인 POST만 공개했다. Refresh/Logout API는 6단계다. 프론트 어댑터의 새 인증 계약 연결과 driver 가입 상태 조회도 후속 단계에서 구현한다.
+자격 증명으로 호출하는 인증 경로 중 카카오 로그인·갱신·로그아웃 POST를 공개했다. 관리자 로그인은 8단계다. 프론트 어댑터의 새 인증 계약 연결과 driver 가입 상태 조회도 후속 단계에서 구현한다.
 
 ## JWT 요청 인증과 내 인증 계정 조회
 
@@ -253,7 +253,7 @@ JWT는 HS256을 사용하고 `sub`(내부 계정 ID), `sid`(세션 ID), `iss`, `
 
 인증 실패는 필터에서 공통 `CustomAuthenticationEntryPoint`와 `ErrorResponse`로 처리한다. 미인증은 `UNAUTHENTICATED`, 만료 JWT는 `TOKEN_EXPIRED`, 그 밖의 무효 JWT·사용 불가 계정·세션은 `INVALID_TOKEN`으로 401을 반환하고 `WWW-Authenticate: Bearer` challenge를 제공한다. 인증 후 업무 권한이 부족하면 기존 `ACCESS_DENIED`/403을 유지한다. 비활성 계정의 로그인·갱신 403 정책과 보호 요청의 401은 구분한다.
 
-카카오 로그인 POST는 JWT 필터를 건너뛰므로 만료된 Authorization 헤더가 있어도 본문의 `kakaoAccessToken`으로 인증한다. 아직 구현하지 않은 관리자 로그인·갱신·로그아웃 경로는 함께 공개하지 않는다.
+카카오 로그인·갱신·로그아웃 POST는 JWT 필터를 건너뛰므로 만료된 Authorization 헤더가 있어도 본문 자격 증명으로 처리한다. 관리자 로그인과 다른 auth 경로·HTTP 메서드는 함께 공개하지 않는다.
 
 분리된 PostgreSQL 테스트 DB에서 다음 명령으로 요청 인증·세션 차단·현재 DB 역할 사용·공통 오류·생성 OpenAPI와 모듈 경계를 검증한다.
 
@@ -262,3 +262,23 @@ JWT는 HS256을 사용하고 `sub`(내부 계정 ID), `sid`(세션 ID), `iss`, `
 ```
 
 2026-11-17 5단계 검증 결과: Java 21·Gradle 9.8.2·분리된 PostgreSQL 18에서 `--offline ktlintCheck test` **219개 통과, 실패·오류·건너뜀 0**. 요청 인증 통합 테스트 37개와 공통 보안 계층의 identity 내부 참조 금지 아키텍처 테스트 1개를 추가했다. 실제 카카오 SDK 토큰 연결과 Compose PostgreSQL 17 검증은 아직 수행하지 않았다.
+
+## Refresh Token 갱신과 로그아웃
+
+`POST /api/v1/auth/tokens/refresh`와 `POST /api/v1/auth/sessions/logout`은 같은 `{ "refreshToken": "..." }` 요청을 받는다. 누락·null·공백·제어 문자·4000자 초과·미정의 필드는 공통 `INVALID_INPUT_VALUE`/400이다. 형식이 유효하지만 알 수 없거나 사용 불가능한 토큰은 갱신 시 `REFRESH_TOKEN_INVALID`/401, 로그아웃 시 본문 없는 204다.
+
+`SessionLifecycleService`는 원문 대신 SHA-256 해시로 세션의 계정 ID만 먼저 찾는다. 이후 계정 → 현재 토큰의 세션 순서로 DB 비관적 쓰기 잠금을 획득하고 상태를 다시 확인한다. 잠금을 기다리기 전에 변경 가능한 세션 엔티티를 로드하지 않는다. 계정·세션을 함께 변경하는 후속 비활성화·탈퇴 서비스도 같은 잠금 순서를 유지해야 한다.
+
+갱신은 활성 계정·세션의 현재 토큰만 받아 같은 세션에서 새 Refresh Token으로 교체하고 JWT를 발급한다. 세션 생성·절대 만료 시각은 바꾸지 않으며 `refreshExpiresIn`은 응답 생성 시점의 남은 초다. 새 해시를 flush한 뒤 JWT 발급이 실패해도 전체 트랜잭션이 롤백되어 이전 토큰이 유지된다. 유효한 토큰의 계정이 비활성이면 `ACCOUNT_DISABLED`/403이다. 갱신 전 Access Token은 세션이 활성인 동안 자체 만료까지 유효하다.
+
+로그아웃은 현재 유효한 Refresh Token의 세션만 폐기한다. 5단계 요청 인증이 폐기 상태를 확인하므로 기존 Access Token도 다음 요청부터 401이다. 무효·만료·이미 폐기·회전으로 소비된 토큰은 다른 세션을 변경하지 않고 204를 반환한다. 계정 비활성 여부를 이유로 로그아웃을 막지 않는다. 성공 응답에는 `Cache-Control: no-store`, `Pragma: no-cache`를 적용한다.
+
+같은 토큰의 동시 갱신은 하나만 성공하고 나머지는 401이며 교체된 토큰을 폐기하지 않는다. 갱신·로그아웃이 같은 토큰으로 경쟁할 때 로그아웃이 먼저 커밋하면 갱신은 401이다. 갱신이 먼저 커밋하면 이전 토큰의 로그아웃은 204이며 새 토큰은 유지된다. 이는 현재 유효한 토큰의 세션만 폐기하는 기존 정책을 따른다.
+
+다음 명령으로 실제 DB의 독립 트랜잭션에서 갱신·로그아웃 경쟁, 계정 비활성화와의 경쟁, JWT 발급 실패 및 로그아웃 롤백, 만료 경계, 공통 오류·입력·생성 OpenAPI를 검증한다.
+
+```powershell
+.\gradlew.bat ktlintCheck test --tests 'com.allcheck.identity.application.SessionLifecycleIntegrationTest' --tests 'com.allcheck.identity.application.KakaoLoginIntegrationTest' --tests 'com.allcheck.global.security.SecurityConfigTest' --tests 'com.allcheck.ModularityTests'
+```
+
+2026-11-18 6단계 검증 결과: Java 21·Gradle 9.8.2·분리된 PostgreSQL 18에서 `--offline ktlintCheck test` **258개 통과, 실패·오류·건너뜀 0**. 새 세션 수명주기 통합 테스트 40개는 실제 DB·Spring Security 경로를 사용한다. 갱신 공개로 더 이상 유효하지 않은 기존 미구현 경로 차단 사례 1개는 새 계약 검증으로 대체했다. 실제 카카오 SDK 토큰 연결과 Compose PostgreSQL 17 검증은 아직 수행하지 않았다.

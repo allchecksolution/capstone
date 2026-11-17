@@ -11,6 +11,10 @@ import org.springframework.data.repository.query.Param
 import java.time.Instant
 
 interface AccountRepository : JpaRepository<Account, String> {
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select account from Account account where account.id = :accountId")
+    fun findByIdForUpdate(@Param("accountId") accountId: String): Account?
+
     fun findBySocialLogin(socialLogin: SocialLogin): Account?
 
     fun findByAdminCredentialLoginId(loginId: String): Account?
