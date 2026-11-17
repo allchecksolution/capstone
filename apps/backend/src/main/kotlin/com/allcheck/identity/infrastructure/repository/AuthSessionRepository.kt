@@ -21,6 +21,10 @@ interface AuthSessionRepository : JpaRepository<AuthSession, String> {
 
     fun findAllByAccountId(accountId: String): List<AuthSession>
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select session from AuthSession session where session.accountId = :accountId order by session.id")
+    fun findAllByAccountIdForUpdate(@Param("accountId") accountId: String): List<AuthSession>
+
     @Query(
         """
         select account as account, session as session

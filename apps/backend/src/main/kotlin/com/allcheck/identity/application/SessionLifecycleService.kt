@@ -5,6 +5,7 @@ import com.allcheck.global.security.jwt.JwtTokenProvider
 import com.allcheck.identity.exception.IdentityErrorCode
 import com.allcheck.identity.infrastructure.repository.AccountRepository
 import com.allcheck.identity.infrastructure.repository.AuthSessionRepository
+import com.allcheck.identity.infrastructure.repository.PushDeviceRepository
 import com.allcheck.identity.infrastructure.token.RefreshTokenProvider
 import com.allcheck.identity.presentation.dto.response.AuthUserResponse
 import com.allcheck.identity.presentation.dto.response.TokenPairResponse
@@ -20,6 +21,7 @@ class SessionLifecycleService(
     private val sessions: AuthSessionRepository,
     private val refreshTokens: RefreshTokenProvider,
     private val accessTokens: JwtTokenProvider,
+    private val devices: PushDeviceRepository,
     private val clock: Clock = Clock.systemUTC(),
 ) {
     @Transactional
@@ -59,5 +61,6 @@ class SessionLifecycleService(
         val now = clock.instant()
         if (!session.isActiveAt(now)) return
         session.revoke(now)
+        devices.revokeSession(session.id, now)
     }
 }

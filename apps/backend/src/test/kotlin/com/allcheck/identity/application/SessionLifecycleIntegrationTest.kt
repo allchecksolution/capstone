@@ -3,6 +3,7 @@ package com.allcheck.identity.application
 import com.allcheck.global.exception.BusinessException
 import com.allcheck.global.security.jwt.JwtTokenProvider
 import com.allcheck.identity.AdminRole
+import com.allcheck.identity.IdentityAccountOperations
 import com.allcheck.identity.domain.entity.Account
 import com.allcheck.identity.domain.entity.AuthSession
 import com.allcheck.identity.domain.vo.AdminCredential
@@ -65,6 +66,7 @@ class SessionLifecycleIntegrationTest @Autowired constructor(
     private val mockMvc: MockMvc,
     private val mapper: ObjectMapper,
     private val lifecycle: SessionLifecycleService,
+    private val accountLifecycle: IdentityAccountOperations,
     private val accounts: AccountRepository,
     private val sessions: AuthSessionRepository,
     private val refreshTokens: RefreshTokenProvider,
@@ -443,11 +445,7 @@ class SessionLifecycleIntegrationTest @Autowired constructor(
         val results = concurrently(
             { refreshOutcome(fixture.refreshToken) },
             {
-                transactions.executeWithoutResult {
-                    val account = checkNotNull(accounts.findByIdForUpdate(fixture.accountId))
-                    account.disable(now)
-                    sessions.findAllByAccountId(account.id).forEach { it.revoke(now) }
-                }
+                accountLifecycle.deactivateDriverAccount(fixture.accountId)
                 "disabled"
             },
         )

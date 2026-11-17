@@ -26,7 +26,7 @@ class ModularityTests {
     }
 
     @Test
-    fun `공통 보안 계층은 identity 내부 구현에 의존하지 않는다`() {
+    fun `공통 보안 계층은 업무 모듈 내부 구현에 의존하지 않는다`() {
         // given
         val classes = ClassFileImporter().withImportOption(ImportOption.DoNotIncludeTests())
             .importPackages("com.allcheck")
@@ -39,6 +39,14 @@ class ModularityTests {
                 "com.allcheck.identity.infrastructure..",
                 "com.allcheck.identity.presentation..",
                 "com.allcheck.identity.exception..",
+                "com.allcheck.driver.application..",
+                "com.allcheck.driver.domain..",
+                "com.allcheck.driver.infrastructure..",
+                "com.allcheck.driver.presentation..",
+                "com.allcheck.driver.exception..",
+                "com.allcheck.operations.work.application..",
+                "com.allcheck.operations.work.domain..",
+                "com.allcheck.operations.work.infrastructure..",
             ).check(classes)
     }
 }

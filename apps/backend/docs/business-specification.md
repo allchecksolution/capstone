@@ -27,7 +27,7 @@ ALLCHECK consists of five bounded contexts and one integrated query module. The 
 
 | Type | Domain / Package | Owned Responsibilities and Data | Related Requirements |
 |---|---|---|---|
-| BC | Identity and Access Management — `identity` | Administrator accounts, credentials, and roles; driver Kakao authentication identifiers and account links; authentication sessions and tokens; administrator push-device registrations | [FR-01], [FR-13] authentication / [UC-01], [UC-08] authentication |
+| BC | Identity and Access Management — `identity` | Administrator accounts, credentials, and roles; driver Kakao authentication identifiers and account links; authentication sessions and tokens; administrator and driver push-device registrations | [FR-01], [FR-13] authentication / [UC-01], [UC-08] authentication |
 | BC | Consultation Intake — `reception` | Consultation cases; recordings, STT and AI analysis results and processing statuses; manual entry; administrator review and finalized intake information | [FR-02], [FR-03], [FR-04] / [UC-02] |
 | BC | Driver Management — `driver` | Driver personal and business information and verification results; registration applications and review history; approval, rejection, reapplication, and withdrawal; specialties, service areas, equipment, preferences, standby/rest status, and latest location | [FR-06], [FR-10], [FR-13] membership management, [FR-14] / [UC-06], [UC-08] membership management, [UC-09], [UC-14], [UC-15] |
 | BC | Service Request Fulfillment — `operations` | Customer service requests; dispatch candidate selection, offers, responses, and delivery results; work ownership, cancellation, redispatch, and administrator follow-up decisions; work progress and revisits; original reports and revision history | [FR-05], [FR-07], [FR-08], [FR-09], [FR-11], [FR-12], [FR-16] history retention / [UC-03], [UC-05], [UC-07], [UC-10], [UC-11], [UC-12], [UC-13] |
@@ -81,6 +81,16 @@ The following is the initial design of the key Aggregates.
 `AuthSession` is stored in `identity_auth_sessions` with an account-ID foreign key, a unique SHA-256 Refresh Token digest, and an account-ID index. Both aggregates use optimistic versions. A stale session update must not overwrite a committed rotation or revocation; application services translate conflicts according to the refresh API contract. Neither aggregate stores a raw Refresh Token or a Kakao token. Authentication state and session state must be coordinated by application-service transactions; disabling an Account object alone does not persist session revocations.
 
 Kakao login verifies the provider token outside database transactions. Account resolution and session issuance then commit together. An `INSERT ... ON CONFLICT (social_provider, social_user_id) DO NOTHING` prevents duplicate authentication accounts without aborting the transaction on a concurrent first login. Lock and read the resolved Account before checking its current enabled state and creating a session; the conflict path never updates or reactivates an existing Account. JWT issuance failure rolls back both the new Account and session. Each successful login creates its own session without creating a Driver registration application.
+
+### Driver Registration Persistence
+
+`Driver` owns separate personal-profile and business-information records. Personal settlement accounts and tax-invoice email belong to the profile, not the business. Each authentication account has at most one Driver. Keep full submitted snapshots and review actors, reasons, timestamps, and application revisions in append-only history; resubmission retains the same Driver and Account IDs.
+
+Registration changes, review history, idempotency results, and notification publication intent commit together. Verify business information outside write transactions. The user confirmed on 2026-11-18 that registration and resubmission require a matching NTS business number, opening date, and representative name with CONTINUING operating status. Suspended and closed businesses cannot apply. Administrator name/business-name search uses partial matching.
+
+`operations.work` owns actual work records and implements the driver-owned `DriverWorkload` query contract. Assignment and withdrawal lock the authentication Account before the Driver. Database constraints allow at most one unfinished work per driver and request. Withdrawal checks real work before atomically changing membership, disabling authentication, and revoking all sessions and device bindings. Do not substitute an empty workload stub.
+
+`identity` owns session-bound push installations for both apps. Logout removes only the current session's bindings; deactivation removes all account bindings. Driver registration events target active administrator devices, and approval/rejection events target the applicant's devices. Persist per-device delivery claims and recover abandoned claims through database leases. Revalidate current registration revision, status, account/session access, and device ownership before sending. FCM provider acceptance is not proof of device receipt. Payloads contain identifiers, with original information obtained through authorized queries. Explicit-failure retry policy remains undecided. Implementation scope and setup follow the [Driver API Contract](../../../docs/api/driver-contract.md).
 
 ## Project Integration and Migration Policies
 
@@ -202,7 +212,7 @@ When the driver changes, end the existing work as `CANCELLED` and create new wor
 | `REJECTED` | Registration rejected | `PENDING_APPROVAL` upon resubmission after business registration verification |
 | `WITHDRAWN` | Account withdrawn | Terminal state |
 
-Register an initial application that passes business registration verification as `PENDING_APPROVAL`. Account-specific access scopes follow [BR-02](#br-02).
+Register an initial application that passes business registration verification as `PENDING_APPROVAL`. Registration and resubmission accept only continuing businesses. Account-specific access scopes follow [BR-02](#br-02).
 
 ### Driver Availability and Workload
 
@@ -277,7 +287,7 @@ Authenticate every protected request against the current account and session sta
 | Handover records | The new driver may read previous work records linked to the same service request. Do not grant permission to modify previous work or reports. |
 | Recordings and work photos | Consultation recording access is limited to the administrator owning the reception. Work photos follow the related service request/work access permissions. When attaching files, verify upload ownership and the corresponding intake/work linkage. |
 | STT originals and analysis attempts | Only the administrator owning the related reception may read its original transcript and analysis records. AI services do not obtain application-user access or direct Backend database access. |
-| Administrator push devices | Administrators may register and remove only their own installation bindings. Analysis notifications target the original recording uploader's currently registered devices, with current resource access revalidated before sending. |
+| Push devices | Administrators and drivers, including pending/rejected applicants, may register and remove only their own installation bindings. Analysis notifications target the original recording uploader's currently registered devices. Driver registration notifications target administrators, and review notifications target the applicant. Revalidate current resource access before sending. |
 
 Administrator access to retained records after driver withdrawal, and personal data retention and deletion, follow [UC-15](../../../docs/requirements/use-cases/uc-15-driver-account-withdrawal.md).
 

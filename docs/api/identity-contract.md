@@ -149,7 +149,7 @@ Access Token 기본 15분, 세션 절대 수명 기본 14일, 여러 기기 로�
 4. **완료:** 카카오 로그인 API·계정 조회/생성·세션 저장·서비스 토큰 발급을 구현하고 동시 로그인과 롤백을 검증했다.
 5. **완료:** JWT 요청 인증과 `/auth/accounts/me`를 연결하고 현재 계정·세션 상태에 따른 요청 차단을 검증했다.
 6. **완료:** 갱신·로그아웃 API와 동시 갱신·폐기 세션 차단·실패 시 롤백을 구현하고 검증했다.
-7. driver 가입·승인·반려·탈퇴 및 업무 권한을 연결한다.
+7. **완료:** 기사 가입·재신청·상태 조회·관리자 목록/심사·탈퇴, 국세청 진위확인, 실제 작업 조회와 FCM 발송 기반을 구현·검증했다. 상세 계약은 [기사 가입 API 계약](driver-contract.md)을 따른다.
 8. 관리자 ID/PW 인증과 사전 계정 발급을 연결한다. 역할별 업무 권한 차등·요청 제한의 미확정 정책은 해당 작업 전에 확인한다.
 
 ## 영속성 구현과 검증
@@ -282,3 +282,42 @@ JWT는 HS256을 사용하고 `sub`(내부 계정 ID), `sid`(세션 ID), `iss`, `
 ```
 
 2026-11-18 6단계 검증 결과: Java 21·Gradle 9.8.2·분리된 PostgreSQL 18에서 `--offline ktlintCheck test` **258개 통과, 실패·오류·건너뜀 0**. 새 세션 수명주기 통합 테스트 40개는 실제 DB·Spring Security 경로를 사용한다. 갱신 공개로 더 이상 유효하지 않은 기존 미구현 경로 차단 사례 1개는 새 계약 검증으로 대체했다. 실제 카카오 SDK 토큰 연결과 Compose PostgreSQL 17 검증은 아직 수행하지 않았다.
+
+## 7단계: driver 연동을 위한 identity 공개 API
+
+`IdentityAccountOperations`는 driver 등 다른 모듈이 내부 Entity·Repository에 접근하지 않고 기사 인증 계정을 조정하는 공개 API다. `lockActiveDriverAccount(accountId)`는 호출자의 쓰기 트랜잭션을 요구하며, 활성 기사 계정을 잠근 뒤 공개 `AuthenticatedAccount`만 반환한다. 계정 → driver → 세션 순서로 잠금을 유지하여 가입·재신청·탈퇴와 로그인·갱신의 경쟁을 조정한다.
+
+`deactivateDriverAccount(accountId)`는 계정 잠금 후 전체 세션을 일정한 ID 순서로 잠그고 비활성화·전체 폐기·계정의 푸시 기기 연결 해제를 한 트랜잭션에 반영한다. 호출자의 트랜잭션에 참여하므로 후속 driver 변경이 실패하면 함께 롤백된다. 기존 카카오 연결과 이미 폐기된 시각을 보존하고 반복 호출도 상태를 다시 변경하지 않는다. 관리자 계정은 이 기사 전용 API로 변경할 수 없다. 로그아웃은 해당 세션에 연결된 기기만 해제한다.
+
+이 공개 API는 탈퇴의 진행 중 작업 확인이나 driver 상태 전이를 대신하지 않는다. driver는 `operations.work`가 제공하는 실제 미완료 작업 조회를 수행한 뒤 같은 트랜잭션에서 호출한다. 기사 HTTP API·멱등성·작업 잠금·푸시의 범위와 환경 설정은 [기사 가입 API 계약](driver-contract.md)에 기록했다.
+
+2026-11-18 사용자 승인 사항:
+
+- 전체 OpenAPI 초안의 기사 가입·재신청·상태 조회·관리자 심사·탈퇴 계약을 채택한다.
+- 국세청 진위확인에 사업자등록번호·개업일자·대표자명을 사용하며 가입·재신청은 **계속사업자만 허용**한다.
+- 기사 목록의 이름·사업체명은 **부분 일치 검색**한다.
+- 기사 API 구현 후 실제 미완료 작업 조회와 승인/반려 푸시 발송 기반까지 구현한다.
+
+2026-11-18 중간 검증: Java 21·Gradle 9.8.2·분리된 PostgreSQL 18에서 `--offline ktlintCheck test` **266개 통과, 실패·오류·건너뜀 0**. 기사 계정 수명주기 API 통합 테스트 8개를 추가했고 기존 갱신/비활성화 경쟁 테스트를 공개 API에 연결했다. 이는 identity 연동 기반의 검증이며 7단계 driver HTTP API의 구현 완료를 의미하지 않는다.
+
+### 국세청 진위확인 클라이언트
+
+`driver.infrastructure.business.NtsBusinessClient.verify`는 [국세청 공식 명세](https://infuser.odcloud.kr/api/stages/28493/api-docs?1728017570963)에 따라 HTTPS POST `/api/nts-businessman/v1/validate`를 호출한다. 본문의 `businesses`에 사업자등록번호(`b_no`), 개업일자(`start_dt`, YYYYMMDD), 대표자명(`p_nm`) 한 건을 보낸다. 가입·재신청 HTTP DTO의 business 입력을 모듈 내부 `BusinessIdentity`로 변환한다.
+
+`valid=01`인 일치 결과만 인정하고, 요청 건수·사업자번호·운영 상태 코드도 확인한다. 명시적인 `valid=02`만 `BUSINESS_INFO_INVALID`/400이다. 미설정 인증키, 네트워크·HTTP 오류, 손상된 응답은 `BUSINESS_VERIFICATION_UNAVAILABLE`/503으로 구분한다. API 키가 없으면 외부 호출 없이 차단한다. 원본 오류·URI·개인정보를 공통 오류 메시지나 cause로 전달하지 않는다.
+
+진위 일치와 운영 상태(`CONTINUING`/`SUSPENDED`/`CLOSED`)를 구분하여 반환한다. 가입 서비스는 DB 트랜잭션 밖에서 호출하고 `CONTINUING`만 허용한다. 휴업·폐업도 `BUSINESS_INFO_INVALID`/400이며 신청을 저장하지 않는다. 외부 클라이언트 자체는 계정·신청을 저장하거나 업무 권한을 부여하지 않는다.
+
+| 환경 변수 | 의미 | 기본값 |
+|---|---|---|
+| `NTS_SERVICE_KEY` | 공공데이터포털에서 발급한 Decoding 인증키 | 없음 |
+| `NTS_CONNECT_TIMEOUT` | 연결 대기 시간 | `PT2S` |
+| `NTS_READ_TIMEOUT` | 응답 대기 시간 | `PT5S` |
+
+공식 API 요구에 따라 인증키를 URL 쿼리에 넣으므로 HTTP 요청 URI를 로그에 기록하지 않는다. 리다이렉트를 따르지 않으며 URI에 들어가는 키는 인코딩한다. 실제 인증키를 제공받지 않았으므로 실서비스 연결은 수행하지 않았다.
+
+2026-11-18 검증: `--offline ktlintCheck test --tests 'com.allcheck.driver.infrastructure.business.*' --tests 'com.allcheck.ModularityTests'` **39개 통과, 실패·오류·건너뜀 0**. 국세청 HTTP는 가짜 응답으로 격리했으며 요청 본문·키 인코딩·응답 상관관계·불일치/장애 구분·설정·모듈 경계를 확인했다. 실제 국세청 인증키를 사용한 연결 검증은 아직이다.
+
+### 7단계 최종 검증
+
+2026-11-18 Java 21·Gradle 9.8.2·분리된 PostgreSQL 18에서 `--offline ktlintCheck test` **355개 통과, 실패·오류·건너뜀 0**. 실제 HTTP/Spring Security·DB 상태 전이·동시 가입·버전/멱등성·공동 롤백·배정/탈퇴 경합·기기 소유권·로그아웃·푸시 대상/실패/중단 복구·Firebase SDK 메시지·모듈 경계를 포함한다. 생성 OpenAPI 헤더와 YAML 파싱·로컬 문서 링크도 확인했다. 실제 외부 자격 증명 연결·Compose PostgreSQL 17·프론트 어댑터 연결은 후속 작업이다.

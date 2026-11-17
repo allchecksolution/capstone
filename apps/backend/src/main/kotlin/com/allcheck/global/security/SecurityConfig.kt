@@ -1,5 +1,6 @@
 package com.allcheck.global.security
 
+import com.allcheck.driver.DriverOperations
 import com.allcheck.global.security.handler.CustomAccessDeniedHandler
 import com.allcheck.global.security.handler.CustomAuthenticationEntryPoint
 import com.allcheck.global.security.jwt.JwtAuthenticationFilter
@@ -28,6 +29,7 @@ class SecurityConfig(
     private val customAccessDeniedHandler: CustomAccessDeniedHandler,
     private val jwtTokenProvider: JwtTokenProvider,
     private val identityOperations: IdentityOperations,
+    private val driverOperations: DriverOperations,
 ) {
     @Bean
     fun securityFilterChain(http: HttpSecurity): SecurityFilterChain {
@@ -72,6 +74,7 @@ class SecurityConfig(
             addFilterBefore<UsernamePasswordAuthenticationFilter>(
                 JwtAuthenticationFilter(jwtTokenProvider, identityOperations, customAuthenticationEntryPoint, credentialRequests),
             )
+            addFilterAfter<JwtAuthenticationFilter>(DriverBusinessAccessFilter(driverOperations, customAccessDeniedHandler))
         }
         return http.build()
     }
