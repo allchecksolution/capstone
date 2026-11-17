@@ -1,4 +1,4 @@
-package com.allcheck.reception.infrastructure.storage
+package com.allcheck.global.config
 
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
@@ -11,25 +11,23 @@ import software.amazon.awssdk.services.s3.presigner.S3Presigner
 import java.time.Duration
 
 @Configuration(proxyBeanMethods = false)
-@ConditionalOnProperty(name = ["reception.storage.enabled"], havingValue = "true")
-class RecordingStorageConfig(
-    @Value("\${reception.storage.region}") private val region: String,
-    @Value("\${reception.storage.bucket}") private val bucket: String,
-    @Value("\${reception.storage.request-timeout}") private val requestTimeout: Duration,
+@ConditionalOnProperty(name = ["storage.s3.enabled"], havingValue = "true")
+class S3Config(
+    @Value("\${storage.s3.region}") private val region: String,
+    @Value("\${storage.s3.request-timeout}") private val requestTimeout: Duration,
 ) {
     init {
         require(region.isNotBlank())
-        require(bucket.isNotBlank() && bucket.length <= 63)
         require(requestTimeout > Duration.ZERO)
     }
 
     @Bean(destroyMethod = "close")
-    fun receptionS3Client(): S3Client = S3Client.builder()
+    fun s3Client(): S3Client = S3Client.builder()
         .region(Region.of(region))
         .httpClientBuilder(UrlConnectionHttpClient.builder())
         .overrideConfiguration { it.apiCallTimeout(requestTimeout) }
         .build()
 
     @Bean(destroyMethod = "close")
-    fun receptionS3Presigner(): S3Presigner = S3Presigner.builder().region(Region.of(region)).build()
+    fun s3Presigner(): S3Presigner = S3Presigner.builder().region(Region.of(region)).build()
 }

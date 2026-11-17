@@ -8,8 +8,8 @@ import com.allcheck.reception.domain.vo.ReceptionAiOriginal
 import com.allcheck.reception.domain.vo.ReceptionExternalId
 import com.allcheck.reception.domain.vo.ReceptionStructuredResult
 import com.allcheck.reception.domain.vo.WorkType
-import com.allcheck.reception.infrastructure.storage.RecordingStorageClientTest
 import com.allcheck.support.PostgresTestSchema
+import com.allcheck.support.S3TestFixtures
 import org.assertj.core.api.Assertions.assertThat
 import org.hamcrest.Matchers.hasSize
 import org.junit.jupiter.api.AfterAll
@@ -57,7 +57,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import javax.sql.DataSource
 
-@SpringBootTest(properties = ["springdoc.api-docs.enabled=true", "spring.jpa.show-sql=false", "reception.storage.bucket=test-bucket"])
+@SpringBootTest(properties = ["springdoc.api-docs.enabled=true", "spring.jpa.show-sql=false", "reception.recording.bucket=test-bucket"])
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @TestPropertySource("classpath:jwt-test.properties")
@@ -86,7 +86,7 @@ class ReceptionApiIntegrationTest @Autowired constructor(
                 "originalFilename" to filename,
                 "contentType" to "audio/wav",
                 "sizeBytes" to 1024,
-                "checksum" to mapOf("algorithm" to "SHA256", "value" to Base64.getEncoder().encodeToString(RecordingStorageClientTest.DIGEST)),
+                "checksum" to mapOf("algorithm" to "SHA256", "value" to Base64.getEncoder().encodeToString(S3TestFixtures.DIGEST)),
             ),
         )
         fun upload(payload: String = body) = mvc.perform(post("$base/upload-requests").with(admin(1)).header("Idempotency-Key", uploadKey).contentType(MediaType.APPLICATION_JSON).content(payload))
@@ -119,7 +119,7 @@ class ReceptionApiIntegrationTest @Autowired constructor(
         upload(body.replace("1024", "2048")).andExpect(status().isConflict).andExpect(jsonPath("$.code").value("IDEMPOTENCY_KEY_REUSED"))
         val source = recording.recording(1, numeric, ReceptionExternalId.RECORDING.parse(file))
         storageFixture.objects[source.objectKey] = HeadObjectResponse.builder().contentType("audio/wav").contentLength(1024)
-            .checksumSHA256(Base64.getEncoder().encodeToString(RecordingStorageClientTest.DIGEST)).build()
+            .checksumSHA256(Base64.getEncoder().encodeToString(S3TestFixtures.DIGEST)).build()
         mvc.perform(post("$base/$file/completion").with(admin(1)).header("Idempotency-Key", key()).contentType(MediaType.APPLICATION_JSON).content("{\"expectedVersion\":2}"))
             .andExpect(status().isAccepted)
         upload().andExpect(status().isConflict).andExpect(jsonPath("$.code").value("FILE_ALREADY_UPLOADED"))
@@ -137,7 +137,7 @@ class ReceptionApiIntegrationTest @Autowired constructor(
                 "originalFilename" to "call.mp3",
                 "contentType" to "audio/mpeg",
                 "sizeBytes" to 1024,
-                "checksum" to mapOf("algorithm" to "SHA256", "value" to Base64.getEncoder().encodeToString(RecordingStorageClientTest.DIGEST)),
+                "checksum" to mapOf("algorithm" to "SHA256", "value" to Base64.getEncoder().encodeToString(S3TestFixtures.DIGEST)),
             ),
         )
 
@@ -154,7 +154,7 @@ class ReceptionApiIntegrationTest @Autowired constructor(
         // given
         val id = create()
         val numeric = ReceptionExternalId.RECEPTION.parse(id)
-        val metadata = RecordingUploadMetadata("call.wav", "audio/wav", 1024, RecordingStorageClientTest.DIGEST)
+        val metadata = RecordingUploadMetadata("call.wav", "audio/wav", 1024, S3TestFixtures.DIGEST)
         val reserved = recording.reserve(1, numeric, 1, metadata, "test-bucket")
         storageFixture.objects[reserved.objectKey] = HeadObjectResponse.builder().contentType("audio/wav").contentLength(1024)
             .checksumSHA256(Base64.getEncoder().encodeToString(metadata.checksum)).build()
@@ -191,7 +191,7 @@ class ReceptionApiIntegrationTest @Autowired constructor(
         // given
         val id = create()
         val numeric = ReceptionExternalId.RECEPTION.parse(id)
-        val metadata = RecordingUploadMetadata("call.wav", "audio/wav", 1024, RecordingStorageClientTest.DIGEST)
+        val metadata = RecordingUploadMetadata("call.wav", "audio/wav", 1024, S3TestFixtures.DIGEST)
         val reserved = recording.reserve(1, numeric, 1, metadata, "test-bucket")
         val fileId = ReceptionExternalId.RECORDING.format(reserved.recordingId)
         val base = "/api/v1/receptions/$id/recordings/$fileId"
@@ -390,7 +390,7 @@ class ReceptionApiIntegrationTest @Autowired constructor(
         fun storageFixture() = StorageFixture()
 
         @Bean
-        fun offlineS3(fixture: StorageFixture): S3Client = RecordingStorageClientTest.fakeS3 { request ->
+        fun offlineS3(fixture: StorageFixture): S3Client = S3TestFixtures.fakeS3 { request ->
             fixture.reads.incrementAndGet()
             fixture.barriers[request.key()]?.let {
                 it.countDown()
@@ -400,7 +400,7 @@ class ReceptionApiIntegrationTest @Autowired constructor(
         }
 
         @Bean(destroyMethod = "close")
-        fun offlineSigner(fixture: StorageFixture): S3Presigner = RecordingStorageClientTest.signer { fixture.signatures.incrementAndGet() }
+        fun offlineSigner(fixture: StorageFixture): S3Presigner = S3TestFixtures.signer { fixture.signatures.incrementAndGet() }
 
         @Bean
         fun administratorIdentity() = ReceptionAdministratorIdentity { authentication -> (authentication.principal as? TestAdmin)?.id }

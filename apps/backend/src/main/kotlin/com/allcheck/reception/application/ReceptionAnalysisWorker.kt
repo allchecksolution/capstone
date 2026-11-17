@@ -25,7 +25,7 @@ class ReceptionAnalysisWorkerConfig(
     @Value("\${reception.worker.execution-budget}") private val budget: Duration,
     @Value("\${reception.worker.poll-interval}") private val poll: Duration,
     @Value("\${reception.ai.enabled:false}") private val aiEnabled: Boolean,
-    @Value("\${reception.storage.enabled:false}") private val storageEnabled: Boolean,
+    @Value("\${storage.s3.enabled:false}") private val storageEnabled: Boolean,
 ) {
     init {
         require(concurrency > 0 && budget > Duration.ZERO && poll > Duration.ZERO) { "Explicit positive analysis runtime settings are required." }

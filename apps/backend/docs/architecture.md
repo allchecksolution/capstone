@@ -151,3 +151,11 @@ com.example
 
 - Clearly define data ownership and business responsibilities for each domain.
 - Introduce Domain Events only when there is a clear business need for event-driven collaboration.
+
+### Shared Object Storage
+
+Create S3 SDK client/presigner beans once per connection configuration in `global.config.S3Config`.
+Shared S3 metadata, range reads, and signing live in `global.storage`, with neutral technical results/errors.
+Business modules wrap these operations in their own infrastructure code to apply ownership, file format,
+object-key/bucket selection, write policy, and use-specific URL lifetimes. Do not move a business module's
+validators or error codes into global, or reuse another module's internal storage wrapper.

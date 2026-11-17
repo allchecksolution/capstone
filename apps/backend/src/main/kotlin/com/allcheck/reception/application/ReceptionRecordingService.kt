@@ -20,7 +20,7 @@ class ReceptionRecordingService(
     private val transactions: ReceptionRecordingTransactions,
     private val commands: ReceptionCommandService,
     private val storage: RecordingStorageClient,
-    @Value("\${reception.storage.bucket:}") private val bucket: String,
+    @Value("\${reception.recording.bucket:}") private val bucket: String,
 ) {
     fun upload(adminId: Long, receptionId: Long, key: String, version: Int, metadata: RecordingUploadMetadata): ReceptionCommandResult<RecordingUploadGrantResponse> {
         transactions.ensureOwner(adminId, receptionId)

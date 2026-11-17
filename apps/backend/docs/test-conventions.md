@@ -144,3 +144,8 @@ container headers, false-extension rejection, source contact persistence, AI aut
 manual correction precedence, and preservation after failed analysis. Recording HTTP tests verify actual fresh
 signing on every same-key/renewal request, exactly one reservation, no signed URL in command receipts, and
 refusal to issue another upload grant after completion. All filenames/phone numbers in fixtures are synthetic.
+
+Shared S3 tests verify that image uploads and other buckets use the same SDK configuration without recording
+format rules, and that create-only versus replace signing is chosen by the caller. `S3ConfigTest` verifies
+independence from reception feature flags. Architecture coverage rejects global-to-business-module dependencies.
+Offline AWS test fixtures live in `support.S3TestFixtures`, so generic tests do not depend on reception tests.

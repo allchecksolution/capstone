@@ -7,8 +7,8 @@ import com.allcheck.reception.domain.vo.WorkType
 import com.allcheck.reception.infrastructure.ai.AiConnection
 import com.allcheck.reception.infrastructure.ai.AiConnectionConfig
 import com.allcheck.reception.infrastructure.repository.ReceptionAnalysisEventRepository
-import com.allcheck.reception.infrastructure.storage.RecordingStorageClientTest
 import com.allcheck.support.PostgresTestSchema
+import com.allcheck.support.S3TestFixtures
 import com.sun.net.httpserver.HttpServer
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterAll
@@ -253,7 +253,7 @@ class ReceptionAnalysisExecutionTest @Autowired constructor(
 
     private fun accept(filename: String = "call.wav"): RecordingAcceptance {
         val id = ReceptionExternalId.RECEPTION.parse(receptions.create(1, ReceptionCreationData()).receptionId)
-        val metadata = RecordingUploadMetadata(filename, "audio/wav", 1024, RecordingStorageClientTest.DIGEST)
+        val metadata = RecordingUploadMetadata(filename, "audio/wav", 1024, S3TestFixtures.DIGEST)
         val reserved = recordings.reserve(1, id, 1, metadata, "test-bucket")
         return recordings.complete(1, id, reserved.recordingId, 2, metadata)
     }
@@ -272,7 +272,7 @@ class ReceptionAnalysisExecutionTest @Autowired constructor(
         fun executionClock(): Clock = clock
 
         @Bean(destroyMethod = "close")
-        fun offlineSigner(): S3Presigner = RecordingStorageClientTest.signer()
+        fun offlineSigner(): S3Presigner = S3TestFixtures.signer()
 
         @Bean(destroyMethod = "close")
         fun testAiConnection(): AiConnection = AiConnectionConfig().receptionAiConnection("http://127.0.0.1:${server.address.port}", "test-internal-key", "analysis-request-id-v1", Duration.ofSeconds(1), Duration.ofSeconds(2), Duration.ofSeconds(2))

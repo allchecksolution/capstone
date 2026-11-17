@@ -78,7 +78,7 @@ External integrations and the analysis worker are disabled by default. Enable ea
 
 | Enable flag | Required environment settings | Behavior |
 |---|---|---|
-| `RECEPTION_STORAGE_ENABLED=true` | `RECEPTION_STORAGE_REGION`, `RECEPTION_STORAGE_BUCKET`, `RECEPTION_STORAGE_REQUEST_TIMEOUT`, and an AWS SDK default-chain credential source | Private S3 HEAD with SHA256 and PUT/GET signing. No embedded credentials, bucket creation, ACL grants, or public URL fallback. |
+| `S3_ENABLED=true` | `S3_REGION`, `S3_REQUEST_TIMEOUT`, `RECEPTION_RECORDING_BUCKET`, and an AWS SDK default-chain credential source | Private S3 HEAD with SHA256 and PUT/GET signing. No embedded credentials, bucket creation, ACL grants, or public URL fallback. |
 | `RECEPTION_AI_ENABLED=true` | `RECEPTION_AI_BASE_URL`, `RECEPTION_AI_INTERNAL_API_KEY`, `RECEPTION_AI_CONTRACT=analysis-request-id-v1`, `RECEPTION_AI_CONNECT_TIMEOUT`, `RECEPTION_AI_STT_TIMEOUT`, `RECEPTION_AI_STRUCTURE_TIMEOUT` | Synchronous RestClient requests, internal API key, strict response/correlation checks, no redirects or application-level AI retries. |
 | `RECEPTION_WORKER_ENABLED=true` | Both preceding integrations enabled, `RECEPTION_WORKER_CONCURRENCY`, `RECEPTION_WORKER_EXECUTION_BUDGET`, `RECEPTION_WORKER_POLL_INTERVAL` | Bounded local execution capacity backed by durable DB PENDING work and a timeout monitor. Only a committed claim may call AI. PROCESSING work is never automatically re-executed. |
 
@@ -103,3 +103,12 @@ be logged. Only matching phone tokens are used for automatic review input, after
 positions are not assigned a customer/business meaning without further information. A different pair or unknown
 pattern leaves the required review phone for the administrator to fill. The original AI JSON never gains a phone
 field. Filename-derived contact survives an STT/structure failure and does not prevent AI auto-fill of other fields.
+
+S3 SDK beans and provider configuration are shared technical infrastructure in `global.config.S3Config`.
+`global.storage.S3StorageClient` provides neutral metadata/range reads and signed PUT/GET operations.
+It has no business-module dependency or WAV, ownership, or file-lifecycle rules. Each domain supplies its
+bucket/key, URL lifetime, and create-only policy. `reception.infrastructure.storage.RecordingStorageClient`
+retains WAV/header verification, recording TTLs, and mapping neutral storage failures to reception errors.
+The former `RECEPTION_STORAGE_ENABLED`, `RECEPTION_STORAGE_REGION`, `RECEPTION_STORAGE_REQUEST_TIMEOUT`,
+and `RECEPTION_STORAGE_BUCKET` settings are replaced by the common SDK settings and reception bucket above.
+Terraform for private storage is under `infra/terraform/s3`; its outputs match these bindings.
