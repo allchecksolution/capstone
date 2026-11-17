@@ -1,7 +1,7 @@
 package com.allcheck.identity.presentation.dto.response
 
-import com.allcheck.identity.domain.vo.AdminRole
-import com.allcheck.identity.domain.vo.UserType
+import com.allcheck.identity.AdminRole
+import com.allcheck.identity.UserType
 import io.swagger.v3.oas.annotations.media.Schema
 
 data class AuthUserResponse(

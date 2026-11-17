@@ -2,6 +2,9 @@ package com.allcheck.global.security
 
 import com.allcheck.global.security.handler.CustomAccessDeniedHandler
 import com.allcheck.global.security.handler.CustomAuthenticationEntryPoint
+import com.allcheck.global.security.jwt.JwtAuthenticationFilter
+import com.allcheck.global.security.jwt.JwtTokenProvider
+import com.allcheck.identity.IdentityOperations
 import jakarta.servlet.DispatcherType
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -12,6 +15,8 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.config.annotation.web.invoke
 import org.springframework.security.config.http.SessionCreationPolicy
 import org.springframework.security.web.SecurityFilterChain
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher
 import org.springframework.security.web.util.matcher.DispatcherTypeRequestMatcher
 
 @Configuration
@@ -20,9 +25,12 @@ import org.springframework.security.web.util.matcher.DispatcherTypeRequestMatche
 class SecurityConfig(
     private val customAuthenticationEntryPoint: CustomAuthenticationEntryPoint,
     private val customAccessDeniedHandler: CustomAccessDeniedHandler,
+    private val jwtTokenProvider: JwtTokenProvider,
+    private val identityOperations: IdentityOperations,
 ) {
     @Bean
     fun securityFilterChain(http: HttpSecurity): SecurityFilterChain {
+        val kakaoLogin = PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, "/api/v1/auth/sessions/kakao")
         http {
             sessionManagement {
                 sessionCreationPolicy = SessionCreationPolicy.STATELESS
@@ -45,7 +53,7 @@ class SecurityConfig(
                 authorize(HttpMethod.GET, "/v3/api-docs", permitAll)
                 authorize(HttpMethod.GET, "/v3/api-docs/**", permitAll)
 
-                authorize(HttpMethod.POST, "/api/v1/auth/sessions/kakao", permitAll)
+                authorize(kakaoLogin, permitAll)
 
                 // 기본 인증 요구
                 authorize("/api/v1/receptions", hasRole("ADMIN"))
@@ -56,7 +64,9 @@ class SecurityConfig(
                 authenticationEntryPoint = customAuthenticationEntryPoint
                 accessDeniedHandler = customAccessDeniedHandler
             }
-            // TODO: JWT 요청 인증은 Custom Filter 또는 Resource Server 방식 확정 후 연결한다.
+            addFilterBefore<UsernamePasswordAuthenticationFilter>(
+                JwtAuthenticationFilter(jwtTokenProvider, identityOperations, customAuthenticationEntryPoint, kakaoLogin),
+            )
         }
         return http.build()
     }

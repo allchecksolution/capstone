@@ -1,5 +1,6 @@
 package com.allcheck.identity.domain.vo
 
+import com.allcheck.identity.AdminRole
 import jakarta.persistence.Column
 import jakarta.persistence.Embeddable
 import jakarta.persistence.EnumType

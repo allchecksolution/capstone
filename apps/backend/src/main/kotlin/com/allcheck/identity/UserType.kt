@@ -1,4 +1,4 @@
-package com.allcheck.identity.domain.vo
+package com.allcheck.identity
 
 enum class UserType {
     ADMIN,

@@ -2,9 +2,9 @@ package com.allcheck.identity.application
 
 import com.allcheck.global.exception.BusinessException
 import com.allcheck.global.security.jwt.JwtTokenProvider
+import com.allcheck.identity.UserType
 import com.allcheck.identity.domain.entity.Account
 import com.allcheck.identity.domain.vo.SocialLogin
-import com.allcheck.identity.domain.vo.UserType
 import com.allcheck.identity.exception.IdentityErrorCode
 import com.allcheck.identity.infrastructure.kakao.KakaoClient
 import com.allcheck.identity.infrastructure.repository.AccountRepository

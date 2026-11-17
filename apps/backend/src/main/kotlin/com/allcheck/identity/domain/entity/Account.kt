@@ -1,8 +1,8 @@
 package com.allcheck.identity.domain.entity
 
+import com.allcheck.identity.UserType
 import com.allcheck.identity.domain.vo.AdminCredential
 import com.allcheck.identity.domain.vo.SocialLogin
-import com.allcheck.identity.domain.vo.UserType
 import jakarta.persistence.Column
 import jakarta.persistence.Embedded
 import jakarta.persistence.Entity

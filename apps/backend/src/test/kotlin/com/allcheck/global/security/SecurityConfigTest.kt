@@ -101,7 +101,7 @@ class SecurityConfigTest {
     }
 
     @Test
-    fun `유효한 JWT를 전달해도 요청 인증이 연결되기 전에는 401을 반환한다`() {
+    fun `서명이 유효해도 저장된 계정과 세션이 없으면 401을 반환한다`() {
         // given
         val token = jwtTokenProvider.createAccessToken("test-subject", "test-session")
 
@@ -112,7 +112,7 @@ class SecurityConfigTest {
 
         // then
         result.andExpect(status().isUnauthorized)
-            .andExpect(content().json("""{"code":"UNAUTHENTICATED","message":"인증이 필요합니다."}"""))
+            .andExpect(content().json("""{"code":"INVALID_TOKEN","message":"유효하지 않은 토큰입니다."}"""))
     }
 
     @Test

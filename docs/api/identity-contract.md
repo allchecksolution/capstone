@@ -147,7 +147,7 @@ Access Token 기본 15분, 세션 절대 수명 기본 14일, 여러 기기 로�
 2. **완료:** Account·외부 로그인 연결·AuthSession 모델, Repository, V2 Flyway 마이그레이션을 구현했다.
 3. **완료:** 카카오 검증 클라이언트와 정상·만료·타 앱·장애·설정 검증 테스트를 구현했다.
 4. **완료:** 카카오 로그인 API·계정 조회/생성·세션 저장·서비스 토큰 발급을 구현하고 동시 로그인과 롤백을 검증했다.
-5. JWT 요청 인증과 `/auth/accounts/me`를 연결해 실제 앱 인증을 확인한다.
+5. **완료:** JWT 요청 인증과 `/auth/accounts/me`를 연결하고 현재 계정·세션 상태에 따른 요청 차단을 검증했다.
 6. 갱신·로그아웃·동시 갱신·폐기 세션 차단을 검증한다.
 7. driver 가입·승인·반려·탈퇴 및 업무 권한을 연결한다.
 8. 관리자 ID/PW 인증과 사전 계정 발급을 연결한다. 역할별 업무 권한 차등·요청 제한의 미확정 정책은 해당 작업 전에 확인한다.
@@ -241,4 +241,24 @@ JWT는 HS256을 사용하고 `sub`(내부 계정 ID), `sid`(세션 ID), `iss`, `
 
 2026-11-17 검증 결과: Java 21·분리된 PostgreSQL 18에서 전체 `ktlintCheck test` **181개 통과, 실패·오류·건너뜀 0**. 카카오 자체 검증만 테스트 대역으로 바꾸고 실제 계정·세션 저장과 HTTP/Spring Security 경로를 검증했다. 실제 카카오 SDK 토큰을 이용한 연결 및 PostgreSQL 17 검증은 아직 수행하지 않았다.
 
-현재는 카카오 로그인 POST 경로만 공개했다. JWT를 HTTP 요청의 인증 주체로 연결하는 필터와 `GET /auth/accounts/me`는 5단계, Refresh/Logout API는 6단계다. 프론트 어댑터의 새 인증 계약 연결과 driver 가입 상태 조회도 후속 단계에서 구현한다.
+자격 증명으로 호출하는 인증 경로 중 현재는 카카오 로그인 POST만 공개했다. Refresh/Logout API는 6단계다. 프론트 어댑터의 새 인증 계약 연결과 driver 가입 상태 조회도 후속 단계에서 구현한다.
+
+## JWT 요청 인증과 내 인증 계정 조회
+
+`GET /api/v1/auth/accounts/me`는 Bearer Access Token을 검증하고 `AuthUser`만 반환한다. 응답 필드는 `accountId`, `userType`, `role`이며 `Cache-Control: no-store`를 적용한다. 기사 개인정보·가입 상태는 포함하지 않는다.
+
+`JwtAuthenticationFilter`는 기존 `JwtTokenProvider.parseClaims`의 HS256 서명·만료·발급자·대상·용도·필수 Claims 검증을 사용한다. 이후 identity 공개 API인 `IdentityOperations.findAuthenticatedAccount`로 현재 계정·세션을 확인한다. 두 엔티티는 한 쿼리로 조회하며 계정 활성 여부, 세션과 계정의 연결, 폐기 여부, 생성·절대 만료 시각을 확인한다. 이 조회 결과를 캐시하거나 HTTP 세션에 보관하지 않는다.
+
+`AuthenticatedAccount`, `UserType`, `AdminRole`은 identity 모듈 루트의 공개 계약 타입이다. `global.security`는 identity 내부 Entity·Repository에 의존하지 않는다. 검증한 계정 ID·세션 ID·유형·역할을 `AuthPrincipal`에 담고 Spring Security에 등록한다. 유형은 `ROLE_ADMIN`/`ROLE_DRIVER`로 연결하며 MASTER/SUB별 업무 권한은 부여하지 않는다. JWT 안에 별도 유형·역할·권한 Claims가 있어도 사용하지 않는다.
+
+인증 실패는 필터에서 공통 `CustomAuthenticationEntryPoint`와 `ErrorResponse`로 처리한다. 미인증은 `UNAUTHENTICATED`, 만료 JWT는 `TOKEN_EXPIRED`, 그 밖의 무효 JWT·사용 불가 계정·세션은 `INVALID_TOKEN`으로 401을 반환하고 `WWW-Authenticate: Bearer` challenge를 제공한다. 인증 후 업무 권한이 부족하면 기존 `ACCESS_DENIED`/403을 유지한다. 비활성 계정의 로그인·갱신 403 정책과 보호 요청의 401은 구분한다.
+
+카카오 로그인 POST는 JWT 필터를 건너뛰므로 만료된 Authorization 헤더가 있어도 본문의 `kakaoAccessToken`으로 인증한다. 아직 구현하지 않은 관리자 로그인·갱신·로그아웃 경로는 함께 공개하지 않는다.
+
+분리된 PostgreSQL 테스트 DB에서 다음 명령으로 요청 인증·세션 차단·현재 DB 역할 사용·공통 오류·생성 OpenAPI와 모듈 경계를 검증한다.
+
+```powershell
+.\gradlew.bat ktlintCheck test --tests 'com.allcheck.identity.application.SessionAuthenticationIntegrationTest' --tests 'com.allcheck.global.security.SecurityConfigTest' --tests 'com.allcheck.ModularityTests'
+```
+
+2026-11-17 5단계 검증 결과: Java 21·Gradle 9.8.2·분리된 PostgreSQL 18에서 `--offline ktlintCheck test` **219개 통과, 실패·오류·건너뜀 0**. 요청 인증 통합 테스트 37개와 공통 보안 계층의 identity 내부 참조 금지 아키텍처 테스트 1개를 추가했다. 실제 카카오 SDK 토큰 연결과 Compose PostgreSQL 17 검증은 아직 수행하지 않았다.
