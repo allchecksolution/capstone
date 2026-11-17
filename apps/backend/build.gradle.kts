@@ -28,6 +28,7 @@ repositories {
 dependencyManagement {
     imports {
         mavenBom("org.springframework.modulith:spring-modulith-bom:2.1.2")
+        mavenBom("software.amazon.awssdk:bom:2.59.1")
     }
 }
 
@@ -48,6 +49,13 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-flyway")
     implementation("org.flywaydb:flyway-database-postgresql")
     runtimeOnly("org.postgresql:postgresql")
+
+    // Shared S3 Object Storage
+    implementation("software.amazon.awssdk:s3")
+    implementation("software.amazon.awssdk:url-connection-client")
+
+    // FCM / Google Application Default Credentials
+    implementation("com.google.auth:google-auth-library-oauth2-http:1.43.0")
 
     // Security / Authentication
     implementation("org.springframework.boot:spring-boot-starter-security")

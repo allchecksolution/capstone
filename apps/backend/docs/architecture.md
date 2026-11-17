@@ -106,6 +106,9 @@ com.example
 - Place new features in the context and module that owns their business data and behavior. Project-specific assignments are defined in [Business Specification](business-specification.md#project-domain-model); general boundary guidance follows [Domain Design Conventions](domain-design.md).
 - Before creating a new top-level domain package, check whether it belongs within an existing domain boundary.
 - Create a package only when code for that layer is actually needed.
+- When a layer grows, group related implementations by capability within the existing layer packages
+  (for example, `application.recording`, `domain.entity.analysis`, and `domain.vo.review`).
+  Keep cross-capability coordinators and shared types at the layer root; retain the existing module and layer boundaries.
 - Expose inter-module APIs through the module's root package, and use Spring Modulith Named Interfaces when additional packages need to be exposed.
 - Keep internal implementations within module subpackages and prevent other modules from depending on them.
 - Keep shared technical configuration and cross-cutting concerns in the `global` package, outside business application modules. Do not place domain-specific business logic in `global`, and prevent dependencies on business module internals.
@@ -151,3 +154,11 @@ com.example
 
 - Clearly define data ownership and business responsibilities for each domain.
 - Introduce Domain Events only when there is a clear business need for event-driven collaboration.
+
+### Shared Object Storage
+
+Create S3 SDK client/presigner beans once per connection configuration in `global.config.S3Config`.
+Shared S3 metadata, range reads, and signing live in `global.storage`, with neutral technical results/errors.
+Business modules wrap these operations in their own infrastructure code to apply ownership, file format,
+object-key/bucket selection, write policy, and use-specific URL lifetimes. Do not move a business module's
+validators or error codes into global, or reuse another module's internal storage wrapper.

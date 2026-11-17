@@ -1,0 +1,514 @@
+package com.allcheck.reception.application
+
+import com.allcheck.global.config.HibernateConfig
+import com.allcheck.global.exception.BusinessException
+import com.allcheck.global.exception.GlobalErrorCode
+import com.allcheck.reception.ReceptionOperations
+import com.allcheck.reception.application.analysis.ReceptionAnalysisTransactions
+import com.allcheck.reception.application.analysis.TranscriptAcceptanceLost
+import com.allcheck.reception.application.recording.ReceptionRecordingTransactions
+import com.allcheck.reception.application.recording.RecordingAcceptance
+import com.allcheck.reception.application.recording.RecordingUploadMetadata
+import com.allcheck.reception.application.review.ReceptionQueryService
+import com.allcheck.reception.application.review.ReceptionService
+import com.allcheck.reception.domain.entity.Reception
+import com.allcheck.reception.domain.vo.ReceptionProcessingStatus
+import com.allcheck.reception.domain.vo.analysis.ReceptionAiOriginal
+import com.allcheck.reception.domain.vo.analysis.ReceptionAnalysisStatus
+import com.allcheck.reception.domain.vo.analysis.ReceptionAnalysisTransition
+import com.allcheck.reception.domain.vo.analysis.ReceptionStructuredResult
+import com.allcheck.reception.domain.vo.review.ReceptionConfirmationData
+import com.allcheck.reception.domain.vo.review.ReceptionCreationData
+import com.allcheck.reception.domain.vo.review.ReceptionReviewStatus
+import com.allcheck.reception.domain.vo.review.WorkType
+import com.allcheck.reception.exception.ReceptionErrorCode
+import com.allcheck.reception.infrastructure.repository.ReceptionRepository
+import com.allcheck.reception.infrastructure.repository.analysis.ReceptionAnalysisRepository
+import com.allcheck.reception.infrastructure.repository.analysis.ReceptionTranscriptRepository
+import com.allcheck.reception.infrastructure.repository.notification.ReceptionAnalysisEventRepository
+import com.allcheck.reception.infrastructure.repository.recording.ReceptionRecordingRepository
+import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.AfterAll
+import org.junit.jupiter.api.BeforeAll
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.assertThrows
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.autoconfigure.ImportAutoConfiguration
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
+import org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration
+import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase
+import org.springframework.boot.test.context.TestConfiguration
+import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.Import
+import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.test.annotation.DirtiesContext
+import org.springframework.test.context.ActiveProfiles
+import org.springframework.test.context.DynamicPropertyRegistry
+import org.springframework.test.context.DynamicPropertySource
+import org.springframework.transaction.IllegalTransactionStateException
+import org.springframework.transaction.PlatformTransactionManager
+import org.springframework.transaction.annotation.Propagation
+import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
+import java.time.Clock
+import java.time.Duration
+import java.time.Instant
+import java.time.ZoneId
+import java.time.ZoneOffset
+import java.util.UUID
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import javax.sql.DataSource
+
+@DataJpaTest(properties = ["spring.jpa.hibernate.ddl-auto=validate", "spring.jpa.show-sql=false"])
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+@ImportAutoConfiguration(FlywayAutoConfiguration::class)
+@Import(HibernateConfig::class, ReceptionRecordingTransactions::class, ReceptionAnalysisTransactions::class, ReceptionQueryService::class, ReceptionService::class, ReceptionOperationsService::class, ReceptionPipelineTransactionsTest.TimeConfig::class)
+@ActiveProfiles("test")
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
+@Transactional(propagation = Propagation.NOT_SUPPORTED)
+class ReceptionPipelineTransactionsTest @Autowired constructor(
+    private val recordingTransactions: ReceptionRecordingTransactions,
+    private val analysisTransactions: ReceptionAnalysisTransactions,
+    private val receptions: ReceptionRepository,
+    private val recordings: ReceptionRecordingRepository,
+    private val analyses: ReceptionAnalysisRepository,
+    private val transcripts: ReceptionTranscriptRepository,
+    private val events: ReceptionAnalysisEventRepository,
+    private val clock: PipelineClock,
+    private val transactionManager: PlatformTransactionManager,
+    private val dataSource: DataSource,
+    private val query: ReceptionQueryService,
+    private val service: ReceptionService,
+    private val operations: ReceptionOperations,
+) {
+    @BeforeAll
+    fun createRequestTransactionMarker() {
+        // 의뢰 모듈 테이블 대신 동일 DB 트랜잭션의 삽입·롤백만 검증하는 테스트 전용 표식이다.
+        JdbcTemplate(dataSource).execute("CREATE TABLE $SCHEMA.test_requests (request_id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, reception_id BIGINT NOT NULL UNIQUE)")
+    }
+
+    @BeforeEach
+    fun resetClock() {
+        clock.current = NOW
+        clock.reads.clear()
+        clock.barrier = null
+    }
+
+    @Test
+    fun `확정 이후 방문 구간이 지나도 의뢰 등록은 같은 스냅샷으로 허용한다`() {
+        // given
+        val id = confirmedReception()
+        val before = operations.confirmedSnapshot(1, id, 2)
+        clock.current = NOW.plusSeconds(7200)
+
+        // when
+        val registered = TransactionTemplate(transactionManager).execute {
+            operations.registerRequest(1, id, 2, insertRequestMarker(id))
+        }
+
+        // then
+        assertThat(registered).isEqualTo(before)
+        val stored = receptions.findById(id).orElseThrow()
+        assertThat(stored.version).isEqualTo(3)
+        assertThat(stored.requestId).isNotNull()
+        assertThat(stored.confirmedAt).isEqualTo(before.confirmedAt)
+        val rejected = assertThrows<BusinessException> { service.reopen(1, id, 3) }
+        assertThat(rejected.errorCode).isSameAs(ReceptionErrorCode.RECEPTION_ALREADY_REGISTERED)
+    }
+
+    @Test
+    fun `의뢰 트랜잭션 실패는 의뢰 삽입과 접수 등록 연결을 함께 롤백한다`() {
+        // given
+        val id = confirmedReception()
+
+        // when
+        assertThrows<IllegalStateException> {
+            TransactionTemplate(transactionManager).executeWithoutResult {
+                operations.registerRequest(1, id, 2, insertRequestMarker(id))
+                error("Simulated failure after request linkage.")
+            }
+        }
+
+        // then
+        assertThat(requestMarkerCount(id)).isZero()
+        assertThat(receptions.findById(id).orElseThrow().requestId).isNull()
+        assertThat(receptions.findById(id).orElseThrow().version).isEqualTo(2)
+        assertThrows<IllegalTransactionStateException> { operations.registerRequest(1, id, 2, 999) }
+    }
+
+    @Test
+    fun `확정 취소와 의뢰 등록이 같은 확정을 읽어도 둘 중 하나만 커밋한다`() {
+        // given
+        val id = confirmedReception()
+        clock.barrier = CountDownLatch(2)
+        val executor = Executors.newFixedThreadPool(2)
+
+        // when
+        val results = try {
+            listOf("register", "reopen").map { action ->
+                action to executor.submit<Boolean> {
+                    try {
+                        if (action == "register") {
+                            TransactionTemplate(transactionManager).executeWithoutResult {
+                                operations.registerRequest(1, id, 2, insertRequestMarker(id))
+                            }
+                        } else {
+                            service.reopen(1, id, 2)
+                        }
+                        true
+                    } catch (exception: BusinessException) {
+                        assertThat(exception.errorCode).isSameAs(GlobalErrorCode.VERSION_CONFLICT)
+                        false
+                    }
+                }
+            }.map { (action, future) -> action to future.get(10, TimeUnit.SECONDS) }
+        } finally {
+            clock.barrier = null
+            executor.shutdownNow()
+        }
+
+        // then
+        assertThat(results.count { it.second }).isEqualTo(1)
+        val stored = receptions.findById(id).orElseThrow()
+        assertThat(stored.version).isEqualTo(3)
+        if (results.single { it.second }.first == "register") {
+            assertThat(stored.requestId).isNotNull()
+            assertThat(stored.reviewStatus).isEqualTo(ReceptionReviewStatus.CONFIRMED)
+            assertThat(requestMarkerCount(id)).isEqualTo(1)
+        } else {
+            assertThat(stored.requestId).isNull()
+            assertThat(stored.reviewStatus).isEqualTo(ReceptionReviewStatus.DRAFT)
+            assertThat(requestMarkerCount(id)).isZero()
+        }
+    }
+
+    private fun confirmedReception(): Long {
+        val id = com.allcheck.reception.domain.vo.ReceptionExternalId.RECEPTION.parse(service.create(1, ReceptionCreationData()).receptionId)
+        service.confirm(
+            1,
+            id,
+            1,
+            ReceptionConfirmationData(
+                WorkType.BOILER,
+                "보일러 누수",
+                "서울시 강남구 예시로 10",
+                java.time.OffsetDateTime.parse("2026-11-17T14:00:00+09:00"),
+                java.time.OffsetDateTime.parse("2026-11-17T16:00:00+09:00"),
+                "010-1234-5678",
+                "방문 전 연락",
+            ),
+        )
+        return id
+    }
+
+    private fun insertRequestMarker(receptionId: Long): Long = checkNotNull(
+        JdbcTemplate(dataSource).queryForObject(
+            "INSERT INTO $SCHEMA.test_requests (reception_id) VALUES (?) RETURNING request_id",
+            Long::class.java,
+            receptionId,
+        ),
+    )
+
+    private fun requestMarkerCount(receptionId: Long): Long = checkNotNull(
+        JdbcTemplate(dataSource).queryForObject(
+            "SELECT count(*) FROM $SCHEMA.test_requests WHERE reception_id = ?",
+            Long::class.java,
+            receptionId,
+        ),
+    )
+
+    @Test
+    fun `수동 생성과 상세는 빈 편집 객체와 동일한 수신 시각을 유지하고 다른 소유자에게 공개하지 않는다`() {
+        // given
+        clock.current = NOW.plusNanos(123_456_789)
+
+        // when
+        val created = service.create(1, ReceptionCreationData("010-1234-5678"))
+        val receptionId = com.allcheck.reception.domain.vo.ReceptionExternalId.RECEPTION.parse(created.receptionId)
+        val loaded = query.detail(1, receptionId)
+
+        // then
+        assertThat(loaded).isEqualTo(created)
+        assertThat(loaded.finalData.workType).isNull()
+        assertThat(loaded.transcript).isNull()
+        assertThat(loaded.reviewEditable).isTrue()
+        assertThat(loaded.callerPhoneMasked).isEqualTo("***-****-5678")
+        val exception = assertThrows<BusinessException> { query.detail(2, receptionId) }
+        assertThat(exception.errorCode).isSameAs(ReceptionErrorCode.RECEPTION_NOT_FOUND)
+    }
+
+    @Test
+    fun `목록과 페이지 합계는 소유자 검토 상태를 먼저 제한하고 수신 시각 및 ID 역순으로 정렬한다`() {
+        // given
+        val first = service.create(101, ReceptionCreationData())
+        val second = service.create(101, ReceptionCreationData())
+        service.create(102, ReceptionCreationData())
+
+        // when
+        val page = query.list(101, ReceptionReviewStatus.DRAFT, 1, 1)
+
+        // then
+        assertThat(page.page.totalElements).isEqualTo(2)
+        assertThat(page.items.map { it.receptionId }).containsExactly(second.receptionId)
+        assertThat(query.list(101, ReceptionReviewStatus.DRAFT, 2, 1).items.map { it.receptionId }).containsExactly(first.receptionId)
+        assertThat(query.list(102, ReceptionReviewStatus.DRAFT, 1, 100).items).hasSize(1)
+    }
+
+    @Test
+    fun `분석 종료 전에는 읽기 전용이고 성공 후에는 DB 원문 AI 원본 편집값을 함께 조회한다`() {
+        // given
+        val accepted = accepted()
+        assertThat(query.detail(1, accepted.receptionId).reviewEditable).isFalse()
+        readyResult(accepted)
+        assertThat(query.detail(1, accepted.receptionId).reviewEditable).isFalse()
+
+        // when
+        analysisTransactions.apply(accepted.analysisId, WORKER, TRACE)
+        val detail = query.detail(1, accepted.receptionId)
+        val attempt = query.analysis(1, accepted.receptionId, accepted.analysisId)
+
+        // then
+        assertThat(detail.reviewEditable).isTrue()
+        assertThat(detail.transcript).isEqualTo(ORIGINAL)
+        assertThat(detail.aiOriginal?.notes).isEqualTo("방문 전 연락")
+        assertThat(detail.finalData.notes).isEqualTo("방문 전 연락")
+        assertThat(attempt.status).isEqualTo(ReceptionAnalysisStatus.SUCCEEDED)
+        assertThat(attempt.aiOriginal).isEqualTo(detail.aiOriginal)
+        assertThat(attempt.missingFields).isEmpty()
+    }
+
+    @Test
+    fun `첫 완료와 재통보의 기준 시각은 PostgreSQL 마이크로초 정밀도에서도 동일하다`() {
+        // given
+        clock.current = NOW.plusNanos(987_654_321)
+        val accepted = accepted()
+
+        // when
+        val replay = recordingTransactions.complete(1, accepted.receptionId, accepted.recordingId, 2, metadata())
+
+        // then
+        assertThat(replay).isEqualTo(accepted)
+    }
+
+    @Test
+    fun `업로드부터 최초 결과와 발행 의도까지 저장하고 중복 완료는 같은 접수를 재현한다`() {
+        // given
+        val accepted = accepted()
+
+        // when
+        readyResult(accepted)
+        assertThat(analysisTransactions.apply(accepted.analysisId, WORKER, TRACE)).isEqualTo(ReceptionAnalysisTransition.ADVANCED)
+        val replay = recordingTransactions.complete(1, accepted.receptionId, accepted.recordingId, 2, metadata())
+        val reception = receptions.findById(accepted.receptionId).orElseThrow()
+
+        // then
+        assertThat(replay).isEqualTo(accepted)
+        assertThat(reception.version).isEqualTo(4)
+        assertThat(reception.aiOriginal?.notes).isEqualTo("방문 전 연락")
+        assertThat(reception.finalData.notes).isEqualTo("방문 전 연락")
+        assertThat(reception.finalData.contactPhone).isNull()
+        assertThat(transcripts.findById(checkNotNull(reception.transcriptFileId)).orElseThrow().transcript).isEqualTo(ORIGINAL)
+        assertThat(analyses.findById(accepted.analysisId).orElseThrow().status).isEqualTo(ReceptionAnalysisStatus.SUCCEEDED)
+        assertThat(events.findByAnalysisRequestId(accepted.analysisId)?.eventType).isEqualTo("RECEPTION_ANALYSIS_SUCCEEDED")
+        assertThat(analysisTransactions.apply(accepted.analysisId, WORKER, TRACE)).isEqualTo(ReceptionAnalysisTransition.IGNORED)
+        assertThat(analysisTransactions.claim(accepted.analysisId, "another-worker", Duration.ofMinutes(1))).isNull()
+    }
+
+    @Test
+    fun `객체 검증 불일치는 파일 완료와 접수 버전 및 분석 접수를 모두 남기지 않는다`() {
+        // given
+        val receptionId = newReception()
+        val handle = recordingTransactions.reserve(1, receptionId, 1, metadata(), "test-bucket")
+
+        // when
+        val exception = assertThrows<BusinessException> {
+            recordingTransactions.complete(1, receptionId, handle.recordingId, 2, RecordingUploadMetadata("call", "audio/wav", 99, ByteArray(32)))
+        }
+
+        // then
+        assertThat(exception.errorCode).isSameAs(GlobalErrorCode.FILE_UPLOAD_NOT_VERIFIED)
+        assertThat(recordings.findById(handle.recordingId).orElseThrow().recordingReceivedAt).isNull()
+        assertThat(receptions.findById(receptionId).orElseThrow().version).isEqualTo(2)
+        assertThat(analyses.findByRecordingFileIdAndIsInitialTrue(handle.recordingId)).isNull()
+    }
+
+    @Test
+    fun `다른 관리자는 업로드 자료나 완료 접수에 접근하지 못한다`() {
+        // given
+        val accepted = accepted()
+
+        // when & then
+        val exception = assertThrows<BusinessException> { recordingTransactions.recording(2, accepted.receptionId, accepted.recordingId) }
+        assertThat(exception.errorCode).isSameAs(ReceptionErrorCode.RECEPTION_NOT_FOUND)
+        val completion = assertThrows<BusinessException> {
+            recordingTransactions.complete(2, accepted.receptionId, accepted.recordingId, 2, metadata())
+        }
+        assertThat(completion.errorCode).isSameAs(ReceptionErrorCode.RECEPTION_NOT_FOUND)
+    }
+
+    @Test
+    fun `빈 전사는 원문을 생성하지 않고 실패와 발행 의도를 함께 저장한다`() {
+        // given
+        val accepted = accepted()
+        analysisTransactions.claim(accepted.analysisId, WORKER, Duration.ofMinutes(1))
+
+        // when
+        val result = analysisTransactions.transcribed(accepted.analysisId, WORKER, " \r\n", TRACE)
+
+        // then
+        assertThat(result).isEqualTo(ReceptionAnalysisTransition.FAILED)
+        assertThat(analyses.findById(accepted.analysisId).orElseThrow().errorCode).isEqualTo("STT_NO_CONTENT")
+        assertThat(transcripts.findByProducedByAnalysisRequestId(accepted.analysisId)).isNull()
+        assertThat(events.findByAnalysisRequestId(accepted.analysisId)?.eventType).isEqualTo("RECEPTION_ANALYSIS_FAILED")
+    }
+
+    @Test
+    fun `보관 전에 만료되면 원문 INSERT 없이 실패를 저장한다`() {
+        // given
+        val accepted = awaitingStorage()
+        clock.current = NOW.plusSeconds(10)
+
+        // when
+        val result = analysisTransactions.storeTranscript(accepted.analysisId, WORKER, ORIGINAL, TRACE)
+
+        // then
+        assertThat(result).isEqualTo(ReceptionAnalysisTransition.FAILED)
+        assertThat(transcripts.findByProducedByAnalysisRequestId(accepted.analysisId)).isNull()
+        assertThat(events.findByAnalysisRequestId(accepted.analysisId)).isNotNull()
+    }
+
+    @Test
+    fun `INSERT 중 만료되면 원문과 종료를 롤백한 뒤 별도 실패 기록만 저장한다`() {
+        // given
+        val accepted = awaitingStorage()
+        clock.current = NOW.plusSeconds(10)
+        clock.reads.add(NOW)
+        clock.reads.add(NOW.plusSeconds(10))
+
+        // when
+        assertThrows<TranscriptAcceptanceLost> { analysisTransactions.storeTranscript(accepted.analysisId, WORKER, ORIGINAL, TRACE) }
+
+        // then
+        assertThat(transcripts.findByProducedByAnalysisRequestId(accepted.analysisId)).isNull()
+        assertThat(analyses.findById(accepted.analysisId).orElseThrow().status).isEqualTo(ReceptionAnalysisStatus.PROCESSING)
+        assertThat(events.findByAnalysisRequestId(accepted.analysisId)).isNull()
+        assertThat(analysisTransactions.expire(accepted.analysisId, TRACE)).isTrue()
+        assertThat(analyses.findById(accepted.analysisId).orElseThrow().transcriptStorageStatus).isEqualTo(ReceptionProcessingStatus.FAILED)
+        assertThat(events.findByAnalysisRequestId(accepted.analysisId)).isNotNull()
+    }
+
+    @Test
+    fun `다른 작업자의 보관 호출은 원문이나 알림 행을 만들지 않는다`() {
+        // given
+        val accepted = awaitingStorage()
+
+        // when
+        val result = analysisTransactions.storeTranscript(accepted.analysisId, "other-worker", ORIGINAL, TRACE)
+
+        // then
+        assertThat(result).isEqualTo(ReceptionAnalysisTransition.IGNORED)
+        assertThat(transcripts.findByProducedByAnalysisRequestId(accepted.analysisId)).isNull()
+        assertThat(events.findByAnalysisRequestId(accepted.analysisId)).isNull()
+    }
+
+    @Test
+    fun `결과 반영 후 실패하면 자동 채움 분석 성공 발행 의도를 전부 롤백한다`() {
+        // given
+        val accepted = accepted()
+        readyResult(accepted)
+
+        // when
+        assertThrows<IllegalStateException> {
+            TransactionTemplate(transactionManager).executeWithoutResult {
+                analysisTransactions.apply(accepted.analysisId, WORKER, TRACE)
+                error("Simulated failure after result and event writes.")
+            }
+        }
+
+        // then
+        assertThat(receptions.findById(accepted.receptionId).orElseThrow().aiOriginal).isNull()
+        assertThat(analyses.findById(accepted.analysisId).orElseThrow().status).isEqualTo(ReceptionAnalysisStatus.PROCESSING)
+        assertThat(events.findByAnalysisRequestId(accepted.analysisId)).isNull()
+        assertThat(analysisTransactions.apply(accepted.analysisId, WORKER, TRACE)).isEqualTo(ReceptionAnalysisTransition.ADVANCED)
+    }
+
+    @AfterAll
+    fun removeOwnedSchema() {
+        JdbcTemplate(dataSource).execute("DROP SCHEMA IF EXISTS $SCHEMA CASCADE")
+    }
+
+    private fun newReception() = checkNotNull(receptions.saveAndFlush(Reception(1, NOW)).receptionId)
+
+    private fun metadata() = RecordingUploadMetadata("call.wav", "audio/wav", 1024, ByteArray(32) { 1 })
+
+    private fun accepted(): RecordingAcceptance {
+        val receptionId = newReception()
+        val reservation = recordingTransactions.reserve(1, receptionId, 1, metadata(), "test-bucket")
+        return recordingTransactions.complete(1, receptionId, reservation.recordingId, reservation.receptionVersion, metadata())
+    }
+
+    private fun awaitingStorage(): RecordingAcceptance {
+        val accepted = accepted()
+        analysisTransactions.claim(accepted.analysisId, WORKER, Duration.ofSeconds(10))
+        analysisTransactions.transcribed(accepted.analysisId, WORKER, ORIGINAL, TRACE)
+        return accepted
+    }
+
+    private fun readyResult(accepted: RecordingAcceptance) {
+        checkNotNull(analysisTransactions.claim(accepted.analysisId, WORKER, Duration.ofMinutes(1)))
+        analysisTransactions.transcribed(accepted.analysisId, WORKER, ORIGINAL, TRACE)
+        analysisTransactions.storeTranscript(accepted.analysisId, WORKER, ORIGINAL, TRACE)
+        analysisTransactions.startStructuring(accepted.analysisId, WORKER, TRACE)
+        analysisTransactions.structured(accepted.analysisId, WORKER, ReceptionStructuredResult(ReceptionAiOriginal(workType = WorkType.BLOCKAGE, notes = "방문 전 연락"), emptyList()), TRACE)
+    }
+
+    @TestConfiguration(proxyBeanMethods = false)
+    class TimeConfig {
+        @Bean
+        fun clock() = PipelineClock()
+    }
+
+    class PipelineClock : Clock() {
+        var current: Instant = NOW
+        val reads = ConcurrentLinkedQueue<Instant>()
+
+        @Volatile
+        var barrier: CountDownLatch? = null
+
+        override fun instant(): Instant {
+            barrier?.let {
+                it.countDown()
+                check(it.await(5, TimeUnit.SECONDS))
+            }
+            return reads.poll() ?: current
+        }
+        override fun getZone(): ZoneId = ZoneOffset.UTC
+        override fun withZone(zone: ZoneId): Clock = fixed(current, zone)
+    }
+
+    companion object {
+        private val NOW = Instant.parse("2026-11-17T06:00:00Z")
+        private const val WORKER = "test-worker"
+        private const val TRACE = "test-trace"
+        private const val ORIGINAL = "  고객: 물이 안 내려가요.\r\n방문 전 연락 주세요. 😀  "
+        private val SCHEMA = "pipeline_test_" + UUID.randomUUID().toString().replace("-", "")
+
+        @JvmStatic
+        @DynamicPropertySource
+        fun database(registry: DynamicPropertyRegistry) {
+            val url = System.getenv("TEST_DATABASE_URL") ?: "jdbc:postgresql://localhost:15432/allcheck"
+            registry.add("spring.datasource.url") { url + (if ('?' in url) "&" else "?") + "currentSchema=$SCHEMA" }
+            registry.add("spring.datasource.username") { System.getenv("TEST_DATABASE_USERNAME") ?: "allcheck" }
+            registry.add("spring.datasource.password") { System.getenv("TEST_DATABASE_PASSWORD") ?: "allcheck_local_6" }
+            registry.add("spring.flyway.schemas") { SCHEMA }
+            registry.add("spring.flyway.default-schema") { SCHEMA }
+            registry.add("spring.jpa.properties.hibernate.default_schema") { SCHEMA }
+        }
+    }
+}
