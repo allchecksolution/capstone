@@ -52,7 +52,7 @@ class ReceptionService(
             receptionId = ReceptionExternalId.RECEPTION.format(checkNotNull(reception.receptionId)),
             reviewStatus = reception.reviewStatus,
             version = reception.version,
-            confirmedAt = checkNotNull(reception.confirmedAt).truncatedTo(ChronoUnit.MICROS),
+            confirmedAt = checkNotNull(reception.confirmedAt),
             finalData = ReceptionFieldsResponse.from(reception.finalData),
         )
     }
@@ -68,7 +68,7 @@ class ReceptionService(
             receptionId = ReceptionExternalId.RECEPTION.format(checkNotNull(reception.receptionId)),
             reviewStatus = reception.reviewStatus,
             version = reception.version,
-            updatedAt = reception.updatedAt.truncatedTo(ChronoUnit.MICROS),
+            updatedAt = reception.updatedAt,
             confirmedAt = reception.confirmedAt,
             finalData = ReceptionFieldsResponse.from(reception.finalData),
         )

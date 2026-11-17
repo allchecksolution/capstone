@@ -76,6 +76,23 @@ class ReceptionServiceTest @Autowired constructor(
     private val dataSource: DataSource,
     private val clock: ControlledClock,
 ) {
+    @Test
+    fun `확정과 취소 응답 시각은 DB 재조회와 같고 방문 종료 검사는 원래 서버 정밀도로 수행한다`() {
+        // given
+        val receptionId = manualReception()
+        clock.currentTime = NOW.plusNanos(123_456_789)
+
+        // when
+        val confirmed = service.confirm(ADMIN, receptionId, 1, reviewedData())
+
+        // then
+        assertThat(confirmed.confirmedAt).isEqualTo(storedReception(receptionId).confirmedAt)
+        clock.currentTime = NOW.plusNanos(987_654_321)
+        val reopened = service.reopen(ADMIN, receptionId, 2)
+        assertThat(reopened.updatedAt).isEqualTo(storedReception(receptionId).updatedAt)
+        val equalToNow = reviewedData().copy(desiredVisitFrom = clock.currentTime.minusSeconds(3600).atOffset(ZoneOffset.UTC), desiredVisitTo = clock.currentTime.atOffset(ZoneOffset.UTC))
+        assertRejected(receptionId, GlobalErrorCode.INVALID_INPUT_VALUE) { service.confirm(ADMIN, receptionId, 3, equalToNow) }
+    }
     private val transaction by lazy { TransactionTemplate(transactionManager) }
 
     @BeforeEach
@@ -389,7 +406,7 @@ class ReceptionServiceTest @Autowired constructor(
         },
     )
 
-    /** 업로드 접수와 원문 루트 연결은 아직 별도 구현 전이므로 저장된 문맥만 Reflection으로 준비한다. */
+    /** 검토 서비스의 상태별 검증을 격리하기 위한 저장 문맥. 전체 처리 흐름은 실행 통합 테스트에서 확인한다. */
     private fun aiReception(status: ReceptionAnalysisStatus): Long = checkNotNull(
         transaction.execute {
             val reception = receptionRepository.saveAndFlush(Reception(ADMIN, NOW.minusSeconds(100)))

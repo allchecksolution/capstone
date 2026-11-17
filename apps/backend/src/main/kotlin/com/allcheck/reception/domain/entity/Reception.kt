@@ -25,6 +25,7 @@ import org.hibernate.annotations.JdbcTypeCode
 import org.hibernate.type.SqlTypes
 import java.time.Instant
 import java.time.OffsetDateTime
+import java.time.temporal.ChronoUnit
 
 /** 접수의 소유자·검토 상태·현재 자료 연결·최신 편집값을 소유한다. */
 @Entity
@@ -220,8 +221,9 @@ class Reception(
 
         finalData = reviewedData
         reviewStatus = ReceptionReviewStatus.CONFIRMED
-        confirmedAt = now
-        updatedAt = now
+        // 방문 종료 검사는 위에서 원래 서버 시각으로 수행하며, 저장 시각만 PostgreSQL 정밀도에 맞춘다.
+        confirmedAt = now.truncatedTo(ChronoUnit.MICROS)
+        updatedAt = checkNotNull(confirmedAt)
         version = nextVersion
     }
 
@@ -241,7 +243,7 @@ class Reception(
 
         reviewStatus = ReceptionReviewStatus.DRAFT
         confirmedAt = null
-        updatedAt = now
+        updatedAt = now.truncatedTo(ChronoUnit.MICROS)
         version = nextVersion
     }
 
