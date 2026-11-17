@@ -42,6 +42,12 @@ jwt:
   access-token-expiration: ${JWT_ACCESS_TOKEN_EXPIRATION}
 
 reception:
+  storage:
+    enabled: ${RECEPTION_STORAGE_ENABLED:false}
+  ai:
+    enabled: ${RECEPTION_AI_ENABLED:false}
+  worker:
+    enabled: ${RECEPTION_WORKER_ENABLED:false}
   recording:
     upload-url-ttl: ${RECEPTION_RECORDING_UPLOAD_URL_TTL:15m}
     playback-url-ttl: ${RECEPTION_RECORDING_PLAYBACK_URL_TTL:10m}

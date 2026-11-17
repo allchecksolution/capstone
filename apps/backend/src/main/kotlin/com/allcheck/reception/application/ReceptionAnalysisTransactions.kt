@@ -34,6 +34,20 @@ class ReceptionAnalysisTransactions(
             .map { checkNotNull(it.analysisRequestId) }
     }
 
+    fun overdue(limit: Int): List<Long> {
+        require(limit > 0)
+        return analyses.findAllByStatusAndLeaseExpiresAtLessThanEqualOrderByLeaseExpiresAtAscAnalysisRequestIdAsc(ReceptionAnalysisStatus.PROCESSING, clock.instant(), PageRequest.of(0, limit))
+            .map { checkNotNull(it.analysisRequestId) }
+    }
+
+    fun storedTranscript(task: AnalysisTask): StoredAnalysisTranscript {
+        val analysis = analysis(task.analysisId)
+        check(analysis.receptionId == task.receptionId && analysis.recordingFileId == task.recordingId)
+        val original = transcripts.findById(checkNotNull(analysis.transcriptFileId)).orElseThrow()
+        check(original.receptionId == task.receptionId && original.recordingFileId == task.recordingId && original.producedByAnalysisRequestId == task.analysisId)
+        return StoredAnalysisTranscript(checkNotNull(original.transcriptFileId), original.transcript)
+    }
+
     @Transactional
     fun claim(analysisId: Long, workerId: String, budget: Duration): AnalysisTask? {
         require(!budget.isNegative && !budget.isZero)
@@ -169,3 +183,5 @@ data class AnalysisTask(val analysisId: Long, val receptionId: Long, val recordi
 
 /** INSERT까지 수행한 원문을 반드시 롤백한 뒤, 바깥에서 만료/종료 상태를 다시 기록하도록 전달한다. */
 class TranscriptAcceptanceLost(val transition: ReceptionAnalysisTransition) : RuntimeException("Transcript attachment was not accepted.")
+
+class StoredAnalysisTranscript(val transcriptId: Long, val text: String)

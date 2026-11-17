@@ -4,8 +4,10 @@ import com.allcheck.reception.domain.entity.ReceptionAnalysis
 import com.allcheck.reception.domain.vo.ReceptionAnalysisStatus
 import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
+import java.time.Instant
 
 interface ReceptionAnalysisRepository : JpaRepository<ReceptionAnalysis, Long> {
+    fun findAllByStatusAndLeaseExpiresAtLessThanEqualOrderByLeaseExpiresAtAscAnalysisRequestIdAsc(status: ReceptionAnalysisStatus, deadline: Instant, pageable: Pageable): List<ReceptionAnalysis>
     fun findByAnalysisRequestIdAndReceptionId(analysisRequestId: Long, receptionId: Long): ReceptionAnalysis?
 
     fun findByRecordingFileIdAndIsInitialTrue(recordingFileId: Long): ReceptionAnalysis?

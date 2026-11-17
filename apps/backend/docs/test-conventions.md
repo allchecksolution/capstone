@@ -125,3 +125,22 @@ and review flows against PostgreSQL with a test-only administrator identity adap
 Full application and security tests also use owned UUID-named schemas. The `test` profile does not enable local
 Swagger automatically; tests that verify the documentation endpoints enable it explicitly. Run all backend
 coverage with `./gradlew ktlintCheck test`; it must not migrate or clear the local application's public schema.
+
+`RecordingStorageClientTest` signs real SDK requests offline and checks conditional PUT headers, distinct URL
+lifetimes, HEAD checksums, error translation, and disabled-storage behavior. `ReceptionApiIntegrationTest` also
+verifies failed object verification leaves no analysis, successful and concurrent completion converge on one
+acceptance, later replays skip S3, and playback access enforces ownership without exposing object keys.
+
+`AiClientTest` uses a loopback HTTP server to verify internal authentication, exact STT preservation, timestamp
+offsets, correlation, strict JSON types/unknown/null/duplicate fields, synchronous status, disabled redirects,
+HTTP timeout, and no application-level retries. Its keys and AWS signing credentials are test-only fixtures.
+`ReceptionAnalysisExecutionTest` runs real PostgreSQL transactions and loopback AI calls through the entire
+orchestrator. It covers successful auto-fill/publication intent, blank STT, transcript-insert rollback and separate
+failure commit, structure failure preserving originals, late responses, and interrupted PROCESSING expiry without
+another AI call. These tests do not contact an actual AI provider, AWS, or FCM or select production runtime settings.
+
+WAV and filename-contact coverage verifies identical versus ambiguous phone tokens, WAV MIME aliases and
+container headers, false-extension rejection, source contact persistence, AI auto-fill alongside a source phone,
+manual correction precedence, and preservation after failed analysis. Recording HTTP tests verify actual fresh
+signing on every same-key/renewal request, exactly one reservation, no signed URL in command receipts, and
+refusal to issue another upload grant after completion. All filenames/phone numbers in fixtures are synthetic.
