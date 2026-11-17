@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
 import java.time.Clock
 import java.time.Duration
+import java.time.temporal.ChronoUnit
 import java.util.Date
 import javax.crypto.SecretKey
 
@@ -16,41 +17,56 @@ class JwtTokenProvider(
     private val secretKey: SecretKey,
     @Value("\${jwt.access-token-expiration}") private val accessTokenExpiration: Duration,
     private val clock: Clock = Clock.systemUTC(),
+    @Value("\${jwt.issuer:allcheck}") private val issuer: String = "allcheck",
+    @Value("\${jwt.audience:allcheck-api}") private val audience: String = "allcheck-api",
 ) {
     init {
         require(accessTokenExpiration >= Duration.ofSeconds(1)) { "JWT access token expiration must be at least 1 second." }
+        require(issuer.isNotBlank()) { "JWT issuer must not be blank." }
+        require(audience.isNotBlank()) { "JWT audience must not be blank." }
     }
+
+    val lifetimeSeconds: Long
+        get() = accessTokenExpiration.seconds
 
     private val parser = Jwts.parser()
         .verifyWith(secretKey)
         .sig().clear().add(Jwts.SIG.HS256).and()
+        .requireIssuer(issuer)
+        .requireAudience(audience)
+        .require("token_use", "access")
         .clock { Date.from(clock.instant()) }
         .build()
 
-    /* TODO: 인증 도메인 확정 후 Access Token 생성 파라미터를
-        사용자 식별자(userId), 사용자 유형(userType), 권한(roles) 기준으로 재설계하고,
-        각 값을 JWT Claims에 어떻게 반영할지 결정한다.
-     */
-    fun createAccessToken(subject: String): String {
-        require(subject.isNotBlank()) { "JWT subject must not be blank." }
-        val issuedAt = clock.instant()
+    fun createAccessToken(accountId: String, sessionId: String): String {
+        require(accountId.isNotBlank()) { "JWT account ID must not be blank." }
+        require(sessionId.isNotBlank()) { "JWT session ID must not be blank." }
+        val issuedAt = clock.instant().truncatedTo(ChronoUnit.SECONDS)
         return Jwts.builder()
-            .subject(subject)
+            .subject(accountId)
+            .claim("sid", sessionId)
+            .issuer(issuer)
+            .audience().add(audience).and()
+            .claim("token_use", "access")
             .issuedAt(Date.from(issuedAt))
-            .expiration(Date.from(issuedAt.plus(accessTokenExpiration)))
+            .expiration(Date.from(issuedAt.plusSeconds(lifetimeSeconds)))
             .signWith(secretKey, Jwts.SIG.HS256)
             .compact()
     }
 
-    /** 서명·알고리즘·만료를 검증한 Claims를 반환하며 실패 시 JJWT 예외를 전파한다. */
+    /** 서명·용도·발급자·대상·필수 식별자와 만료를 검증하며 실패 시 JJWT 예외를 전파한다. */
     fun parseClaims(token: String): Claims {
         val claims = parser.parseSignedClaims(token).payload
-        if (claims.expiration == null) {
-            throw MalformedJwtException("JWT expiration is required.")
+        val expiration = claims.expiration
+        val issuedAt = claims.issuedAt
+        if (expiration == null ||
+            issuedAt == null ||
+            !expiration.after(issuedAt) ||
+            claims.subject.isNullOrBlank() ||
+            claims.get("sid", String::class.java).isNullOrBlank()
+        ) {
+            throw MalformedJwtException("Access token claims are incomplete or invalid.")
         }
         return claims
     }
-
-    // TODO: issuer, audience, 토큰 용도 등 추가 Claims 및 검증 정책을 확정한다.
-    // TODO: Resource Server 채택 시 JwtEncoder/JwtDecoder 기반 통합을 검토한다.
 }

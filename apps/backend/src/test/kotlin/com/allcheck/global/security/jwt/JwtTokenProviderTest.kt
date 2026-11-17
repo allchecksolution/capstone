@@ -32,13 +32,17 @@ class JwtTokenProviderTest {
         val subject = "test-subject"
 
         // when
-        val token = provider.createAccessToken(subject)
+        val token = provider.createAccessToken(subject, "test-session")
         val claims = provider.parseClaims(token)
 
         // then
         assertThat(token.split('.')).hasSize(3)
-        assertThat(claims.keys).containsExactlyInAnyOrder("sub", "iat", "exp")
+        assertThat(claims.keys).containsExactlyInAnyOrder("sub", "sid", "iss", "aud", "token_use", "iat", "exp")
         assertThat(claims.subject).isEqualTo(subject)
+        assertThat(claims.get("sid", String::class.java)).isEqualTo("test-session")
+        assertThat(claims.issuer).isEqualTo("allcheck")
+        assertThat(claims.audience).containsExactly("allcheck-api")
+        assertThat(claims["token_use"]).isEqualTo("access")
         assertThat(claims.issuedAt).isEqualTo(Date.from(issuedAt))
         assertThat(claims.expiration).isEqualTo(Date.from(issuedAt.plus(expiration)))
     }
@@ -46,7 +50,7 @@ class JwtTokenProviderTest {
     @Test
     fun `만료 시간이 지난 토큰은 검증에 실패한다`() {
         // given
-        val token = provider.createAccessToken("test-subject")
+        val token = provider.createAccessToken("test-subject", "test-session")
         val expiredClock = Clock.fixed(issuedAt.plus(expiration).plusSeconds(1), ZoneOffset.UTC)
         val expiredProvider = JwtTokenProvider(secretKey, expiration, expiredClock)
 
@@ -58,7 +62,7 @@ class JwtTokenProviderTest {
     @Test
     fun `Payload를 변조한 토큰은 서명 검증에 실패한다`() {
         // given
-        val parts = provider.createAccessToken("test-subject").split('.')
+        val parts = provider.createAccessToken("test-subject", "test-session").split('.')
         val payload = String(Base64.getUrlDecoder().decode(parts[1]), Charsets.UTF_8)
             .replace("test-subject", "other-subject")
         val tamperedPayload = Base64.getUrlEncoder().withoutPadding().encodeToString(payload.toByteArray(Charsets.UTF_8))
@@ -73,7 +77,7 @@ class JwtTokenProviderTest {
     fun `다른 키로 서명한 토큰은 검증에 실패한다`() {
         // given
         val otherKey = SecretKeySpec(ByteArray(32) { (it + 1).toByte() }, "HmacSHA256")
-        val token = JwtTokenProvider(otherKey, expiration, clock).createAccessToken("test-subject")
+        val token = JwtTokenProvider(otherKey, expiration, clock).createAccessToken("test-subject", "test-session")
 
         // when & then
         assertThatThrownBy { provider.parseClaims(token) }
@@ -113,7 +117,15 @@ class JwtTokenProviderTest {
     @Test
     fun `만료 시간이 없는 토큰은 허용하지 않는다`() {
         // given
-        val token = Jwts.builder().subject("test-subject").signWith(secretKey, Jwts.SIG.HS256).compact()
+        val token = Jwts.builder()
+            .subject("test-subject")
+            .issuer("allcheck")
+            .audience().add("allcheck-api").and()
+            .claim("sid", "test-session")
+            .claim("token_use", "access")
+            .issuedAt(Date.from(issuedAt))
+            .signWith(secretKey, Jwts.SIG.HS256)
+            .compact()
 
         // when & then
         assertThatThrownBy { provider.parseClaims(token) }
@@ -126,6 +138,37 @@ class JwtTokenProviderTest {
         // when & then
         assertThatThrownBy { provider.parseClaims(token) }
             .isInstanceOf(JwtException::class.java)
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ["sub", "sid", "iss", "aud", "iat", "exp", "token_use"])
+    fun `필수 인증 Claims가 누락된 서명 토큰도 거부한다`(field: String) {
+        // given
+        val claims = HashMap<String, Any>(provider.parseClaims(provider.createAccessToken("account", "session")))
+        claims.remove(field)
+        val token = Jwts.builder().claims(claims).signWith(secretKey, Jwts.SIG.HS256).compact()
+
+        // when & then
+        assertThatThrownBy { provider.parseClaims(token) }.isInstanceOf(JwtException::class.java)
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ["iss", "aud", "token_use"])
+    fun `다른 발급자 대상 또는 용도의 토큰은 거부한다`(field: String) {
+        // given
+        val claims = HashMap<String, Any>(provider.parseClaims(provider.createAccessToken("account", "session")))
+        claims[field] = if (field == "aud") listOf("other-service") else "other-service"
+        val token = Jwts.builder().claims(claims).signWith(secretKey, Jwts.SIG.HS256).compact()
+
+        // when & then
+        assertThatThrownBy { provider.parseClaims(token) }.isInstanceOf(JwtException::class.java)
+    }
+
+    @Test
+    fun `빈 계정 또는 세션 식별자로 토큰을 만들 수 없다`() {
+        // when & then
+        assertThatThrownBy { provider.createAccessToken("", "session") }.isInstanceOf(IllegalArgumentException::class.java)
+        assertThatThrownBy { provider.createAccessToken("account", "") }.isInstanceOf(IllegalArgumentException::class.java)
     }
 
     @ParameterizedTest

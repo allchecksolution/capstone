@@ -80,6 +80,8 @@ The following is the initial design of the key Aggregates.
 
 `AuthSession` is stored in `identity_auth_sessions` with an account-ID foreign key, a unique SHA-256 Refresh Token digest, and an account-ID index. Both aggregates use optimistic versions. A stale session update must not overwrite a committed rotation or revocation; application services translate conflicts according to the refresh API contract. Neither aggregate stores a raw Refresh Token or a Kakao token. Authentication state and session state must be coordinated by application-service transactions; disabling an Account object alone does not persist session revocations.
 
+Kakao login verifies the provider token outside database transactions. Account resolution and session issuance then commit together. An `INSERT ... ON CONFLICT (social_provider, social_user_id) DO NOTHING` prevents duplicate authentication accounts without aborting the transaction on a concurrent first login. Lock and read the resolved Account before checking its current enabled state and creating a session; the conflict path never updates or reactivates an existing Account. JWT issuance failure rolls back both the new Account and session. Each successful login creates its own session without creating a Driver registration application.
+
 ## Project Integration and Migration Policies
 
 | Area | Project policy |

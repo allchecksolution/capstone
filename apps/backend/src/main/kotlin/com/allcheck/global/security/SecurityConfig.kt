@@ -45,6 +45,8 @@ class SecurityConfig(
                 authorize(HttpMethod.GET, "/v3/api-docs", permitAll)
                 authorize(HttpMethod.GET, "/v3/api-docs/**", permitAll)
 
+                authorize(HttpMethod.POST, "/api/v1/auth/sessions/kakao", permitAll)
+
                 // 기본 인증 요구
                 authorize("/api/v1/receptions", hasRole("ADMIN"))
                 authorize("/api/v1/receptions/**", hasRole("ADMIN"))

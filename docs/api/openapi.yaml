@@ -1771,14 +1771,14 @@ paths:
                 code: KAKAO_AUTH_FAILED
                 message: 카카오 로그인에 실패했습니다.
         "403":
-          description: 탈퇴한 계정이다(UC-08 E6).
+          description: 인증 계정이 비활성 상태다. 탈퇴한 계정도 포함한다(UC-08 E6).
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/IdentityError"
               example:
-                code: ACCOUNT_WITHDRAWN
-                message: 탈퇴한 계정으로는 로그인할 수 없습니다.
+                code: ACCOUNT_DISABLED
+                message: 비활성화된 계정입니다.
         "429":
           description: 로그인·갱신 요청이 제한되었다. 임계값과 운영 적용 방식은 별도 확정한다.
           content:
@@ -5906,6 +5906,7 @@ components:
           type: string
           minLength: 1
           maxLength: 4000
+          pattern: "^[!-~]+$"
           description: 앱이 카카오 SDK로 받은 액세스 토큰. 서버가 카카오에 검증한다.
     # ---------- 기사 가입·프로필 ----------
     SettlementAccount:

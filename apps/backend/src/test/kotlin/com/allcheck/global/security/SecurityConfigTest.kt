@@ -103,7 +103,7 @@ class SecurityConfigTest {
     @Test
     fun `유효한 JWT를 전달해도 요청 인증이 연결되기 전에는 401을 반환한다`() {
         // given
-        val token = jwtTokenProvider.createAccessToken("test-subject")
+        val token = jwtTokenProvider.createAccessToken("test-subject", "test-session")
 
         // when
         val result = mockMvc.perform(

@@ -39,7 +39,9 @@ management:
 
 jwt:
   secret: ${JWT_SECRET:}
-  access-token-expiration: ${JWT_ACCESS_TOKEN_EXPIRATION}
+  access-token-expiration: ${JWT_ACCESS_TOKEN_EXPIRATION:PT15M}
+  issuer: ${JWT_ISSUER:allcheck}
+  audience: ${JWT_AUDIENCE:allcheck-api}
 
 storage:
   s3:
@@ -70,6 +72,8 @@ reception:
     ai-download-url-ttl: ${RECEPTION_RECORDING_AI_DOWNLOAD_URL_TTL:10m}
 
 identity:
+  sessions:
+    expiration: ${IDENTITY_SESSION_EXPIRATION:PT336H}
   kakao:
     app-id: ${KAKAO_APP_ID:}
     connect-timeout: ${KAKAO_CONNECT_TIMEOUT:PT2S}

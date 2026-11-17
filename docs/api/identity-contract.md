@@ -146,7 +146,7 @@ Access Token 기본 15분, 세션 절대 수명 기본 14일, 여러 기기 로�
 1. **완료:** 이 계약의 API 형식·기사 상태 조회 분리와 세션 정책을 확정했다.
 2. **완료:** Account·외부 로그인 연결·AuthSession 모델, Repository, V2 Flyway 마이그레이션을 구현했다.
 3. **완료:** 카카오 검증 클라이언트와 정상·만료·타 앱·장애·설정 검증 테스트를 구현했다.
-4. 카카오 로그인과 토큰 발급을 구현하고 중복 계정 생성 경쟁을 검증한다.
+4. **완료:** 카카오 로그인 API·계정 조회/생성·세션 저장·서비스 토큰 발급을 구현하고 동시 로그인과 롤백을 검증했다.
 5. JWT 요청 인증과 `/auth/accounts/me`를 연결해 실제 앱 인증을 확인한다.
 6. 갱신·로그아웃·동시 갱신·폐기 세션 차단을 검증한다.
 7. driver 가입·승인·반려·탈퇴 및 업무 권한을 연결한다.
@@ -213,3 +213,32 @@ $env:IDENTITY_TEST_DATABASE_URL = 'jdbc:postgresql://localhost:15432/allcheck_id
 ```
 
 2026-11-17 검증 결과: 카카오 클라이언트·설정 테스트 55개가 통과했다. Java 21과 분리된 임시 PostgreSQL 18에서 `ktlintCheck test`를 실행해 기존 테스트를 포함한 전체 147개가 통과했으며 실패·오류·건너뜀은 없었다. 실제 카카오 SDK 토큰을 이용한 연결 검증은 로그인 API를 연결하는 4단계 이후에 수행한다.
+
+## 카카오 로그인 API와 서비스 토큰 발급
+
+`POST /api/v1/auth/sessions/kakao`를 구현했다. 기존 서비스 Access Token 없이 호출하며 요청은 `kakaoAccessToken`만 받는다. 공백·제어 문자·길이 초과 토큰과 미정의 필드는 400으로 거부한다. 클라이언트가 지정한 계정 ID·유형·역할은 받지 않는다.
+
+`KakaoLoginService`가 트랜잭션 밖에서 카카오를 검증하고, 별도 `KakaoSessionService`가 계정 조회/최초 생성·세션 저장·토큰 발급을 하나의 트랜잭션으로 처리한다. 동시 최초 로그인은 PostgreSQL의 유니크 제약과 `ON CONFLICT DO NOTHING`으로 처리한다. JWT 발급이 실패하면 새 계정·세션도 롤백한다. 비활성 계정은 `ACCOUNT_DISABLED`/403이며 기존 카카오 연결을 새 계정으로 바꾸지 않는다.
+
+응답은 확정한 최상위 TokenPair다. `Cache-Control: no-store`, `Pragma: no-cache`를 적용한다. Refresh Token은 256비트 난수를 Base64URL로 인코딩하며 DB에는 SHA-256 hex 해시만 저장한다. 기사 가입·승인 상태와 전체 workflow state는 응답에 포함하지 않는다.
+
+JWT는 HS256을 사용하고 `sub`(내부 계정 ID), `sid`(세션 ID), `iss`, `aud`, `iat`, `exp`, `token_use=access`를 발급·검증한다. 사용자 유형과 관리자 권한은 과거 JWT 값 대신 서버 저장 상태에서 확인하는 기존 정책을 유지한다.
+
+| 환경 변수 | 의미 | 기본값 |
+|---|---|---|
+| `JWT_ACCESS_TOKEN_EXPIRATION` | Access Token 수명 | `PT15M` |
+| `JWT_ISSUER` | 서비스 JWT 발급자 | `allcheck` |
+| `JWT_AUDIENCE` | JWT를 검증·수신하는 API 대상 | `allcheck-api` |
+| `IDENTITY_SESSION_EXPIRATION` | 최초 로그인부터 세션 절대 수명 | `PT336H` |
+
+기존 `JWT_SECRET`은 계속 필수다. 실제 카카오 연결에는 `KAKAO_APP_ID`도 설정한다. 발급자·대상은 여러 서버 인스턴스에서 같은 값으로 구성한다.
+
+분리된 PostgreSQL 테스트 DB에서 다음 명령으로 로그인 응답·자격 증명 오류·동시 신규/기존 로그인·토큰 발급 실패 시 롤백·트랜잭션 밖의 카카오 호출·생성 OpenAPI를 검증한다.
+
+```powershell
+.\gradlew.bat ktlintCheck test --tests 'com.allcheck.identity.application.KakaoLoginIntegrationTest' --tests 'com.allcheck.global.security.jwt.JwtTokenProviderTest' --tests 'com.allcheck.identity.infrastructure.token.RefreshTokenProviderTest'
+```
+
+2026-11-17 검증 결과: Java 21·분리된 PostgreSQL 18에서 전체 `ktlintCheck test` **181개 통과, 실패·오류·건너뜀 0**. 카카오 자체 검증만 테스트 대역으로 바꾸고 실제 계정·세션 저장과 HTTP/Spring Security 경로를 검증했다. 실제 카카오 SDK 토큰을 이용한 연결 및 PostgreSQL 17 검증은 아직 수행하지 않았다.
+
+현재는 카카오 로그인 POST 경로만 공개했다. JWT를 HTTP 요청의 인증 주체로 연결하는 필터와 `GET /auth/accounts/me`는 5단계, Refresh/Logout API는 6단계다. 프론트 어댑터의 새 인증 계약 연결과 driver 가입 상태 조회도 후속 단계에서 구현한다.
