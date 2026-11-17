@@ -8,6 +8,7 @@ import com.allcheck.reception.domain.vo.ReceptionAiOriginal
 import com.allcheck.reception.domain.vo.ReceptionExternalId
 import com.allcheck.reception.domain.vo.ReceptionStructuredResult
 import com.allcheck.reception.domain.vo.WorkType
+import com.allcheck.reception.infrastructure.storage.RecordingStorageClientTest
 import com.allcheck.support.PostgresTestSchema
 import org.assertj.core.api.Assertions.assertThat
 import org.hamcrest.Matchers.hasSize
@@ -22,6 +23,7 @@ import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
 import org.springframework.context.annotation.Primary
 import org.springframework.http.MediaType
+import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
 import org.springframework.security.core.authority.AuthorityUtils
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication
@@ -37,15 +39,25 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
+import software.amazon.awssdk.services.s3.S3Client
+import software.amazon.awssdk.services.s3.model.HeadObjectResponse
+import software.amazon.awssdk.services.s3.model.S3Exception
+import software.amazon.awssdk.services.s3.presigner.S3Presigner
 import tools.jackson.databind.ObjectMapper
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneOffset
+import java.util.Base64
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import javax.sql.DataSource
 
-@SpringBootTest(properties = ["springdoc.api-docs.enabled=true", "spring.jpa.show-sql=false"])
+@SpringBootTest(properties = ["springdoc.api-docs.enabled=true", "spring.jpa.show-sql=false", "reception.storage.bucket=test-bucket"])
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @TestPropertySource("classpath:jwt-test.properties")
@@ -58,7 +70,171 @@ class ReceptionApiIntegrationTest @Autowired constructor(
     private val recording: ReceptionRecordingTransactions,
     private val analysis: ReceptionAnalysisTransactions,
     private val dataSource: DataSource,
+    private val storageFixture: StorageFixture,
 ) {
+    @Test
+    fun `WAV 원본 파일명으로 연락처를 채우며 업로드 재요청은 예약만 재사용하고 URL을 매번 서명한다`() {
+        // given
+        val id = create(includeCaller = false)
+        val numeric = ReceptionExternalId.RECEPTION.parse(id)
+        val filename = "rec_테스트업체_01012345678_01012345678@261117_103802.wav"
+        val base = "/api/v1/receptions/$id/recordings"
+        val uploadKey = key()
+        val body = mapper.writeValueAsString(
+            mapOf(
+                "expectedVersion" to 1,
+                "originalFilename" to filename,
+                "contentType" to "audio/wav",
+                "sizeBytes" to 1024,
+                "checksum" to mapOf("algorithm" to "SHA256", "value" to Base64.getEncoder().encodeToString(RecordingStorageClientTest.DIGEST)),
+            ),
+        )
+        fun upload(payload: String = body) = mvc.perform(post("$base/upload-requests").with(admin(1)).header("Idempotency-Key", uploadKey).contentType(MediaType.APPLICATION_JSON).content(payload))
+        val before = storageFixture.signatures.get()
+
+        // when
+        val first = upload().andExpect(status().isCreated).andExpect(header().string("Cache-Control", "no-store"))
+            .andExpect(header().string("Idempotency-Replayed", "false"))
+            .andExpect(jsonPath("$.requiredHeaders['Content-Type']").value("audio/wav"))
+            .andExpect(jsonPath("$.requiredHeaders['Content-Length']").value("1024"))
+            .andExpect(jsonPath("$.requiredHeaders['If-None-Match']").value("*"))
+            .andExpect(jsonPath("$.uploadUrl").isString()).andReturn().response.contentAsString
+        val file = mapper.readTree(first).get("recordingFileId").asString()
+        upload().andExpect(status().isCreated).andExpect(header().string("Idempotency-Replayed", "true"))
+            .andExpect(jsonPath("$.recordingFileId").value(file)).andExpect(jsonPath("$.version").value(2))
+        val renewalKey = key()
+        repeat(2) { mvc.perform(post("$base/$file/upload-requests").with(admin(1)).header("Idempotency-Key", renewalKey)).andExpect(status().isCreated) }
+
+        // then: 동일 초에 서명이 같아질 수 있으므로 URL 문자열 대신 실제 서명 실행과 DB 미보관을 검사한다.
+        assertThat(storageFixture.signatures.get()).isGreaterThanOrEqualTo(before + 4)
+        val jdbc = JdbcTemplate(dataSource)
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM reception_recordings WHERE reception_id=?", Long::class.java, numeric)).isEqualTo(1)
+        assertThat(jdbc.queryForObject("SELECT original_filename FROM reception_recordings WHERE reception_id=?", String::class.java, numeric)).isEqualTo(filename)
+        assertThat(jdbc.queryForList("SELECT response_body::text FROM reception_command_receipts WHERE scope_reception_id=?", String::class.java, numeric))
+            .allSatisfy { assertThat(it).doesNotContain("uploadUrl", "X-Amz", "requiredHeaders") }
+        mvc.perform(get("/api/v1/receptions/$id").with(admin(1))).andExpect(status().isOk)
+            .andExpect(jsonPath("$.finalData.contactPhone").value("01012345678"))
+            .andExpect(jsonPath("$.callerPhoneMasked").value("*******5678"))
+            .andExpect(jsonPath("$.reviewEditable").value(false)).andExpect(jsonPath("$.referenceTime").isEmpty())
+        upload(body.replace("1024", "2048")).andExpect(status().isConflict).andExpect(jsonPath("$.code").value("IDEMPOTENCY_KEY_REUSED"))
+        val source = recording.recording(1, numeric, ReceptionExternalId.RECORDING.parse(file))
+        storageFixture.objects[source.objectKey] = HeadObjectResponse.builder().contentType("audio/wav").contentLength(1024)
+            .checksumSHA256(Base64.getEncoder().encodeToString(RecordingStorageClientTest.DIGEST)).build()
+        mvc.perform(post("$base/$file/completion").with(admin(1)).header("Idempotency-Key", key()).contentType(MediaType.APPLICATION_JSON).content("{\"expectedVersion\":2}"))
+            .andExpect(status().isAccepted)
+        upload().andExpect(status().isConflict).andExpect(jsonPath("$.code").value("FILE_ALREADY_UPLOADED"))
+        mvc.perform(post("$base/$file/upload-requests").with(admin(1)).header("Idempotency-Key", renewalKey))
+            .andExpect(status().isConflict).andExpect(jsonPath("$.code").value("FILE_ALREADY_UPLOADED"))
+    }
+
+    @Test
+    fun `WAV가 아닌 요청과 다른 소유자의 업로드는 예약을 만들지 않는다`() {
+        // given
+        val id = create()
+        val body = mapper.writeValueAsString(
+            mapOf(
+                "expectedVersion" to 1,
+                "originalFilename" to "call.mp3",
+                "contentType" to "audio/mpeg",
+                "sizeBytes" to 1024,
+                "checksum" to mapOf("algorithm" to "SHA256", "value" to Base64.getEncoder().encodeToString(RecordingStorageClientTest.DIGEST)),
+            ),
+        )
+
+        // when & then
+        mvc.perform(post("/api/v1/receptions/$id/recordings/upload-requests").with(admin(1)).header("Idempotency-Key", key()).contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isUnsupportedMediaType).andExpect(jsonPath("$.code").value("RECORDING_FORMAT_NOT_SUPPORTED"))
+        mvc.perform(post("/api/v1/receptions/$id/recordings/upload-requests").with(admin(2)).header("Idempotency-Key", key()).contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isNotFound)
+        mvc.perform(get("/api/v1/receptions/$id").with(admin(1))).andExpect(jsonPath("$.version").value(1)).andExpect(jsonPath("$.recordingFileId").isEmpty())
+    }
+
+    @Test
+    fun `서로 다른 키의 동시 업로드 완료도 하나의 최초 분석과 기준 시각으로 수렴한다`() {
+        // given
+        val id = create()
+        val numeric = ReceptionExternalId.RECEPTION.parse(id)
+        val metadata = RecordingUploadMetadata("call.wav", "audio/wav", 1024, RecordingStorageClientTest.DIGEST)
+        val reserved = recording.reserve(1, numeric, 1, metadata, "test-bucket")
+        storageFixture.objects[reserved.objectKey] = HeadObjectResponse.builder().contentType("audio/wav").contentLength(1024)
+            .checksumSHA256(Base64.getEncoder().encodeToString(metadata.checksum)).build()
+        storageFixture.barriers[reserved.objectKey] = CountDownLatch(2)
+        val executor = Executors.newFixedThreadPool(2)
+
+        // when
+        val responses = try {
+            List(2) {
+                executor.submit<String> {
+                    mvc.perform(
+                        post("/api/v1/receptions/$id/recordings/${ReceptionExternalId.RECORDING.format(reserved.recordingId)}/completion")
+                            .with(admin(1)).header("Idempotency-Key", key()).contentType(MediaType.APPLICATION_JSON).content("{\"expectedVersion\":2}"),
+                    )
+                        .andExpect(status().isAccepted).andReturn().response.contentAsString
+                }
+            }.map { it.get(15, TimeUnit.SECONDS) }
+        } finally {
+            storageFixture.barriers.remove(reserved.objectKey)
+            executor.shutdownNow()
+        }
+
+        // then
+        assertThat(mapper.readTree(responses[0])).isEqualTo(mapper.readTree(responses[1]))
+        val accepted = recording.accepted(1, numeric, reserved.recordingId)
+        assertThat(accepted).isNotNull()
+        mvc.perform(get("/api/v1/receptions/$id").with(admin(1))).andExpect(status().isOk)
+            .andExpect(jsonPath("$.version").value(3))
+            .andExpect(jsonPath("$.latestAnalysisRequestId").value(ReceptionExternalId.ANALYSIS.format(checkNotNull(accepted).analysisId)))
+    }
+
+    @Test
+    fun `업로드 완료는 실제 객체를 검증하고 중복 완료는 S3 재조회 없이 최초 분석 접수를 반환한다`() {
+        // given
+        val id = create()
+        val numeric = ReceptionExternalId.RECEPTION.parse(id)
+        val metadata = RecordingUploadMetadata("call.wav", "audio/wav", 1024, RecordingStorageClientTest.DIGEST)
+        val reserved = recording.reserve(1, numeric, 1, metadata, "test-bucket")
+        val fileId = ReceptionExternalId.RECORDING.format(reserved.recordingId)
+        val base = "/api/v1/receptions/$id/recordings/$fileId"
+        val completionKey = key()
+        fun complete(key: String, version: Int = 2) = mvc.perform(
+            post("$base/completion").with(admin(1)).header("Idempotency-Key", key)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"expectedVersion\":$version}"),
+        )
+
+        // when & then: pending 원본은 재생할 수 없고 S3 검증 실패는 분석을 생성하지 않는다.
+        mvc.perform(get("$base/access").with(admin(1))).andExpect(status().isConflict).andExpect(jsonPath("$.code").value("FILE_NOT_READY"))
+        complete(completionKey).andExpect(status().isBadRequest).andExpect(jsonPath("$.code").value("FILE_UPLOAD_NOT_VERIFIED"))
+        mvc.perform(get("/api/v1/receptions/$id").with(admin(1))).andExpect(jsonPath("$.version").value(2))
+            .andExpect(jsonPath("$.latestAnalysisRequestId").isEmpty())
+        storageFixture.objects[reserved.objectKey] = HeadObjectResponse.builder().contentType("audio/wav").contentLength(1024)
+            .checksumSHA256(Base64.getEncoder().encodeToString(metadata.checksum)).build()
+        val first = complete(completionKey).andExpect(status().isAccepted)
+            .andExpect(header().string("Idempotency-Replayed", "false"))
+            .andExpect(header().string("Cache-Control", "no-store"))
+            .andExpect(jsonPath("$.analysis.receptionVersion").value(3)).andExpect(jsonPath("$.analysis.status").value("PENDING"))
+            .andReturn().response.contentAsString
+        val reads = storageFixture.reads.get()
+        storageFixture.objects.remove(reserved.objectKey) // 이후 S3가 접근 불가능해도 최초 접수는 취소되거나 중복 실행되지 않는다.
+        val replay = complete(completionKey).andExpect(status().isAccepted).andExpect(header().string("Idempotency-Replayed", "true"))
+            .andReturn().response.contentAsString
+        assertThat(mapper.readTree(replay)).isEqualTo(mapper.readTree(first))
+        complete(completionKey, 999).andExpect(status().isConflict).andExpect(jsonPath("$.code").value("IDEMPOTENCY_KEY_REUSED"))
+        val repeated = complete(key(), 999).andExpect(status().isAccepted).andReturn().response.contentAsString
+        assertThat(mapper.readTree(repeated)).isEqualTo(mapper.readTree(first))
+        assertThat(storageFixture.reads.get()).isEqualTo(reads)
+        mvc.perform(get("$base/access").with(admin(1))).andExpect(status().isOk)
+            .andExpect(header().string("Cache-Control", "no-store"))
+            .andExpect(jsonPath("$.fileId").value(fileId)).andExpect(jsonPath("$.method").value("GET"))
+            .andExpect(jsonPath("$.url").isString()).andExpect(jsonPath("$.expiresAt").isString())
+            .andExpect(jsonPath("$.objectKey").doesNotExist())
+        mvc.perform(get("$base/access").with(admin(2))).andExpect(status().isNotFound)
+        mvc.perform(
+            post("$base/completion").with(admin(2)).header("Idempotency-Key", completionKey)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"expectedVersion\":2}"),
+        )
+            .andExpect(status().isNotFound).andExpect(jsonPath("$.code").value("RECEPTION_NOT_FOUND"))
+    }
+
     @Test
     fun `미인증은 401 기사 권한은 입력 검증 전 403이며 관리자 식별자를 본문에서 받지 않는다`() {
         // when & then
@@ -78,7 +254,7 @@ class ReceptionApiIntegrationTest @Autowired constructor(
         // given
         val id = create()
         val numeric = ReceptionExternalId.RECEPTION.parse(id)
-        val meta = RecordingUploadMetadata("call.m4a", "audio/mp4", 1024, ByteArray(32) { 1 })
+        val meta = RecordingUploadMetadata("call.wav", "audio/wav", 1024, ByteArray(32) { 1 })
         val reserved = recording.reserve(1, numeric, 1, meta, "test-bucket")
         val accepted = recording.complete(1, numeric, reserved.recordingId, 2, meta)
         mvc.perform(get("/api/v1/receptions/$id").with(admin(1)))
@@ -180,10 +356,10 @@ class ReceptionApiIntegrationTest @Autowired constructor(
         database.remove(dataSource)
     }
 
-    private fun create(): String {
+    private fun create(includeCaller: Boolean = true): String {
         val response = mvc.perform(
             post("/api/v1/receptions").with(admin(1)).header("Idempotency-Key", key())
-                .contentType(MediaType.APPLICATION_JSON).content("{\"callerPhone\":\"010-1111-2222\"}"),
+                .contentType(MediaType.APPLICATION_JSON).content(if (includeCaller) "{\"callerPhone\":\"010-1111-2222\"}" else "{}"),
         )
             .andExpect(status().isCreated).andReturn().response
         return mapper.readTree(response.contentAsString).get("receptionId").asString()
@@ -211,11 +387,34 @@ class ReceptionApiIntegrationTest @Autowired constructor(
     @TestConfiguration(proxyBeanMethods = false)
     class IdentityFixture {
         @Bean
+        fun storageFixture() = StorageFixture()
+
+        @Bean
+        fun offlineS3(fixture: StorageFixture): S3Client = RecordingStorageClientTest.fakeS3 { request ->
+            fixture.reads.incrementAndGet()
+            fixture.barriers[request.key()]?.let {
+                it.countDown()
+                check(it.await(10, TimeUnit.SECONDS)) { "Concurrent recording verification did not arrive." }
+            }
+            fixture.objects[request.key()] ?: throw S3Exception.builder().statusCode(404).build()
+        }
+
+        @Bean(destroyMethod = "close")
+        fun offlineSigner(fixture: StorageFixture): S3Presigner = RecordingStorageClientTest.signer { fixture.signatures.incrementAndGet() }
+
+        @Bean
         fun administratorIdentity() = ReceptionAdministratorIdentity { authentication -> (authentication.principal as? TestAdmin)?.id }
 
         @Bean
         @Primary
         fun receptionApiClock(): Clock = Clock.fixed(Instant.parse("2026-11-17T06:00:00Z"), ZoneOffset.UTC)
+    }
+
+    class StorageFixture {
+        val objects = ConcurrentHashMap<String, HeadObjectResponse>()
+        val barriers = ConcurrentHashMap<String, CountDownLatch>()
+        val reads = AtomicInteger()
+        val signatures = AtomicInteger()
     }
 
     companion object {

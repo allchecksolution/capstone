@@ -9,7 +9,7 @@ info:
     관리자 앱과 기사 앱의 HTTP API 계약 초안이며 구현 완료를 의미하지 않는다. 업무 모델·상태·권한 조건은 저장소의
     `apps/backend/docs/business-specification.md`를 따르고, 경로와 입출력 계약은 이 문서에서 정의한다. 모든 변경 요청은 인증 주체+method+정규화 경로+Idempotency-Key 범위에서
     처리한다. 동일 키/본문 성공 재시도는 최초 응답 재현, 다른 본문은 409 IDEMPOTENCY_KEY_REUSED, 처리 중은 409 OPERATION_IN_PROGRESS. DB 업무
-    유일성 제약은 키 보존 기간과 무관하게 유지한다. 키 보존 기간은 미확정.
+    유일성 제약은 키 보존 기간과 무관하게 유지한다. 키 보존 기간은 미확정. 녹음 업로드 URL 발급·재발급은 예약만 재사용하고 URL은 요청마다 새로 발급하는 예외이며 URL을 DB에 저장하지 않는다.
     인증 API(로그인·MFA·토큰 갱신·로그아웃)와, 같은 값을 다시 보내도 결과가 같은 상태 설정 API(작업 가능 상태·위치·채팅 읽음·푸시 기기 등록/해제)는 Idempotency-Key를 받지 않는다.
     UC-01~16의 관리자 앱·기사 앱 흐름을 대상으로 한다. 세부 미확정 사항은 해당 계약 설명에 표시한다.
     녹음·STT·AI·분석 완료 푸시의 업무 정책은 BR-09, Backend→AI 계약은 apps/ai/docs/openapi.yaml을 따른다.
@@ -206,12 +206,6 @@ paths:
                   value:
                     code: VERSION_CONFLICT
                     message: 최신 버전과 상태를 다시 조회해 주세요.
-          headers:
-            Retry-After:
-              description: OPERATION_IN_PROGRESS일 때 재시도 대기 초. 그 외 충돌에는 생략.
-              schema:
-                type: integer
-                minimum: 1
         '400':
           description: 필수 정보 누락·빈 값 또는 방문 종료가 시작/서버 현재 시각 이후가 아닌 경우. 저장·확정 모두 수행하지 않는다.
           content:
@@ -2785,7 +2779,7 @@ paths:
       summary: 접수 녹음 원본 업로드 URL 발급
       description: DRAFT 접수에 녹음 1개를 예약하고 version을 증가시킨다. 동일 접수의 두 번째 파일은 409 RECORDING_ALREADY_EXISTS. 실패한 업로드는 같은
         recordingFileId·객체 키·메타데이터로 URL을 재발급해 재시도한다. 파일 바이너리는 S3에 직접 PUT하며 requiredHeaders를 그대로 사용한다. 파일명·MIME·크기·SHA256은
-        발급 후 변경할 수 없다. 업로드 URL 유효기간 기본값은 15분이며 서버 설정으로 변경할 수 있다. 허용 형식·최대 크기·길이는 TODO.
+        발급 후 변경할 수 없다. 업로드 URL 유효기간 기본값은 15분이며 서버 설정으로 변경할 수 있다. WAV만 허용하며 원본 파일명을 originalFilename으로 그대로 전송한다. 최대 크기·길이는 별도 미정이다. 파일명에서 동일하게 식별되는 번호는 검토 연락처에 자동 채운다.
       tags:
       - Files
       x-roles:
@@ -2804,8 +2798,8 @@ paths:
               $ref: '#/components/schemas/RecordingUploadRequest'
             example:
               expectedVersion: 1
-              originalFilename: consultation.m4a
-              contentType: audio/mp4
+              originalFilename: rec_테스트업체_01012345678_01012345678@261117_103802.wav
+              contentType: audio/wav
               sizeBytes: 1048576
               checksum:
                 algorithm: SHA256
@@ -2825,27 +2819,34 @@ paths:
                 method: PUT
                 uploadUrl: https://example-bucket.s3.ap-northeast-2.amazonaws.com/example?X-Amz-Signature=example
                 requiredHeaders:
-                  Content-Type: audio/mp4
+                  Content-Type: audio/wav
+                  Content-Length: "1048576"
                   If-None-Match: '*'
                   x-amz-checksum-sha256: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
                 expiresAt: '2026-11-13T14:15:00+09:00'
           headers:
             Idempotency-Replayed:
-              description: 최초 성공 응답 재현이면 true. 현재 상태는 조회 API로 확인한다.
+              description: 예약 명령을 재사용하면 true. URL은 매번 새로 발급하므로 동일 응답을 의미하지 않는다.
               schema:
                 type: boolean
         '400':
-          $ref: '#/components/responses/ValidationFailed'
+          $ref: '#/components/responses/ReceptionHttpValidationFailed'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ReceptionHttpUnauthorized'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/ReceptionHttpForbidden'
         '404':
-          $ref: '#/components/responses/NotFound'
+          $ref: '#/components/responses/ReceptionHttpNotFound'
         '409':
-          $ref: '#/components/responses/VersionConflict'
+          $ref: '#/components/responses/ReceptionHttpVersionConflict'
+        '415':
+          description: WAV 이외의 확장자 또는 MIME.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ReceptionHttpError'}
+              example: {code: RECORDING_FORMAT_NOT_SUPPORTED, message: WAV 녹음 파일만 업로드할 수 있습니다.}
         '503':
-          $ref: '#/components/responses/ServiceUnavailable'
+          $ref: '#/components/responses/ReceptionHttpServiceUnavailable'
   /receptions/{receptionId}/recordings/{recordingFileId}/completion:
     post:
       operationId: completeRecordingUpload
@@ -2908,24 +2909,24 @@ paths:
                 format: uri-reference
               example: /api/v1/receptions/rec_01/analyses/anl_01
         '400':
-          $ref: '#/components/responses/ValidationFailed'
+          $ref: '#/components/responses/ReceptionHttpValidationFailed'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ReceptionHttpUnauthorized'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/ReceptionHttpForbidden'
         '404':
-          $ref: '#/components/responses/NotFound'
+          $ref: '#/components/responses/ReceptionHttpNotFound'
         '409':
-          $ref: '#/components/responses/VersionConflict'
+          $ref: '#/components/responses/ReceptionHttpVersionConflict'
         '503':
-          $ref: '#/components/responses/ServiceUnavailable'
+          $ref: '#/components/responses/ReceptionHttpServiceUnavailable'
   /receptions/{receptionId}/recordings/{recordingFileId}/upload-requests:
     post:
       operationId: renewRecordingUploadRequest
       x-access-scope: RECEPTION_OWNER
       summary: 녹음 업로드 URL 재발급
       description: 원래 업로더의 현재 업무 권한과 PENDING 파일만 확인해 동일 객체 키·크기·MIME·체크섬의 새 URL을 발급한다. 파일·분석을 새로 만들지 않는다. 완료된 파일은
-        409 FILE_ALREADY_UPLOADED. 접수 버전은 증가하지 않는다. URL 유효기간 기본값은 15분이며 서버 설정으로 변경할 수 있다. 같은 멱등성 키는 만료된 URL도 최초 응답을 재현하므로 새 발급 요청에는 새 키를 사용한다.
+        409 FILE_ALREADY_UPLOADED. 접수 버전은 증가하지 않는다. URL 유효기간 기본값은 15분이며 서버 설정으로 변경할 수 있다. 같은 멱등성 키도 기존 예약만 재사용하고 매번 새 URL을 발급한다. URL은 DB에 보관하지 않는다. 완료된 파일에는 새 업로드 URL을 발급하지 않는다.
       tags:
       - Files
       x-roles:
@@ -2952,31 +2953,38 @@ paths:
                 method: PUT
                 uploadUrl: https://example-bucket.s3.ap-northeast-2.amazonaws.com/example?X-Amz-Signature=example
                 requiredHeaders:
-                  Content-Type: audio/mp4
+                  Content-Type: audio/wav
+                  Content-Length: "1048576"
                   If-None-Match: '*'
                   x-amz-checksum-sha256: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
                 expiresAt: '2026-11-13T14:15:00+09:00'
           headers:
             Idempotency-Replayed:
-              description: 최초 성공 응답 재현이면 true. 현재 상태는 조회 API로 확인한다.
+              description: 예약 명령을 재사용하면 true. URL은 매번 새로 발급하므로 동일 응답을 의미하지 않는다.
               schema:
                 type: boolean
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ReceptionHttpUnauthorized'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/ReceptionHttpForbidden'
         '404':
-          $ref: '#/components/responses/NotFound'
+          $ref: '#/components/responses/ReceptionHttpNotFound'
         '409':
-          $ref: '#/components/responses/VersionConflict'
+          $ref: '#/components/responses/ReceptionHttpVersionConflict'
+        '415':
+          description: WAV 이외의 확장자 또는 MIME.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ReceptionHttpError'}
+              example: {code: RECORDING_FORMAT_NOT_SUPPORTED, message: WAV 녹음 파일만 업로드할 수 있습니다.}
         '503':
-          $ref: '#/components/responses/ServiceUnavailable'
+          $ref: '#/components/responses/ReceptionHttpServiceUnavailable'
   /works/{workId}/photos/{photoFileId}/upload-requests:
     post:
       operationId: renewWorkPhotoUploadRequest
       summary: 작업 사진 업로드 URL 재발급
       description: 원래 업로더의 현재 업무 권한과 PENDING 파일만 확인해 동일 객체 키·크기·MIME·체크섬의 새 URL을 발급한다. 파일·분석을 새로 만들지 않는다. 완료된 파일은
-        409 FILE_ALREADY_UPLOADED. 같은 멱등성 키는 만료된 URL도 최초 응답을 재현하므로 새 발급 요청에는 새 키를 사용한다.
+        409 FILE_ALREADY_UPLOADED. 같은 멱등성 키도 기존 예약만 재사용하고 매번 새 URL을 발급한다. URL은 DB에 보관하지 않는다. 완료된 파일에는 새 업로드 URL을 발급하지 않는다.
       tags:
       - Files
       x-roles:
@@ -3058,25 +3066,24 @@ paths:
                 method: GET
                 url: https://example-bucket.s3.ap-northeast-2.amazonaws.com/example?X-Amz-Signature=example
                 expiresAt: '2026-11-13T14:15:00+09:00'
-                contentType: audio/mp4
+                contentType: audio/wav
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          $ref: '#/components/responses/ReceptionHttpUnauthorized'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/ReceptionHttpForbidden'
         '404':
-          $ref: '#/components/responses/NotFound'
+          $ref: '#/components/responses/ReceptionHttpNotFound'
         '503':
-          $ref: '#/components/responses/ServiceUnavailable'
+          $ref: '#/components/responses/ReceptionHttpServiceUnavailable'
         '409':
           description: 경로 접수의 녹음 업로드 검증·연결이 완료되지 않았다.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: '#/components/schemas/ReceptionHttpError'
               example:
                 code: FILE_NOT_READY
                 message: 아직 접근할 수 없는 파일입니다.
-                traceId: trace_example_01
   /receptions/{receptionId}/transcripts/{transcriptFileId}/access:
     get:
       operationId: getTranscriptAccess
@@ -6872,12 +6879,14 @@ components:
           type: string
           minLength: 1
           maxLength: 255
-          description: 표시용 원래 파일명. S3 객체 키는 Backend가 생성한다.
+          pattern: \.[wW][aA][vV]$
+          description: 확장자를 포함한 원본 제목을 그대로 전달한다. Backend가 동일 전화번호 두 토큰을 추출해 검토 연락처를 자동 채운다. 불명확한 번호는 직접 보완한다. S3 키는 별도로 생성한다.
         contentType:
           type: string
           minLength: 1
           maxLength: 100
-          description: 허용 MIME 목록은 TODO. 실제 파일 형식은 별도 검증한다.
+          enum: [audio/wav, audio/x-wav, audio/wave, audio/vnd.wave]
+          description: WAV MIME. 완료 시 실제 WAVE 헤더도 확인한다.
         sizeBytes:
           type: integer
           minimum: 1
@@ -6921,7 +6930,7 @@ components:
     RecordingUploadGrant:
       type: object
       additionalProperties: false
-      description: 서명된 requiredHeaders로 S3에 직접 PUT한다. S3 오류는 Backend Error JSON과 형식이 다르다. 응답 유실 후 재PUT이 412이면 완료 확인으로 기존 객체가 기대 파일인지 검증한다.
+      description: 같은 키에도 URL은 새로 발급하며 DB에 보관하지 않는다. 서명된 requiredHeaders로 S3에 직접 PUT한다. S3 오류는 Backend Error JSON과 형식이 다르다. 응답 유실 후 재PUT이 412이면 완료 확인으로 기존 객체가 기대 파일인지 검증한다.
       required:
       - recordingFileId
       - receptionId
@@ -6952,12 +6961,16 @@ components:
           description: 단기 Presigned PUT URL. 재인코딩·로그 기록·영구 저장 금지.
         requiredHeaders:
           type: object
-          additionalProperties: false
+          additionalProperties: {type: string}
           required:
           - Content-Type
+          - Content-Length
           - If-None-Match
           - x-amz-checksum-sha256
           properties:
+            Content-Length:
+              type: string
+              pattern: ^[1-9][0-9]*$
             Content-Type:
               type: string
               minLength: 1

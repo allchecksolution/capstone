@@ -47,7 +47,7 @@ import javax.sql.DataSource
 @DataJpaTest(properties = ["spring.jpa.hibernate.ddl-auto=validate", "spring.jpa.show-sql=false"])
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @ImportAutoConfiguration(FlywayAutoConfiguration::class)
-@Import(HibernateConfig::class, ReceptionService::class, ReceptionQueryService::class, ReceptionCommandService::class, ReceptionCommandServiceTest.TimeConfig::class)
+@Import(HibernateConfig::class, ReceptionService::class, ReceptionQueryService::class, ReceptionCommandService::class, ReceptionRecordingTransactions::class, ReceptionCommandServiceTest.TimeConfig::class)
 @ActiveProfiles("test")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)

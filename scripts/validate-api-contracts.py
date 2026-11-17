@@ -328,9 +328,13 @@ for base in [recording_base, photo_base]:
     operation = backend["paths"][base + "/upload-requests"]["post"]
     record(base + " JSON metadata only", set(operation["requestBody"]["content"]) == {"application/json"})
 
-upload = dict(expectedVersion=1, originalFilename="call.m4a", contentType="audio/mp4",
+upload = dict(expectedVersion=1, originalFilename="call.wav", contentType="audio/wav",
               sizeBytes=1048576, checksum=checksum)
 case(backend, "RecordingUploadRequest", upload)
+case(backend, "RecordingUploadRequest", dict(upload, originalFilename="call.mp3"), False)
+case(backend, "RecordingUploadRequest", dict(upload, contentType="audio/mpeg"), False)
+for mime in ["audio/wav", "audio/x-wav", "audio/wave", "audio/vnd.wave"]:
+    case(backend, "RecordingUploadRequest", dict(upload, contentType=mime))
 case(backend, "RecordingUploadRequest", dict(upload, objectKey="attacker-selected-key"), False)
 case(backend, "RecordingUploadRequest", dict(upload, file="binary"), False)
 case(backend, "RecordingUploadRequest", dict(upload, sizeBytes=-1), False)
@@ -340,7 +344,7 @@ case(backend, "WorkPhotoUploadRequest", dict(
     phase="UNKNOWN", **{key: value for key, value in upload.items() if key != "expectedVersion"}), False)
 grant = backend["paths"][recording_base + "/upload-requests"]["post"]["responses"]["201"]["content"]["application/json"]["example"]
 case(backend, "RecordingUploadGrant", grant)
-for header in ["Content-Type", "If-None-Match", "x-amz-checksum-sha256"]:
+for header in ["Content-Type", "Content-Length", "If-None-Match", "x-amz-checksum-sha256"]:
     missing = deepcopy(grant)
     del missing["requiredHeaders"][header]
     case(backend, "RecordingUploadGrant", missing, False, "upload grant requires " + header)
@@ -437,6 +441,12 @@ record("recording originals remain administrator-only",
        backend["paths"][recording + "/access"]["get"]["x-roles"] == ["ADMIN"])
 record("transcript remains administrator-only",
        backend["paths"]["/receptions/{receptionId}/transcripts/{transcriptFileId}/access"]["get"]["x-roles"] == ["ADMIN"])
+
+
+case(backend, "ReceptionHttpError", {"code": "INVALID_INPUT_VALUE", "message": "입력 오류", "details": [{"field": "expectedVersion", "reason": "양수여야 합니다."}]})
+case(backend, "ReceptionHttpError", {"code": "INVALID_INPUT_VALUE", "message": "입력 오류", "fieldErrors": []}, False)
+case(backend, "ReceptionDetail", dict(detail, reviewEditable=True))
+case(backend, "ReceptionDetail", dict(detail, reviewEditable="true"), False)
 
 print(json.dumps({
     "checks_passed": len(checks),

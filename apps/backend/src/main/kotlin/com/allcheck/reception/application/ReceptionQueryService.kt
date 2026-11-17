@@ -46,7 +46,7 @@ class ReceptionQueryService(
         return ReceptionDetailResponse(
             receptionId = ReceptionExternalId.RECEPTION.format(receptionId),
             receivedAt = reception.receivedAt,
-            callerPhoneMasked = mask(reception.callerPhone),
+            callerPhoneMasked = mask(reception.callerPhone ?: reception.recordingContactPhone),
             reviewStatus = reception.reviewStatus,
             recordingStatus = material.recordingStatus,
             sttStatus = material.sttStatus,
@@ -61,7 +61,7 @@ class ReceptionQueryService(
             timeZone = SEOUL.id,
             transcript = material.transcript?.transcript,
             aiOriginal = reception.aiOriginal?.let(ReceptionAiOriginalResponse::from),
-            finalData = ReceptionEditableResponse.from(reception.finalData),
+            finalData = ReceptionEditableResponse.from(reception.editableData),
             confirmedAt = reception.confirmedAt,
             requestId = reception.requestId?.let(ReceptionExternalId.REQUEST::format),
             reviewEditable = reception.reviewStatus == ReceptionReviewStatus.DRAFT &&
@@ -86,7 +86,7 @@ class ReceptionQueryService(
             ReceptionSummaryResponse(
                 ReceptionExternalId.RECEPTION.format(id),
                 reception.receivedAt,
-                mask(reception.callerPhone),
+                mask(reception.callerPhone ?: reception.recordingContactPhone),
                 reception.reviewStatus,
                 material.recordingStatus,
                 material.sttStatus,

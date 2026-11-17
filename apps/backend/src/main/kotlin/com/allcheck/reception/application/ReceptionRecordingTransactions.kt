@@ -4,6 +4,7 @@ import com.allcheck.global.exception.BusinessException
 import com.allcheck.global.exception.GlobalErrorCode
 import com.allcheck.reception.domain.entity.ReceptionAnalysis
 import com.allcheck.reception.domain.entity.ReceptionRecording
+import com.allcheck.reception.domain.vo.WavRecording
 import com.allcheck.reception.exception.ReceptionErrorCode
 import com.allcheck.reception.infrastructure.repository.ReceptionAnalysisRepository
 import com.allcheck.reception.infrastructure.repository.ReceptionRecordingRepository
@@ -23,16 +24,27 @@ class ReceptionRecordingTransactions(
     private val analyses: ReceptionAnalysisRepository,
     private val clock: Clock,
 ) {
+    fun ensureOwner(adminId: Long, receptionId: Long) {
+        owned(adminId, receptionId)
+    }
+
+    fun pendingForUpload(adminId: Long, receptionId: Long, recordingId: Long): RecordingHandle {
+        val source = recording(adminId, receptionId, recordingId)
+        if (source.status != com.allcheck.reception.domain.vo.RecordingUploadStatus.PENDING) throw BusinessException(GlobalErrorCode.FILE_ALREADY_UPLOADED)
+        return source
+    }
+
     @Transactional
     fun reserve(adminId: Long, receptionId: Long, expectedVersion: Int, metadata: RecordingUploadMetadata, bucket: String): RecordingHandle {
         val reception = owned(adminId, receptionId)
         if (reception.version != expectedVersion) throw BusinessException(GlobalErrorCode.VERSION_CONFLICT)
         if (reception.recordingFileId != null) throw BusinessException(ReceptionErrorCode.RECORDING_ALREADY_EXISTS)
+        WavRecording.validateMetadata(metadata.originalFilename, metadata.contentType)
         val now = clock.instant().truncatedTo(ChronoUnit.MICROS)
         val recording = recordings.saveAndFlush(
             ReceptionRecording(receptionId, adminId, metadata.originalFilename, bucket, "recordings/$receptionId/${UUID.randomUUID()}", metadata.contentType, metadata.sizeBytes, metadata.checksum, now),
         )
-        reception.reserveRecording(expectedVersion, checkNotNull(recording.recordingFileId), now)
+        reception.reserveRecording(expectedVersion, checkNotNull(recording.recordingFileId), now, WavRecording.contactPhone(metadata.originalFilename))
         receptions.flush()
         return RecordingHandle.from(recording, reception.version)
     }
@@ -43,6 +55,17 @@ class ReceptionRecordingTransactions(
         val recording = recordings.findByRecordingFileIdAndReceptionIdAndUploadedByAdminId(recordingId, receptionId, adminId)
             ?: throw BusinessException(ReceptionErrorCode.RECEPTION_NOT_FOUND)
         return RecordingHandle.from(recording, reception.version)
+    }
+
+    fun accepted(adminId: Long, receptionId: Long, recordingId: Long): RecordingAcceptance? {
+        recording(adminId, receptionId, recordingId)
+        return analyses.findByRecordingFileIdAndIsInitialTrue(recordingId)?.let(RecordingAcceptance::from)
+    }
+
+    fun analysisRecording(task: AnalysisTask): RecordingHandle {
+        val recording = recording(task.adminId, task.receptionId, task.recordingId)
+        check(recording.status == com.allcheck.reception.domain.vo.RecordingUploadStatus.UPLOADED && recording.receivedAt == task.referenceTime) { "Analysis recording source must match its acceptance." }
+        return recording
     }
 
     /** S3가 반환한 실제 값은 외부 I/O를 마친 호출자가 전달한다. 이 트랜잭션 안에서는 S3를 호출하지 않는다. */

@@ -80,6 +80,14 @@ class Reception(
     var finalData: ReceptionData = ReceptionData()
         protected set
 
+    /** 원본 파일명에서 모호하지 않게 얻은 검토용 번호. 통화 메타데이터나 AI 원본을 변경하지 않는다. */
+    @field:Column(name = "recording_contact_phone", nullable = true, length = 20)
+    var recordingContactPhone: String? = null
+        protected set
+
+    val editableData: ReceptionData
+        get() = if (finalData.contactPhone == null && recordingContactPhone != null) finalData.copy(contactPhone = recordingContactPhone) else finalData
+
     /** 미완료 업로드 예약도 식별한다. ID 존재만으로 원본 재생 가능 여부를 판단하지 않는다. */
     @field:Column(name = "recording_file_id", nullable = true)
     var recordingFileId: Long? = null
@@ -111,7 +119,7 @@ class Reception(
      * 애플리케이션은 녹음 메타데이터 생성과 이 변경을 같은 트랜잭션으로 저장해야 한다.
      * 미완료 업로드의 URL 재발급은 새 예약을 만들지 않고 기존 파일을 사용한다.
      */
-    fun reserveRecording(expectedVersion: Int, recordingFileId: Long, now: Instant) {
+    fun reserveRecording(expectedVersion: Int, recordingFileId: Long, now: Instant, detectedContactPhone: String? = null) {
         if (expectedVersion != version) {
             throw BusinessException(GlobalErrorCode.VERSION_CONFLICT)
         }
@@ -125,10 +133,12 @@ class Reception(
             throw BusinessException(ReceptionErrorCode.RECORDING_ALREADY_EXISTS)
         }
         require(recordingFileId > 0)
+        require(detectedContactPhone == null || Regex("\\+?[0-9]{9,15}").matches(detectedContactPhone))
 
         val nextVersion = Math.incrementExact(version)
 
         this.recordingFileId = recordingFileId
+        this.recordingContactPhone = detectedContactPhone
         updatedAt = now
         version = nextVersion
     }
@@ -300,7 +310,7 @@ class Reception(
         }
 
         aiOriginal = original
-        finalData = nextData
+        finalData = if (nextData.contactPhone == null) nextData.copy(contactPhone = recordingContactPhone) else nextData
         version = nextVersion
         updatedAt = now
         return true

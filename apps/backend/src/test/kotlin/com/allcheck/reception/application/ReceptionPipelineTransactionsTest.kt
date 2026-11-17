@@ -321,7 +321,7 @@ class ReceptionPipelineTransactionsTest @Autowired constructor(
 
         // when
         val exception = assertThrows<BusinessException> {
-            recordingTransactions.complete(1, receptionId, handle.recordingId, 2, RecordingUploadMetadata("call", "audio/mp4", 99, ByteArray(32)))
+            recordingTransactions.complete(1, receptionId, handle.recordingId, 2, RecordingUploadMetadata("call", "audio/wav", 99, ByteArray(32)))
         }
 
         // then
@@ -438,7 +438,7 @@ class ReceptionPipelineTransactionsTest @Autowired constructor(
 
     private fun newReception() = checkNotNull(receptions.saveAndFlush(Reception(1, NOW)).receptionId)
 
-    private fun metadata() = RecordingUploadMetadata("call.m4a", "audio/mp4", 1024, ByteArray(32) { 1 })
+    private fun metadata() = RecordingUploadMetadata("call.wav", "audio/wav", 1024, ByteArray(32) { 1 })
 
     private fun accepted(): RecordingAcceptance {
         val receptionId = newReception()
