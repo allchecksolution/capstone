@@ -1,7 +1,7 @@
 package com.allcheck.reception.infrastructure.repository
 
 import com.allcheck.reception.domain.entity.Reception
-import com.allcheck.reception.domain.vo.ReceptionReviewStatus
+import com.allcheck.reception.domain.vo.review.ReceptionReviewStatus
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository

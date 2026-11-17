@@ -1,13 +1,13 @@
 package com.allcheck.reception.presentation
 
 import com.allcheck.reception.ReceptionAdministratorIdentity
-import com.allcheck.reception.application.ReceptionAnalysisTransactions
-import com.allcheck.reception.application.ReceptionRecordingTransactions
-import com.allcheck.reception.application.RecordingUploadMetadata
-import com.allcheck.reception.domain.vo.ReceptionAiOriginal
+import com.allcheck.reception.application.analysis.ReceptionAnalysisTransactions
+import com.allcheck.reception.application.recording.ReceptionRecordingTransactions
+import com.allcheck.reception.application.recording.RecordingUploadMetadata
 import com.allcheck.reception.domain.vo.ReceptionExternalId
-import com.allcheck.reception.domain.vo.ReceptionStructuredResult
-import com.allcheck.reception.domain.vo.WorkType
+import com.allcheck.reception.domain.vo.analysis.ReceptionAiOriginal
+import com.allcheck.reception.domain.vo.analysis.ReceptionStructuredResult
+import com.allcheck.reception.domain.vo.review.WorkType
 import com.allcheck.support.PostgresTestSchema
 import com.allcheck.support.S3TestFixtures
 import org.assertj.core.api.Assertions.assertThat

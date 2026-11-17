@@ -1,6 +1,6 @@
 package com.allcheck.reception.infrastructure.ai
 
-import com.allcheck.reception.domain.vo.ReceptionStructuredResult
+import com.allcheck.reception.domain.vo.analysis.ReceptionStructuredResult
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.http.MediaType
 import org.springframework.stereotype.Component

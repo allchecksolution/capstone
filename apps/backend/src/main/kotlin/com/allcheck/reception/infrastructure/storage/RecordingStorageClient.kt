@@ -6,7 +6,7 @@ import com.allcheck.global.storage.S3StorageClient
 import com.allcheck.global.storage.SignedObjectUrl
 import com.allcheck.global.storage.StorageException
 import com.allcheck.global.storage.StorageFailure
-import com.allcheck.reception.domain.vo.WavRecording
+import com.allcheck.reception.domain.vo.recording.WavRecording
 import com.allcheck.reception.exception.ReceptionErrorCode
 import org.springframework.stereotype.Component
 import java.util.Base64

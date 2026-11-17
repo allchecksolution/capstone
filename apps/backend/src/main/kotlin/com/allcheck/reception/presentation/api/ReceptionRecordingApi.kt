@@ -1,11 +1,11 @@
 package com.allcheck.reception.presentation.api
 
 import com.allcheck.global.exception.ErrorResponse
-import com.allcheck.reception.presentation.dto.request.CompleteRecordingUploadRequest
-import com.allcheck.reception.presentation.dto.request.RecordingUploadRequest
-import com.allcheck.reception.presentation.dto.response.RecordingAccessResponse
-import com.allcheck.reception.presentation.dto.response.RecordingUploadCompletedResponse
-import com.allcheck.reception.presentation.dto.response.RecordingUploadGrantResponse
+import com.allcheck.reception.presentation.dto.request.recording.CompleteRecordingUploadRequest
+import com.allcheck.reception.presentation.dto.request.recording.RecordingUploadRequest
+import com.allcheck.reception.presentation.dto.response.recording.RecordingAccessResponse
+import com.allcheck.reception.presentation.dto.response.recording.RecordingUploadCompletedResponse
+import com.allcheck.reception.presentation.dto.response.recording.RecordingUploadGrantResponse
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.headers.Header

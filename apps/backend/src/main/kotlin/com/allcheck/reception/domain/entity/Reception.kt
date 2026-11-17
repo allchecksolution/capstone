@@ -2,14 +2,17 @@ package com.allcheck.reception.domain.entity
 
 import com.allcheck.global.exception.BusinessException
 import com.allcheck.global.exception.GlobalErrorCode
-import com.allcheck.reception.domain.vo.ReceptionAiOriginal
-import com.allcheck.reception.domain.vo.ReceptionAnalysisStage
-import com.allcheck.reception.domain.vo.ReceptionAnalysisStatus
-import com.allcheck.reception.domain.vo.ReceptionConfirmationData
-import com.allcheck.reception.domain.vo.ReceptionData
+import com.allcheck.reception.domain.entity.analysis.ReceptionAnalysis
+import com.allcheck.reception.domain.entity.analysis.ReceptionTranscript
+import com.allcheck.reception.domain.entity.recording.ReceptionRecording
 import com.allcheck.reception.domain.vo.ReceptionProcessingStatus
-import com.allcheck.reception.domain.vo.ReceptionReviewStatus
-import com.allcheck.reception.domain.vo.RecordingUploadStatus
+import com.allcheck.reception.domain.vo.analysis.ReceptionAiOriginal
+import com.allcheck.reception.domain.vo.analysis.ReceptionAnalysisStage
+import com.allcheck.reception.domain.vo.analysis.ReceptionAnalysisStatus
+import com.allcheck.reception.domain.vo.recording.RecordingUploadStatus
+import com.allcheck.reception.domain.vo.review.ReceptionConfirmationData
+import com.allcheck.reception.domain.vo.review.ReceptionData
+import com.allcheck.reception.domain.vo.review.ReceptionReviewStatus
 import com.allcheck.reception.exception.ReceptionErrorCode
 import jakarta.persistence.Column
 import jakarta.persistence.Entity

@@ -2,12 +2,12 @@ package com.allcheck.reception.infrastructure.repository
 
 import com.allcheck.global.config.HibernateConfig
 import com.allcheck.reception.domain.entity.Reception
-import com.allcheck.reception.domain.vo.ReceptionAiOriginal
-import com.allcheck.reception.domain.vo.ReceptionAnalysisStatus
-import com.allcheck.reception.domain.vo.ReceptionConfirmationData
-import com.allcheck.reception.domain.vo.ReceptionData
-import com.allcheck.reception.domain.vo.ReceptionReviewStatus
-import com.allcheck.reception.domain.vo.WorkType
+import com.allcheck.reception.domain.vo.analysis.ReceptionAiOriginal
+import com.allcheck.reception.domain.vo.analysis.ReceptionAnalysisStatus
+import com.allcheck.reception.domain.vo.review.ReceptionConfirmationData
+import com.allcheck.reception.domain.vo.review.ReceptionData
+import com.allcheck.reception.domain.vo.review.ReceptionReviewStatus
+import com.allcheck.reception.domain.vo.review.WorkType
 import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat
 import org.flywaydb.core.Flyway

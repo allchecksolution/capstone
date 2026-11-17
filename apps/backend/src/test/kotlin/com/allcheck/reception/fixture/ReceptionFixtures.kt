@@ -1,9 +1,9 @@
 package com.allcheck.reception.fixture
 
 import com.allcheck.reception.domain.entity.Reception
-import com.allcheck.reception.domain.entity.ReceptionAnalysis
-import com.allcheck.reception.domain.entity.ReceptionRecording
-import com.allcheck.reception.domain.entity.ReceptionTranscript
+import com.allcheck.reception.domain.entity.analysis.ReceptionAnalysis
+import com.allcheck.reception.domain.entity.analysis.ReceptionTranscript
+import com.allcheck.reception.domain.entity.recording.ReceptionRecording
 import org.springframework.test.util.ReflectionTestUtils
 import java.time.Instant
 import java.time.OffsetDateTime

@@ -1,15 +1,15 @@
 package com.allcheck.reception.presentation.api
 
 import com.allcheck.global.exception.ErrorResponse
-import com.allcheck.reception.domain.vo.ReceptionReviewStatus
-import com.allcheck.reception.presentation.dto.request.ConfirmReceptionRequest
-import com.allcheck.reception.presentation.dto.request.CreateReceptionRequest
-import com.allcheck.reception.presentation.dto.request.ReopenReceptionRequest
-import com.allcheck.reception.presentation.dto.response.ReceptionAnalysisResponse
-import com.allcheck.reception.presentation.dto.response.ReceptionConfirmedResponse
-import com.allcheck.reception.presentation.dto.response.ReceptionDetailResponse
-import com.allcheck.reception.presentation.dto.response.ReceptionListResponse
-import com.allcheck.reception.presentation.dto.response.ReceptionReopenedResponse
+import com.allcheck.reception.domain.vo.review.ReceptionReviewStatus
+import com.allcheck.reception.presentation.dto.request.review.ConfirmReceptionRequest
+import com.allcheck.reception.presentation.dto.request.review.CreateReceptionRequest
+import com.allcheck.reception.presentation.dto.request.review.ReopenReceptionRequest
+import com.allcheck.reception.presentation.dto.response.analysis.ReceptionAnalysisResponse
+import com.allcheck.reception.presentation.dto.response.review.ReceptionConfirmedResponse
+import com.allcheck.reception.presentation.dto.response.review.ReceptionDetailResponse
+import com.allcheck.reception.presentation.dto.response.review.ReceptionListResponse
+import com.allcheck.reception.presentation.dto.response.review.ReceptionReopenedResponse
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.headers.Header

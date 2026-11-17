@@ -50,9 +50,11 @@ dependencies {
     implementation("org.flywaydb:flyway-database-postgresql")
     runtimeOnly("org.postgresql:postgresql")
 
-    // Private consultation recordings
+    // Shared S3 Object Storage
     implementation("software.amazon.awssdk:s3")
     implementation("software.amazon.awssdk:url-connection-client")
+
+    // FCM / Google Application Default Credentials
     implementation("com.google.auth:google-auth-library-oauth2-http:1.43.0")
 
     // Security / Authentication

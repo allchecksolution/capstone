@@ -107,7 +107,7 @@ owner-scoped 404 responses, persisted overall-analysis readiness, and conflictin
 It also creates and removes only its own UUID-named schema. Run it with:
 
 ```sh
-./gradlew test --tests com.allcheck.reception.application.ReceptionServiceTest
+./gradlew test --tests com.allcheck.reception.application.review.ReceptionServiceTest
 ```
 
 `ReceptionPipelineTransactionsTest` verifies the recording acceptance, STT checkpoint, canonical DB transcript,

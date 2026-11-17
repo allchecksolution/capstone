@@ -3,7 +3,7 @@ package com.allcheck.reception.domain.entity
 import com.allcheck.global.exception.BusinessException
 import com.allcheck.global.exception.ErrorCode
 import com.allcheck.global.exception.GlobalErrorCode
-import com.allcheck.reception.domain.vo.ReceptionReviewStatus
+import com.allcheck.reception.domain.vo.review.ReceptionReviewStatus
 import com.allcheck.reception.exception.ReceptionErrorCode
 import com.allcheck.reception.fixture.testReception
 import org.assertj.core.api.Assertions.assertThat

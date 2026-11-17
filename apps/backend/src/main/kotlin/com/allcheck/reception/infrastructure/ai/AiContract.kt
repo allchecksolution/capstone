@@ -1,8 +1,8 @@
 package com.allcheck.reception.infrastructure.ai
 
-import com.allcheck.reception.domain.vo.ReceptionAiOriginal
-import com.allcheck.reception.domain.vo.ReceptionStructuredResult
-import com.allcheck.reception.domain.vo.WorkType
+import com.allcheck.reception.domain.vo.analysis.ReceptionAiOriginal
+import com.allcheck.reception.domain.vo.analysis.ReceptionStructuredResult
+import com.allcheck.reception.domain.vo.review.WorkType
 import com.fasterxml.jackson.annotation.JsonSetter
 import com.fasterxml.jackson.annotation.Nulls
 import java.time.OffsetDateTime

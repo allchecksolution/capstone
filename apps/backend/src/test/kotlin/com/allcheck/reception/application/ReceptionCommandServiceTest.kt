@@ -3,10 +3,13 @@ package com.allcheck.reception.application
 import com.allcheck.global.config.HibernateConfig
 import com.allcheck.global.exception.BusinessException
 import com.allcheck.global.exception.GlobalErrorCode
-import com.allcheck.reception.domain.vo.ReceptionConfirmationData
-import com.allcheck.reception.domain.vo.ReceptionCreationData
+import com.allcheck.reception.application.recording.ReceptionRecordingTransactions
+import com.allcheck.reception.application.review.ReceptionQueryService
+import com.allcheck.reception.application.review.ReceptionService
 import com.allcheck.reception.domain.vo.ReceptionExternalId
-import com.allcheck.reception.domain.vo.WorkType
+import com.allcheck.reception.domain.vo.review.ReceptionConfirmationData
+import com.allcheck.reception.domain.vo.review.ReceptionCreationData
+import com.allcheck.reception.domain.vo.review.WorkType
 import com.allcheck.reception.exception.ReceptionErrorCode
 import com.allcheck.reception.infrastructure.repository.ReceptionCommandReceiptRepository
 import com.allcheck.reception.infrastructure.repository.ReceptionRepository
@@ -108,7 +111,7 @@ class ReceptionCommandServiceTest @Autowired constructor(
 
         try {
             // when
-            val first = executor.submit<ReceptionCommandResult<com.allcheck.reception.presentation.dto.response.ReceptionDetailResponse>> {
+            val first = executor.submit<ReceptionCommandResult<com.allcheck.reception.presentation.dto.response.review.ReceptionDetailResponse>> {
                 commands.create(1, key, ReceptionCreationData())
             }
             check(entered.await(5, TimeUnit.SECONDS))

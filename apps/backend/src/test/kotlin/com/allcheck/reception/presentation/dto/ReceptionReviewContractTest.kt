@@ -2,13 +2,13 @@ package com.allcheck.reception.presentation.dto
 
 import com.allcheck.global.exception.BusinessException
 import com.allcheck.global.exception.GlobalErrorCode
-import com.allcheck.reception.domain.vo.ReceptionReviewStatus
+import com.allcheck.reception.domain.vo.review.ReceptionReviewStatus
 import com.allcheck.reception.fixture.testReception
-import com.allcheck.reception.presentation.dto.request.ConfirmReceptionRequest
-import com.allcheck.reception.presentation.dto.request.ReopenReceptionRequest
-import com.allcheck.reception.presentation.dto.response.ReceptionConfirmedResponse
-import com.allcheck.reception.presentation.dto.response.ReceptionFieldsResponse
-import com.allcheck.reception.presentation.dto.response.ReceptionReopenedResponse
+import com.allcheck.reception.presentation.dto.request.review.ConfirmReceptionRequest
+import com.allcheck.reception.presentation.dto.request.review.ReopenReceptionRequest
+import com.allcheck.reception.presentation.dto.response.review.ReceptionConfirmedResponse
+import com.allcheck.reception.presentation.dto.response.review.ReceptionFieldsResponse
+import com.allcheck.reception.presentation.dto.response.review.ReceptionReopenedResponse
 import jakarta.validation.Validation
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterAll

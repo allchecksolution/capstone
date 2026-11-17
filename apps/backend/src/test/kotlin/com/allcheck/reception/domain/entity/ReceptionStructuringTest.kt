@@ -1,16 +1,16 @@
 package com.allcheck.reception.domain.entity
 
-import com.allcheck.reception.domain.vo.ReceptionAiOriginal
-import com.allcheck.reception.domain.vo.ReceptionAnalysisFailureReason
-import com.allcheck.reception.domain.vo.ReceptionAnalysisStage
-import com.allcheck.reception.domain.vo.ReceptionAnalysisStatus
-import com.allcheck.reception.domain.vo.ReceptionAnalysisTransition
-import com.allcheck.reception.domain.vo.ReceptionConfirmationData
-import com.allcheck.reception.domain.vo.ReceptionData
 import com.allcheck.reception.domain.vo.ReceptionProcessingStatus
-import com.allcheck.reception.domain.vo.ReceptionReviewStatus
-import com.allcheck.reception.domain.vo.ReceptionStructuredResult
-import com.allcheck.reception.domain.vo.WorkType
+import com.allcheck.reception.domain.vo.analysis.ReceptionAiOriginal
+import com.allcheck.reception.domain.vo.analysis.ReceptionAnalysisFailureReason
+import com.allcheck.reception.domain.vo.analysis.ReceptionAnalysisStage
+import com.allcheck.reception.domain.vo.analysis.ReceptionAnalysisStatus
+import com.allcheck.reception.domain.vo.analysis.ReceptionAnalysisTransition
+import com.allcheck.reception.domain.vo.analysis.ReceptionStructuredResult
+import com.allcheck.reception.domain.vo.review.ReceptionConfirmationData
+import com.allcheck.reception.domain.vo.review.ReceptionData
+import com.allcheck.reception.domain.vo.review.ReceptionReviewStatus
+import com.allcheck.reception.domain.vo.review.WorkType
 import com.allcheck.reception.fixture.testReception
 import com.allcheck.reception.fixture.testReceptionAnalysis
 import com.allcheck.reception.fixture.testReceptionTranscript

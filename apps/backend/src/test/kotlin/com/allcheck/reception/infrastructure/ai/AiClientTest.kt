@@ -1,6 +1,6 @@
 package com.allcheck.reception.infrastructure.ai
 
-import com.allcheck.reception.domain.vo.WorkType
+import com.allcheck.reception.domain.vo.review.WorkType
 import com.sun.net.httpserver.HttpServer
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
