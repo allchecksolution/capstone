@@ -15,6 +15,10 @@ class PostgresTestSchema(prefix: String) {
     }
 
     fun register(registry: DynamicPropertyRegistry) {
+        // 개발 셸의 활성화 설정이 있어도 전체 컨텍스트 테스트는 실제 AWS/AI/FCM 작업자를 실행하지 않는다.
+        listOf("storage.s3.enabled", "reception.ai.enabled", "notification.fcm.enabled", "reception.worker.enabled", "reception.push.enabled").forEach { name ->
+            registry.add(name) { "false" }
+        }
         val url = System.getenv("TEST_DATABASE_URL") ?: "jdbc:postgresql://localhost:15432/allcheck"
         registry.add("spring.datasource.url") { url + (if ('?' in url) "&" else "?") + "currentSchema=$name" }
         registry.add("spring.datasource.username") { System.getenv("TEST_DATABASE_USERNAME") ?: "allcheck" }

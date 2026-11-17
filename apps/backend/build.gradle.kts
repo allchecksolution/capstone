@@ -53,6 +53,7 @@ dependencies {
     // Private consultation recordings
     implementation("software.amazon.awssdk:s3")
     implementation("software.amazon.awssdk:url-connection-client")
+    implementation("com.google.auth:google-auth-library-oauth2-http:1.43.0")
 
     // Security / Authentication
     implementation("org.springframework.boot:spring-boot-starter-security")

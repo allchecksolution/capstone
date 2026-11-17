@@ -47,7 +47,18 @@ storage:
     region: ${S3_REGION:}
     request-timeout: ${S3_REQUEST_TIMEOUT:}
 
+notification:
+  fcm:
+    enabled: ${FCM_ENABLED:false}
+    project-id: ${FCM_PROJECT_ID:}
+    connect-timeout: ${FCM_CONNECT_TIMEOUT:}
+    request-timeout: ${FCM_REQUEST_TIMEOUT:}
+
 reception:
+  push:
+    enabled: ${RECEPTION_PUSH_ENABLED:false}
+    max-attempts: ${RECEPTION_PUSH_MAX_ATTEMPTS:3}
+    retry-delay: ${RECEPTION_PUSH_RETRY_DELAY:1m}
   ai:
     enabled: ${RECEPTION_AI_ENABLED:false}
   worker:
