@@ -53,7 +53,7 @@ class JwtAuthenticationFilter(
         val account = identity.findAuthenticatedAccount(claims.subject, sessionId)
             ?: throw TokenAuthenticationException(SecurityErrorCode.INVALID_TOKEN)
         val principal = AuthPrincipal(account.accountId, sessionId, account.userType, account.role)
-        // 사용자 유형만 연결한다. 미확정인 MASTER/SUB별 업무 권한은 부여하지 않는다.
+        // MASTER/SUB는 동일한 ADMIN 권한을 가진다. 역할 값은 principal에 보존한다.
         val authorities = listOf(SimpleGrantedAuthority("ROLE_${account.userType.name}"))
         val authentication = UsernamePasswordAuthenticationToken.authenticated(principal, null, authorities)
         val context = SecurityContextHolder.createEmptyContext()

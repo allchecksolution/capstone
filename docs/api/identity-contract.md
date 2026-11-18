@@ -69,7 +69,7 @@
 - `accountId`는 identity의 내부 계정 ID다. 카카오 회원번호 및 `driverId`와 구분한다.
 - `userType`은 `ADMIN` 또는 `DRIVER`다. 요청 본문에서 사용자 유형·역할을 받지 않는다.
 - 관리자 `role`은 기존 명세의 `MASTER` 또는 `SUB`, 기사 `role`은 null이다.
-- 마스터/부 관리자별 업무 권한 차등은 기존 명세상 미확정이다. 이번 인증 구현에서는 역할을 보존하되 미확정 업무 권한을 새로 부여하지 않는다.
+- 사용자 확정 정책에 따라 MASTER와 SUB는 동일한 업무 권한을 가진다. 역할 값은 구분하여 보존하고 리소스 접근·업무 상태·이력 보존 규칙을 두 역할에 동일하게 적용한다.
 - `/auth/accounts/me`는 위 `user` 객체만 반환하며 기사 개인정보·가입 상태를 반환하지 않는다.
 
 ### 카카오 검증
@@ -124,7 +124,7 @@ Access Token 기본 15분, 세션 절대 수명 기본 14일, 여러 기기 로�
 | 인증됐으나 해당 작업 권한 없음 | 403 |
 | 카카오 장애·타임아웃 | 503, 인증 실패와 구분 |
 
-로그인·갱신 API의 요청 제한은 필요하지만, 임계값과 운영 환경 적용 방식은 별도 확정한다.
+2026-11-18 사용자는 **기사 계정 기준으로 카카오 로그인 화면의 인증 실패 5회 후 5분간 재시도 제한**을 요청했고, **관리자는 이 규칙에서 제외**한다고 확정했다. 현재 SDK 연동에서는 카카오 페이지의 오입력 횟수·실패 계정 정보를 서비스가 받을 수 없고 해당 잠금 정책을 제어할 수 없어 구현하지 않았다. IP 기준·SDK 예외·서버 장애·토큰 갱신 제한으로 대체하지 않는다. 상세는 [관리자 인증 계약](admin-auth-contract.md#기사-인증-실패-제한-사용자-확정-사항)에 기록한다.
 
 ## 기존 계약과 프론트 연결 변경
 
@@ -150,7 +150,7 @@ Access Token 기본 15분, 세션 절대 수명 기본 14일, 여러 기기 로�
 5. **완료:** JWT 요청 인증과 `/auth/accounts/me`를 연결하고 현재 계정·세션 상태에 따른 요청 차단을 검증했다.
 6. **완료:** 갱신·로그아웃 API와 동시 갱신·폐기 세션 차단·실패 시 롤백을 구현하고 검증했다.
 7. **완료:** 기사 가입·재신청·상태 조회·관리자 목록/심사·탈퇴, 국세청 진위확인, 실제 작업 조회와 FCM 발송 기반을 구현·검증했다. 상세 계약은 [기사 가입 API 계약](driver-contract.md)을 따른다.
-8. **로그인·사전 발급 구현:** 관리자 ID/PW 로그인·공통 세션 발급과 운영자 전용 신규 계정 발급 CLI를 구현했다. 요청 제한의 확정된 구현 지침은 없어 정책 확인 대기로 남겼다. 실행 방법과 검색 결과는 [관리자 인증 계약](admin-auth-contract.md)에 기록한다. 역할별 업무 권한 차등은 추가하지 않는다.
+8. **로그인·사전 발급 구현:** 관리자 ID/PW 로그인·공통 세션 발급과 운영자 전용 신규 계정 발급 CLI를 구현했다. MASTER/SUB는 사용자 확정 정책에 따라 동일한 업무 권한을 유지한다. 기사 카카오 화면의 계정별 실패 5회·5분 제한은 현재 연동의 외부 화면 제어 제약으로 미구현이다. 실행 방법과 상태는 [관리자 인증 계약](admin-auth-contract.md)에 기록한다.
 
 ### 계획의 범위와 이후 작업
 
@@ -253,7 +253,7 @@ JWT는 HS256을 사용하고 `sub`(내부 계정 ID), `sid`(세션 ID), `iss`, `
 
 `JwtAuthenticationFilter`는 기존 `JwtTokenProvider.parseClaims`의 HS256 서명·만료·발급자·대상·용도·필수 Claims 검증을 사용한다. 이후 identity 공개 API인 `IdentityOperations.findAuthenticatedAccount`로 현재 계정·세션을 확인한다. 두 엔티티는 한 쿼리로 조회하며 계정 활성 여부, 세션과 계정의 연결, 폐기 여부, 생성·절대 만료 시각을 확인한다. 이 조회 결과를 캐시하거나 HTTP 세션에 보관하지 않는다.
 
-`AuthenticatedAccount`, `UserType`, `AdminRole`은 identity 모듈 루트의 공개 계약 타입이다. `global.security`는 identity 내부 Entity·Repository에 의존하지 않는다. 검증한 계정 ID·세션 ID·유형·역할을 `AuthPrincipal`에 담고 Spring Security에 등록한다. 유형은 `ROLE_ADMIN`/`ROLE_DRIVER`로 연결하며 MASTER/SUB별 업무 권한은 부여하지 않는다. JWT 안에 별도 유형·역할·권한 Claims가 있어도 사용하지 않는다.
+`AuthenticatedAccount`, `UserType`, `AdminRole`은 identity 모듈 루트의 공개 계약 타입이다. `global.security`는 identity 내부 Entity·Repository에 의존하지 않는다. 검증한 계정 ID·세션 ID·유형·역할을 `AuthPrincipal`에 담고 Spring Security에 등록한다. 유형은 `ROLE_ADMIN`/`ROLE_DRIVER`로 연결하며 MASTER/SUB는 동일한 `ROLE_ADMIN` 권한을 가진다. JWT 안에 별도 유형·역할·권한 Claims가 있어도 사용하지 않는다.
 
 인증 실패는 필터에서 공통 `CustomAuthenticationEntryPoint`와 `ErrorResponse`로 처리한다. 미인증은 `UNAUTHENTICATED`, 만료 JWT는 `TOKEN_EXPIRED`, 그 밖의 무효 JWT·사용 불가 계정·세션은 `INVALID_TOKEN`으로 401을 반환하고 `WWW-Authenticate: Bearer` challenge를 제공한다. 인증 후 업무 권한이 부족하면 기존 `ACCESS_DENIED`/403을 유지한다. 비활성 계정의 로그인·갱신 403 정책과 보호 요청의 401은 구분한다.
 
