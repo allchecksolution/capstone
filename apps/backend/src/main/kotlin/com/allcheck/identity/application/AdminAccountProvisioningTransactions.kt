@@ -1,0 +1,27 @@
+package com.allcheck.identity.application
+
+import com.allcheck.global.exception.BusinessException
+import com.allcheck.identity.AdminRole
+import com.allcheck.identity.domain.entity.Account
+import com.allcheck.identity.domain.vo.AdminCredential
+import com.allcheck.identity.exception.IdentityErrorCode
+import com.allcheck.identity.infrastructure.repository.AccountRepository
+import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
+import java.time.Clock
+
+@Service
+@Transactional(readOnly = true)
+class AdminAccountProvisioningTransactions(
+    private val accounts: AccountRepository,
+    private val clock: Clock = Clock.systemUTC(),
+) {
+    @Transactional
+    fun create(loginId: String, passwordHash: String, role: AdminRole): ProvisionedAdministrator {
+        val account = Account.administrator(AdminCredential(loginId, passwordHash, role), clock.instant())
+        if (accounts.insertAdministratorIfAbsent(account.id, loginId, passwordHash, role.name, account.createdAt) == 0) {
+            throw BusinessException(IdentityErrorCode.ADMIN_LOGIN_ID_ALREADY_EXISTS)
+        }
+        return ProvisionedAdministrator(account.id, loginId, role)
+    }
+}

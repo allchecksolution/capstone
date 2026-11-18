@@ -84,7 +84,7 @@ Kakao login verifies the provider token outside database transactions. Account r
 
 ### Administrator Login
 
-Administrator login validates the password outside write transactions, then locks and rereads the Account before issuing a session. A changed credential invalidates the verification snapshot; the current role and enabled state govern issuance. Administrator and Kakao logins share session issuance and the same session lifecycle policy. Current password encoding is salted PBKDF2-HMAC-SHA256 with 600,000 iterations; provisioning procedure and request-limit scope are awaiting user confirmation. See the [Administrator Authentication Contract](../../../docs/api/admin-auth-contract.md).
+Administrator login validates the password outside write transactions, then locks and rereads the Account before issuing a session. A changed credential invalidates the verification snapshot; the current role and enabled state govern issuance. Administrator and Kakao logins share session issuance and the same session lifecycle policy. Current password encoding is salted PBKDF2-HMAC-SHA256 with 600,000 iterations. The user approved operator-only CLI provisioning on 2026-11-18: create a new account with an explicit MASTER/SUB role and reject duplicate login IDs without updating or reactivating existing accounts. Provisioning does not issue sessions or expose a public signup API. Request-limit scope and thresholds remain undecided; existing Markdown only recommends limiting and defers concrete policy. See the [Administrator Authentication Contract](../../../docs/api/admin-auth-contract.md).
 
 ### Driver Registration Persistence
 
