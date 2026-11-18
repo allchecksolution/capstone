@@ -1,8 +1,10 @@
 package com.allcheck.identity.presentation
 
+import com.allcheck.identity.application.AdminLoginService
 import com.allcheck.identity.application.KakaoLoginService
 import com.allcheck.identity.application.SessionLifecycleService
 import com.allcheck.identity.presentation.api.AuthSessionApi
+import com.allcheck.identity.presentation.dto.request.AdminLoginRequest
 import com.allcheck.identity.presentation.dto.request.KakaoLoginRequest
 import com.allcheck.identity.presentation.dto.request.RefreshTokenRequest
 import com.allcheck.identity.presentation.dto.response.TokenPairResponse
@@ -13,9 +15,15 @@ import org.springframework.web.bind.annotation.RestController
 
 @RestController
 class AuthSessionController(
+    private val adminLoginService: AdminLoginService,
     private val loginService: KakaoLoginService,
     private val sessions: SessionLifecycleService,
 ) : AuthSessionApi {
+    override fun adminLogin(request: AdminLoginRequest): ResponseEntity<TokenPairResponse> = ResponseEntity.ok()
+        .cacheControl(CacheControl.noStore())
+        .header(HttpHeaders.PRAGMA, "no-cache")
+        .body(adminLoginService.login(request.loginId, request.password))
+
     override fun kakaoLogin(request: KakaoLoginRequest): ResponseEntity<TokenPairResponse> = ResponseEntity.ok()
         .cacheControl(CacheControl.noStore())
         .header(HttpHeaders.PRAGMA, "no-cache")

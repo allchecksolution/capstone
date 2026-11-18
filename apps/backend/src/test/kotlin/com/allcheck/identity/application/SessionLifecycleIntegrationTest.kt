@@ -477,8 +477,8 @@ class SessionLifecycleIntegrationTest @Autowired constructor(
     }
 
     @ParameterizedTest
-    @ValueSource(strings = ["/api/v1/auth/sessions/admin", "/api/v1/auth/sessions/other", "/api/v1/auth/tokens/other"])
-    fun `미구현 인증 경로와 다른 HTTP 메서드를 함께 공개하지 않는다`(path: String) {
+    @ValueSource(strings = ["/api/v1/auth/sessions/admin/other", "/api/v1/auth/sessions/other", "/api/v1/auth/tokens/other"])
+    fun `정의되지 않은 인증 경로와 다른 HTTP 메서드를 함께 공개하지 않는다`(path: String) {
         // when & then
         mockMvc.perform(post(path).contentType(MediaType.APPLICATION_JSON).content("{}"))
             .andExpect(status().isUnauthorized)

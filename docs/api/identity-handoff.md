@@ -1,6 +1,6 @@
 # Identity 구현 인수인계
 
-기준: 2026-11-18, 7단계 구현·검증 완료. 새 세션에서는 이 파일과 실제 Git 상태를 함께 확인한다.
+기준: 2026-11-18, 7단계 완료·8단계 진행 중. 새 세션에서는 이 파일과 실제 Git 상태를 함께 확인한다.
 
 ## 저장소 상태
 
@@ -12,7 +12,8 @@
 - 4단계 `2686956`: 카카오 로그인과 서비스 토큰 발급
 - 5단계 `1d62f36`: JWT 요청 인증과 내 계정 조회
 - 6단계 `92f5b96`: 토큰 갱신과 로그아웃
-- 1~7단계 구현을 완료했다. 7단계는 이 인수인계와 함께 같은 브랜치에 커밋·push한다. 실제 해시·원격 동기화는 Git으로 확인한다.
+- 7단계 `6190ee6`: 기사 가입·심사·탈퇴와 작업·푸시 기반. origin의 동일 브랜치에 push했다.
+- 8단계 현재 구현: 관리자 로그인과 공통 세션 발급을 이 인수인계와 함께 커밋·push한다. 사전 발급 방식·요청 제한 범위는 확인 대기 상태다. 실제 커밋 해시와 원격 상태는 Git으로 확인한다.
 - 기존 미추적 `.idea/`는 사용자 로컬 설정이므로 커밋에서 제외한다.
 
 ## 먼저 읽을 문서
@@ -64,11 +65,17 @@ MASTER/SUB 상세 업무 권한 차등, 로그인 요청 제한 임계값, 푸�
 - PROVIDER_ACCEPTED는 제공자 접수이며 단말 수신 보장이 아니다. 명시적 실패는 FAILED다. 중단 복구 시 제공자 중복 전송 가능성이 있어 앱은 eventId로 중복 처리하고 최신 상태를 조회한다.
 - V3~V6을 추가했으며 V1·V2는 수정하지 않았다. V1 관리자 분석 테이블·AI 알림 연결은 기사 발송기와 별개다.
 
-## 다음 작업
+## 8단계 진행과 다음 작업
 
-8단계 관리자 ID/PW 로그인과 사전 계정 발급을 구현한다. 프론트 어댑터의 새 인증/driver 계약 연결, 실제 카카오 SDK 토큰·국세청 키·Firebase 자격 증명/실기기 토큰 검증도 남아 있다. 실제 키를 제공받지 않아 외부 실서비스 호출은 수행하지 않았다.
+관리자 ID/PW 로그인은 AuthSessionApi의 `/admin` POST로 구현했다. 해시는 PBKDF2-HMAC-SHA256·600,000회·16바이트 salt다. 외부 트랜잭션을 중단하고 검증한 뒤 계정을 잠가 자격 증명·현재 활성 상태를 다시 확인한다. 공통 SessionIssuanceService를 카카오와 공유하여 기존 세션 정책을 유지한다. 상세는 [관리자 인증 계약](admin-auth-contract.md)을 따른다.
+
+사용자에게 사전 계정 발급을 운영자 CLI로 할지, 로그인·갱신 요청 제한을 후속으로 분리할지 질문했다. 사용자는 현재 구현의 커밋·push와 두 용어의 설명을 요청했다. **두 정책의 선택은 아직 확정되지 않았으며 그 결정에 의존하는 구현을 진행하거나 8단계 전체 완료로 표시하지 않는다.** 기존 MASTER/SUB 권한 차등은 추가하지 않는다.
+
+프론트 어댑터의 새 인증/driver 계약 연결, 실제 카카오 SDK 토큰·국세청 키·Firebase 자격 증명/실기기 토큰 검증도 남아 있다. 실제 키를 제공받지 않아 외부 실서비스 호출은 수행하지 않았다.
 
 ## 검증 및 환경
+
+- 8단계 현재 전체 검증: 2026-11-18 Java 21·Gradle 9.8.2·격리 PostgreSQL 18, `--offline ktlintCheck test`, **389개 통과 / 실패·오류·건너뜀 0**. 관리자 로그인 27개·해시 8개를 추가했고 카카오/세션 테스트의 이전 미구현 경로 기대를 현재 계약으로 갱신했다. 사전 발급·요청 제한 결정 대기 상태이므로 8단계 전체 완료는 아니다.
 
 - 최종 전체 검증: 2026-11-18, Java 21·Gradle 9.8.2·격리 PostgreSQL 18, `--offline ktlintCheck test`, 전체 테스트 **355개 통과 / 실패·오류·건너뜀 0**. 생성 OpenAPI 헤더와 YAML 파싱·로컬 문서 링크 34개도 확인했다.
 - 실제 HTTP/Spring Security·DB 상태 전이·동시 가입·버전/멱등성·공동 롤백·배정/탈퇴 경합·기기 소유권·로그아웃·푸시 대상/실패/중단 복구·모듈 경계를 검증한다. 국세청·FCM 네트워크는 격리한다.
@@ -79,13 +86,13 @@ MASTER/SUB 상세 업무 권한 차등, 로그인 요청 제한 임계값, 푸�
 - Java 21: `C:/Program Files/Eclipse Adoptium/jdk-21.0.13.9-hotspot`, 캐시: `C:/Users/user/.gradle`. 기본 JAVA_HOME이 17이므로 실행 시 지정한다.
 - Gradle은 apps/backend에서 실행한다. `IDENTITY_TEST_DATABASE_URL/USER/PASSWORD`와 기본 컨텍스트용 `SPRING_DATASOURCE_URL/USERNAME/PASSWORD`를 위 격리 DB에 설정하고 `gradlew.bat --offline ktlintCheck test`로 재현한다. 캐시 접근 거부 시 정해진 escalation 절차를 사용한다.
 - `KAKAO_APP_ID`는 숫자 앱 ID다. NTS 설정은 [identity 계약](identity-contract.md#국세청-진위확인-클라이언트), Firebase ADC·FCM 설정은 [기사 계약](driver-contract.md#푸시-기기와-발송)을 따른다.
-- 최종 검증 후 테스트 PostgreSQL 서버를 종료했다.
+- 7단계 검증 후 PostgreSQL을 종료했다. 8단계 착수 시 같은 테스트 서버가 이미 실행 중이어서 새로 시작하지 않고 기존 서버를 사용했다. 이 실행은 이번 작업에서 시작한 것이 아니므로 임의 종료하지 않는다.
 
 ## 새 세션 시작 문구
 
 ```text
 AGENTS.md와 apps/backend/AGENTS.md를 따르고 docs/api/identity-handoff.md,
 docs/api/identity-contract.md, docs/api/driver-contract.md를 읽어 현재 상태를 복원해줘.
-feat/ACK-30-identity-domain 브랜치의 실제 코드와 커밋 상태로 7단계 완료를 확인하고,
-확정된 정책을 유지하며 8단계 관리자 인증과 사전 계정 발급을 진행하자.
+docs/api/admin-auth-contract.md도 읽고 8단계의 실제 diff와 사용자 답변 여부를 확인해줘.
+확정된 정책을 유지하며 관리자 인증과 사전 계정 발급을 이어서 진행하자.
 ```

@@ -1,6 +1,7 @@
 package com.allcheck.identity.presentation.api
 
 import com.allcheck.global.exception.ErrorResponse
+import com.allcheck.identity.presentation.dto.request.AdminLoginRequest
 import com.allcheck.identity.presentation.dto.request.KakaoLoginRequest
 import com.allcheck.identity.presentation.dto.request.RefreshTokenRequest
 import com.allcheck.identity.presentation.dto.response.TokenPairResponse
@@ -20,6 +21,17 @@ import org.springframework.web.bind.annotation.RequestMapping
 @Tag(name = "Authentication")
 @RequestMapping("/api/v1/auth/sessions")
 interface AuthSessionApi {
+    @PostMapping("/admin")
+    @Operation(summary = "사전 발급된 ID/PW로 관리자 로그인", operationId = "adminLogin")
+    @SecurityRequirements
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "관리자 인증 성공. 현재 관리자 역할과 독립 세션의 토큰 쌍 반환"),
+        ApiResponse(responseCode = "400", description = "입력 형식 오류", content = [Content(schema = Schema(implementation = ErrorResponse::class))]),
+        ApiResponse(responseCode = "401", description = "아이디 또는 비밀번호 불일치", content = [Content(schema = Schema(implementation = ErrorResponse::class))]),
+        ApiResponse(responseCode = "403", description = "유효한 자격 증명의 비활성 계정", content = [Content(schema = Schema(implementation = ErrorResponse::class))]),
+    )
+    fun adminLogin(@Valid @RequestBody request: AdminLoginRequest): ResponseEntity<TokenPairResponse>
+
     @PostMapping("/kakao")
     @Operation(summary = "카카오 토큰으로 기사 인증 계정에 로그인", operationId = "driverKakaoLogin")
     @SecurityRequirements

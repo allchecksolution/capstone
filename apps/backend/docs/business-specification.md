@@ -82,6 +82,10 @@ The following is the initial design of the key Aggregates.
 
 Kakao login verifies the provider token outside database transactions. Account resolution and session issuance then commit together. An `INSERT ... ON CONFLICT (social_provider, social_user_id) DO NOTHING` prevents duplicate authentication accounts without aborting the transaction on a concurrent first login. Lock and read the resolved Account before checking its current enabled state and creating a session; the conflict path never updates or reactivates an existing Account. JWT issuance failure rolls back both the new Account and session. Each successful login creates its own session without creating a Driver registration application.
 
+### Administrator Login
+
+Administrator login validates the password outside write transactions, then locks and rereads the Account before issuing a session. A changed credential invalidates the verification snapshot; the current role and enabled state govern issuance. Administrator and Kakao logins share session issuance and the same session lifecycle policy. Current password encoding is salted PBKDF2-HMAC-SHA256 with 600,000 iterations; provisioning procedure and request-limit scope are awaiting user confirmation. See the [Administrator Authentication Contract](../../../docs/api/admin-auth-contract.md).
+
 ### Driver Registration Persistence
 
 `Driver` owns separate personal-profile and business-information records. Personal settlement accounts and tax-invoice email belong to the profile, not the business. Each authentication account has at most one Driver. Keep full submitted snapshots and review actors, reasons, timestamps, and application revisions in append-only history; resubmission retains the same Driver and Account IDs.
