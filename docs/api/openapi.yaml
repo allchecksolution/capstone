@@ -1608,6 +1608,7 @@ paths:
       description: >-
         관리자와 기사가 공통으로 사용한다. 현재 인증 계정·세션 상태와 Refresh Token을 확인하고 새 토큰 쌍을 발급한다. 사용한 Refresh Token은 즉시 무효화한다. 세션은 최초 로그인부터
         기본 14일이며 갱신해도 절대 만료 시각을 연장하지 않는다. 동일 토큰의 동시 갱신은 하나만 성공하고 나머지는 401이다. 이전 토큰 재사용만으로 교체된 토큰이나 다른 세션을 자동 폐기하지 않는다.
+        관리자·기사 계정별 모든 기기를 합산하여 첫 집계부터 60초 동안 최대 30회다. 초과 시 429와 Retry-After를 반환하고 구간 종료 후 자동 해제한다.
       security: []
       tags:
         - Authentication
@@ -1663,11 +1664,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/IdentityError"
         "429":
-          description: 로그인·갱신 요청이 제한되었다. 임계값과 운영 적용 방식은 별도 확정한다.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/IdentityError"
+          $ref: "#/components/responses/AccountRequestLimitExceeded"
         "503":
           description: 카카오 또는 인증 처리에 필요한 서비스가 일시적으로 응답하지 않는다.
           content:
@@ -1956,6 +1953,7 @@ paths:
         카카오 로그인 후 신규 사용자가 기사 개인정보와 사업자 정보를 제출한다. 서버가 국세청에서 사업자등록번호·개업일자·대표자명을 진위확인하고 계속사업자인 경우에만 계정을
         PENDING_APPROVAL로 등록하며 관리자에게 승인 요청을 알린다. 승인 전에는 배차·채팅 등 주요 기능을 쓸 수 없다. 사업자 정보가 유효하지 않으면 400(BUSINESS_INFO_INVALID),
         외부 서비스 장애로 검증할 수 없으면 503(BUSINESS_VERIFICATION_UNAVAILABLE)으로 구분한다. 이미 가입 신청이 있으면 409다.
+        가입·재신청을 합산하여 계정별 첫 집계부터 60초 동안 최대 5회다. 업무 실패와 완료 결과 재전송도 집계하며 초과 시 429와 Retry-After를 반환한다.
       tags:
         - Drivers
       x-business-rules:
@@ -2034,6 +2032,7 @@ paths:
                     message: 사업자 정보를 확인해 주세요.
                     traceId: trace_example_01
                     fieldErrors: [{field: business.businessRegistrationNumber, message: 유효하지 않은 사업자등록번호입니다.}]
+        "429": {$ref: "#/components/responses/AccountRequestLimitExceeded"}
         "503":
           description: 외부 사업자등록정보 서비스 장애로 지금은 검증할 수 없다(E4). 입력 오류와 다르다.
           content:
@@ -2047,6 +2046,7 @@ paths:
       description: >-
         반려(REJECTED) 상태의 기사가 같은 계정으로 신청 정보를 수정해 다시 제출한다. 국세청 진위확인에 일치하는 계속사업자만 계정을 PENDING_APPROVAL로 되돌리며
         관리자에게 알린다. 새 계정을 만들지 않고 기존 반려 사유와 신청·심사 이력을 보존한다. 반려 상태가 아니면 409다.
+        가입·재신청을 합산하여 계정별 첫 집계부터 60초 동안 최대 5회다. 업무 실패와 완료 결과 재전송도 집계하며 초과 시 429와 Retry-After를 반환한다.
       tags:
         - Drivers
       x-business-rules:
@@ -2114,6 +2114,7 @@ paths:
             application/json:
               schema: {$ref: "#/components/schemas/Error"}
               example: {code: BUSINESS_INFO_INVALID, message: 사업자 정보를 확인해 주세요., traceId: trace_example_01}
+        "429": {$ref: "#/components/responses/AccountRequestLimitExceeded"}
         "503":
           description: 외부 사업자등록정보 서비스 장애.
           content:
@@ -4929,6 +4930,18 @@ components:
             traceId: trace_example_01
             fieldErrors:
               - {field: address, message: 필수 항목입니다.}
+    AccountRequestLimitExceeded:
+      description: 계정별 요청 한도 초과. 토큰 갱신은 60초 30회, 기사 가입·재신청은 합산하여 60초 5회. 구간 종료 후 자동 해제하며 차단 중 재요청으로 연장하지 않는다.
+      headers:
+        Retry-After:
+          description: 재시도까지 남은 초.
+          schema: {type: integer, format: int64, minimum: 1}
+        Cache-Control:
+          schema: {type: string, example: no-store}
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/IdentityError"}
+          example: {code: TOO_MANY_REQUESTS, message: 요청이 많습니다. 안내된 시간 후 다시 시도해 주세요.}
     TooManyRequests:
       description: 요청이 너무 많습니다. Retry-After 이후 다시 시도합니다. 제한 수치는 미정.
       headers:

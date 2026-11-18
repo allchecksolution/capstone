@@ -15,6 +15,15 @@ interface AuthSessionRepository : JpaRepository<AuthSession, String> {
     @Query("select session.accountId from AuthSession session where session.refreshTokenHash = :hash")
     fun findAccountIdByRefreshTokenHash(@Param("hash") hash: RefreshTokenHash): String?
 
+    @Query(
+        """
+        select account as account, session as session
+        from AuthSession session join Account account on account.id = session.accountId
+        where session.refreshTokenHash = :hash
+        """,
+    )
+    fun findRefreshAuthenticationState(@Param("hash") hash: RefreshTokenHash): AuthenticationState?
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select session from AuthSession session where session.refreshTokenHash = :hash")
     fun findByRefreshTokenHashForUpdate(@Param("hash") hash: RefreshTokenHash): AuthSession?

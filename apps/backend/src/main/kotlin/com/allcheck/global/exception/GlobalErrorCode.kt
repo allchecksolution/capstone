@@ -14,5 +14,6 @@ enum class GlobalErrorCode(
     FILE_NOT_READY(HttpStatus.CONFLICT, "아직 접근할 수 없는 파일입니다."),
     FILE_UPLOAD_NOT_VERIFIED(HttpStatus.BAD_REQUEST, "업로드된 파일이 예약한 정보와 일치하지 않습니다."),
     METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED, "지원하지 않는 HTTP 메서드입니다."),
+    TOO_MANY_REQUESTS(HttpStatus.TOO_MANY_REQUESTS, "요청이 많습니다. 안내된 시간 후 다시 시도해 주세요."),
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버 내부 오류가 발생했습니다."),
 }

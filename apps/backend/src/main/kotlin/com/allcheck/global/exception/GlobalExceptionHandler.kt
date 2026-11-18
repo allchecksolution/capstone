@@ -1,5 +1,6 @@
 package com.allcheck.global.exception
 
+import com.allcheck.global.ratelimit.RequestLimitExceededException
 import jakarta.validation.ConstraintViolationException
 import jakarta.validation.ElementKind
 import jakarta.validation.Path
@@ -55,7 +56,12 @@ class GlobalExceptionHandler : ResponseEntityExceptionHandler() {
         val errorCode = exception.errorCode
         log.info("Business exception: code={}", errorCode.name)
 
-        return ResponseEntity.status(errorCode.status)
+        val response = ResponseEntity.status(errorCode.status)
+        if (exception is RequestLimitExceededException) {
+            response.header(HttpHeaders.RETRY_AFTER, exception.retryAfterSeconds.toString())
+                .header(HttpHeaders.CACHE_CONTROL, "no-store")
+        }
+        return response
             .contentType(MediaType.APPLICATION_JSON)
             .body(ErrorResponse.from(errorCode))
     }

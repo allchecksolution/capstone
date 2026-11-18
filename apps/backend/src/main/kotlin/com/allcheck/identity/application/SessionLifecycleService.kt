@@ -24,6 +24,14 @@ class SessionLifecycleService(
     private val devices: PushDeviceRepository,
     private val clock: Clock = Clock.systemUTC(),
 ) {
+    fun identifyRefreshAccount(refreshToken: String): String {
+        val state = sessions.findRefreshAuthenticationState(refreshTokens.hash(refreshToken))
+            ?: throw BusinessException(IdentityErrorCode.REFRESH_TOKEN_INVALID)
+        if (!state.session.isActiveAt(clock.instant())) throw BusinessException(IdentityErrorCode.REFRESH_TOKEN_INVALID)
+        if (!state.account.enabled) throw BusinessException(IdentityErrorCode.ACCOUNT_DISABLED)
+        return state.account.id
+    }
+
     @Transactional
     fun refresh(refreshToken: String): TokenPairResponse {
         val expectedHash = refreshTokens.hash(refreshToken)

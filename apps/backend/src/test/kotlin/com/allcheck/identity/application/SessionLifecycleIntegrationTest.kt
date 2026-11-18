@@ -30,6 +30,7 @@ import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
 import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
+import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.context.TestPropertySource
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean
 import org.springframework.test.web.servlet.MockMvc
@@ -42,6 +43,7 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionTemplate
 import tools.jackson.databind.ObjectMapper
+import java.sql.Timestamp
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
@@ -72,6 +74,7 @@ class SessionLifecycleIntegrationTest @Autowired constructor(
     private val refreshTokens: RefreshTokenProvider,
     private val clock: Clock,
     private val secretKey: SecretKey,
+    private val jdbc: JdbcTemplate,
     transactionManager: PlatformTransactionManager,
 ) {
     @MockitoSpyBean
@@ -88,10 +91,68 @@ class SessionLifecycleIntegrationTest @Autowired constructor(
     fun removeOwnFixtures() {
         transactions.executeWithoutResult {
             ownAccounts.forEach { accountId ->
+                jdbc.update("delete from request_limit_buckets where bucket_id = ?", "token-refresh:$accountId")
                 sessions.deleteAllByIdInBatch(sessions.findAllByAccountId(accountId).map { it.id })
                 accounts.deleteById(accountId)
             }
         }
+    }
+
+    @Test
+    fun `계정의 모든 기기 갱신을 합산해 31회부터 차단하고 만료 후 같은 토큰을 다시 사용할 수 있다`() {
+        // given
+        val first = fixture()
+        val second = fixture(accountId = first.accountId)
+        val unrelated = fixture()
+        val current = mutableListOf(first.refreshToken, second.refreshToken)
+        repeat(30) { index ->
+            val device = index % 2
+            val response = mockMvc.perform(post(refreshPath).contentType(MediaType.APPLICATION_JSON).content(body(current[device])))
+                .andExpect(status().isOk).andReturn().response
+            current[device] = mapper.readValue(response.contentAsString, TokenPairResponse::class.java).refreshToken
+        }
+        val bucket = "token-refresh:${first.accountId}"
+        val endsAt = jdbc.queryForObject("select window_ends_at from request_limit_buckets where bucket_id = ?", Timestamp::class.java, bucket)
+
+        // when & then
+        repeat(2) {
+            val response = mockMvc.perform(post(refreshPath).contentType(MediaType.APPLICATION_JSON).content(body(current[0])))
+                .andExpect(status().isTooManyRequests)
+                .andExpect(jsonPath("$.code").value("TOO_MANY_REQUESTS"))
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+                .andReturn().response
+            assertThat(response.getHeader(HttpHeaders.RETRY_AFTER)?.toLong()).isBetween(1L, 60L)
+        }
+        assertThat(jdbc.queryForObject("select window_ends_at from request_limit_buckets where bucket_id = ?", Timestamp::class.java, bucket)).isEqualTo(endsAt)
+        assertThat(sessions.findById(first.sessionId).orElseThrow().refreshTokenHash).isEqualTo(refreshTokens.hash(current[0]))
+        expectAccessible(first.accessToken)
+        expectAccessible(second.accessToken)
+        expectRefreshRejected("unknown-refresh-token")
+        mockMvc.perform(post(refreshPath).contentType(MediaType.APPLICATION_JSON).content(body(unrelated.refreshToken))).andExpect(status().isOk)
+        // 로그아웃은 갱신 한도에 영향받지 않는다.
+        mockMvc.perform(post(logoutPath).contentType(MediaType.APPLICATION_JSON).content(body(current[1]))).andExpect(status().isNoContent)
+
+        jdbc.update("update request_limit_buckets set window_ends_at = statement_timestamp() - interval '1 second' where bucket_id = ?", bucket)
+        mockMvc.perform(post(refreshPath).contentType(MediaType.APPLICATION_JSON).content(body(current[0]))).andExpect(status().isOk)
+    }
+
+    @ParameterizedTest
+    @EnumSource(AdminRole::class)
+    fun `MASTER와 SUB도 동일한 계정별 갱신 한도를 적용한다`(role: AdminRole) {
+        // given
+        val account = saveAccount(Account.administrator(AdminCredential("rate-admin", "test-password-hash", role), now.minus(Duration.ofDays(20))))
+        val fixture = fixture(accountId = account.id)
+        var token = fixture.refreshToken
+        repeat(30) {
+            val response = mockMvc.perform(post(refreshPath).contentType(MediaType.APPLICATION_JSON).content(body(token)))
+                .andExpect(status().isOk).andExpect(jsonPath("$.user.role").value(role.name)).andReturn().response
+            token = mapper.readValue(response.contentAsString, TokenPairResponse::class.java).refreshToken
+        }
+
+        // when & then
+        mockMvc.perform(post(refreshPath).contentType(MediaType.APPLICATION_JSON).content(body(token)))
+            .andExpect(status().isTooManyRequests).andExpect(jsonPath("$.code").value("TOO_MANY_REQUESTS"))
+        expectAccessible(fixture.accessToken)
     }
 
     @Test
@@ -221,6 +282,7 @@ class SessionLifecycleIntegrationTest @Autowired constructor(
         assertThat(stored.refreshTokenHash).isEqualTo(before.refreshTokenHash)
         assertThat(stored.lastRefreshedAt).isNull()
         assertThat(stored.version).isEqualTo(before.version)
+        assertThat(jdbc.queryForObject("select request_count from request_limit_buckets where bucket_id = ?", Int::class.java, "token-refresh:${fixture.accountId}")).isEqualTo(1)
         Mockito.reset(accessTokens)
         expectAccessible(lifecycle.refresh(fixture.refreshToken).accessToken)
     }
@@ -472,7 +534,9 @@ class SessionLifecycleIntegrationTest @Autowired constructor(
             .andExpect(jsonPath("$.paths['$refreshPath'].post.security").isEmpty())
             .andExpect(jsonPath("$.paths['$logoutPath'].post.security").isEmpty())
             .andExpect(jsonPath("$.paths['$refreshPath'].post.responses['200'].content['application/json'].schema['\$ref']").value("#/components/schemas/TokenPairResponse"))
+            .andExpect(jsonPath("$.paths['$refreshPath'].post.responses['429'].headers['Retry-After'].schema.minimum").value(1))
             .andExpect(jsonPath("$.paths['$logoutPath'].post.responses['204'].content").doesNotExist())
+            .andExpect(jsonPath("$.paths['$logoutPath'].post.responses['429']").doesNotExist())
             .andExpect(jsonPath("$.paths['$refreshPath'].get").doesNotExist())
     }
 

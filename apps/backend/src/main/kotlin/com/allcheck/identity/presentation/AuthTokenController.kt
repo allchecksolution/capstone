@@ -1,6 +1,6 @@
 package com.allcheck.identity.presentation
 
-import com.allcheck.identity.application.SessionLifecycleService
+import com.allcheck.identity.application.TokenRefreshService
 import com.allcheck.identity.presentation.api.AuthTokenApi
 import com.allcheck.identity.presentation.dto.request.RefreshTokenRequest
 import com.allcheck.identity.presentation.dto.response.TokenPairResponse
@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.RestController
 
 @RestController
 class AuthTokenController(
-    private val sessions: SessionLifecycleService,
+    private val sessions: TokenRefreshService,
 ) : AuthTokenApi {
     override fun refresh(request: RefreshTokenRequest): ResponseEntity<TokenPairResponse> = ResponseEntity.ok()
         .cacheControl(CacheControl.noStore())

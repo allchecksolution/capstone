@@ -134,6 +134,7 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
                 jdbc.update("delete from driver_businesses where business_id = ?", businessId)
             }
             ownAccounts.forEach { accountId ->
+                jdbc.update("delete from request_limit_buckets where bucket_id = ?", "driver-registration:$accountId")
                 jdbc.update("delete from driver_idempotency_records where actor_id = ?", accountId)
                 jdbc.update("delete from identity_push_devices where account_id = ?", accountId)
                 jdbc.update("delete from identity_auth_sessions where account_id = ?", accountId)
@@ -514,6 +515,9 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
         mvc.perform(get("/v3/api-docs")).andExpect(status().isOk)
             .andExpect(jsonPath("$.paths['$registrationPath'].post.responses['201']").exists())
             .andExpect(jsonPath("$.paths['$registrationPath'].post.responses['201'].headers['Idempotency-Replayed']").exists())
+            .andExpect(jsonPath("$.paths['$registrationPath'].post.responses['429'].headers['Retry-After'].schema.minimum").value(1))
+            .andExpect(jsonPath("$.paths['$registrationPath/resubmission'].post.responses['429'].headers['Retry-After'].schema.minimum").value(1))
+            .andExpect(jsonPath("$.paths['$registrationPath'].get.responses['429']").doesNotExist())
             .andExpect(jsonPath("$.paths['$registrationPath'].post.parameters[?(@.name == 'Idempotency-Key')]").isNotEmpty())
             .andExpect(jsonPath("$.paths['/api/v1/drivers/{driverId}/approval'].post").exists())
             .andExpect(jsonPath("$.paths['/api/v1/drivers/me/withdrawal'].post").exists())
@@ -647,6 +651,59 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
         Mockito.verifyNoInteractions(nts)
         assertThat(submitStatus(newcomer, "new")).isEqualTo(503)
         assertThat(drivers.existsByAccountId(newcomer.accountId)).isFalse()
+    }
+
+    @Test
+    fun `실패한 사업자 검증도 다섯 번 집계하고 차단된 요청은 국세청을 호출하지 않는다`() {
+        // given
+        val actor = driver()
+        val other = driver()
+        Mockito.`when`(nts.verify(anyIdentity())).thenThrow(BusinessException(DriverErrorCode.BUSINESS_INFO_INVALID))
+        repeat(5) { assertThat(submitStatus(actor, "failed-$it")).isEqualTo(400) }
+
+        // when & then
+        val response = mvc.perform(
+            post(registrationPath).header(HttpHeaders.AUTHORIZATION, actor.header).header("Idempotency-Key", "blocked")
+                .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(request())),
+        ).andExpect(status().isTooManyRequests).andExpect(jsonPath("$.code").value("TOO_MANY_REQUESTS"))
+            .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store")).andReturn().response
+        assertThat(response.getHeader(HttpHeaders.RETRY_AFTER)?.toLong()).isBetween(1L, 60L)
+        Mockito.verify(nts, Mockito.times(5)).verify(anyIdentity())
+        mvc.perform(get(registrationPath).header(HttpHeaders.AUTHORIZATION, actor.header)).andExpect(status().isNotFound)
+        assertThat(submitStatus(other, "other-account")).isEqualTo(400)
+
+        jdbc.update("update request_limit_buckets set window_ends_at = statement_timestamp() - interval '1 second' where bucket_id = ?", "driver-registration:${actor.accountId}")
+        assertThat(submitStatus(actor, "after-expiry")).isEqualTo(400)
+        assertThat(drivers.existsByAccountId(actor.accountId)).isFalse()
+    }
+
+    @Test
+    fun `가입과 재신청 및 성공 결과의 멱등 재전송을 같은 한도로 합산한다`() {
+        // given
+        val actor = driver()
+        val reviewer = admin()
+        val registered = submit(actor, request())
+        decide(reviewer, registered.driverId, DriverApprovalRequest(1, ApprovalDecision.REJECT, "재확인"))
+        val resubmission = mapper.writeValueAsString(DriverResubmissionRequest(2, request()))
+        mvc.perform(
+            post("$registrationPath/resubmission").header(HttpHeaders.AUTHORIZATION, actor.header).header("Idempotency-Key", "resubmit")
+                .contentType(MediaType.APPLICATION_JSON).content(resubmission),
+        ).andExpect(status().isOk)
+        repeat(2) { assertThat(submitStatus(actor, "submit")).isEqualTo(201) }
+        mvc.perform(
+            post("$registrationPath/resubmission").header(HttpHeaders.AUTHORIZATION, actor.header).header("Idempotency-Key", "resubmit")
+                .contentType(MediaType.APPLICATION_JSON).content(resubmission),
+        ).andExpect(status().isOk).andExpect(header().string("Idempotency-Replayed", "true"))
+
+        // when & then
+        mvc.perform(
+            post("$registrationPath/resubmission").header(HttpHeaders.AUTHORIZATION, actor.header).header("Idempotency-Key", "resubmit")
+                .contentType(MediaType.APPLICATION_JSON).content(resubmission),
+        ).andExpect(status().isTooManyRequests).andExpect(jsonPath("$.code").value("TOO_MANY_REQUESTS"))
+        assertThat(submitStatus(actor, "submit")).isEqualTo(429)
+        Mockito.verify(nts, Mockito.times(2)).verify(anyIdentity())
+        mvc.perform(get(registrationPath).header(HttpHeaders.AUTHORIZATION, actor.header)).andExpect(status().isOk)
+            .andExpect(jsonPath("$.version").value(3))
     }
 
     @Test

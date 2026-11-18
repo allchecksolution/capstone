@@ -58,8 +58,11 @@ interface DriverApi {
 
     @PostMapping("/me/registration")
     @PreAuthorize("hasRole('DRIVER')")
-    @Operation(summary = "기사 가입 신청", operationId = "submitDriverRegistration")
-    @ApiResponse(responseCode = "201", description = "신규 가입 신청 접수", headers = [Header(name = "Idempotency-Replayed", description = "동일 요청의 최초 성공 결과 재현 여부", schema = Schema(type = "boolean"))])
+    @Operation(summary = "기사 가입 신청", description = "가입·재신청 API 합산 계정별 첫 요청부터 60초 동안 최대 5회. 업무 실패와 멱등 재전송도 집계.", operationId = "submitDriverRegistration")
+    @ApiResponses(
+        ApiResponse(responseCode = "201", description = "신규 가입 신청 접수", headers = [Header(name = "Idempotency-Replayed", description = "동일 요청의 최초 성공 결과 재현 여부", schema = Schema(type = "boolean"))]),
+        ApiResponse(responseCode = "429", description = "계정별 가입·재신청 합산 요청 한도 초과", headers = [Header(name = "Retry-After", description = "다시 요청하기까지 남은 초", schema = Schema(type = "integer", format = "int64", minimum = "1"))], content = [Content(schema = Schema(implementation = ErrorResponse::class))]),
+    )
     fun submit(
         @Parameter(hidden = true) @AuthenticationPrincipal principal: AuthPrincipal,
         @NotBlank @Size(max = 200) @RequestHeader("Idempotency-Key") key: String,
@@ -68,8 +71,11 @@ interface DriverApi {
 
     @PostMapping("/me/registration/resubmission")
     @PreAuthorize("hasRole('DRIVER')")
-    @Operation(summary = "반려 후 기존 계정으로 재신청", operationId = "resubmitDriverRegistration")
-    @ApiResponse(responseCode = "200", description = "기존 기사로 재신청 접수", headers = [Header(name = "Idempotency-Replayed", description = "동일 요청의 최초 성공 결과 재현 여부", schema = Schema(type = "boolean"))])
+    @Operation(summary = "반려 후 기존 계정으로 재신청", description = "가입·재신청 API 합산 계정별 첫 요청부터 60초 동안 최대 5회. 업무 실패와 멱등 재전송도 집계.", operationId = "resubmitDriverRegistration")
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "기존 기사로 재신청 접수", headers = [Header(name = "Idempotency-Replayed", description = "동일 요청의 최초 성공 결과 재현 여부", schema = Schema(type = "boolean"))]),
+        ApiResponse(responseCode = "429", description = "계정별 가입·재신청 합산 요청 한도 초과", headers = [Header(name = "Retry-After", description = "다시 요청하기까지 남은 초", schema = Schema(type = "integer", format = "int64", minimum = "1"))], content = [Content(schema = Schema(implementation = ErrorResponse::class))]),
+    )
     fun resubmit(
         @Parameter(hidden = true) @AuthenticationPrincipal principal: AuthPrincipal,
         @NotBlank @Size(max = 200) @RequestHeader("Idempotency-Key") key: String,

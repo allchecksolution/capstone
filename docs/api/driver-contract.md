@@ -34,6 +34,8 @@
 
 ## 멱등성과 트랜잭션
 
+가입·재신청 POST는 기사 계정별로 합산하여 첫 요청부터 60초 동안 최대 5회를 허용한다. 업무 실패와 완료 결과의 멱등 재전송도 집계하며, 초과 시 국세청 호출과 상태 변경 전에 `TOO_MANY_REQUESTS`/429 및 `Retry-After`를 반환한다. 구간 종료 후 자동 해제한다. 다른 기사 POST에는 이 제한을 확대하지 않는다. 상세는 [API 요청 제한](request-limits.md)을 따른다.
+
 기사 POST 변경 API는 1~200자의 `Idempotency-Key`를 요구한다. actor 계정·HTTP 메서드/실제 경로·키를 묶어 처리하고 키는 SHA-256으로 저장한다. 타입으로 검증한 본문을 직렬화한 지문을 비교한다.
 
 같은 키·본문의 완료 요청은 최초 성공 본문과 상태를 재현하며 `Idempotency-Replayed: true`를 반환한다. 최초 성공은 false다. 다른 본문에 키를 재사용하면 409 `IDEMPOTENCY_KEY_REUSED`, 같은 키가 DB 트랜잭션에서 처리 중이면 409 `OPERATION_IN_PROGRESS`다. 실패 요청은 완료 기록을 남기지 않는다. 만료·삭제 주기는 미확정이므로 임의 TTL이나 자동 삭제를 추가하지 않았다. 응답은 `Cache-Control: no-store`다.
