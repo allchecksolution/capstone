@@ -18,15 +18,17 @@ python3 -m venv /tmp/capstone-api-contract-venv
 
 ## 구성과 버전 정책
 
-- `app/main.py`: FastAPI 앱 및 health 엔드포인트
+- `app/main.py`: FastAPI 앱, health 및 상담 분석 엔드포인트
 - `app/schemas.py`: Pydantic 응답 모델
+- `app/analysis_schemas.py`, `app/consultation.py`: 분석 계약 검증과 GPT-5.4 호출
 - `tests/test_health.py`: 기존 TestClient 테스트
+- `tests/test_analyze.py`: 가상 상담 원문과 모의 OpenAI HTTP 응답을 사용하는 분석 테스트
 - `pyproject.toml`: 실행 의존성과 개발용 `dev` 그룹
 - `uv.lock`: Windows·Linux를 고려해 잠근 직접·간접 의존성 및 배포 파일 해시
 - `Dockerfile`: `test`, `production-build`, `runtime` 단계
 - `.dockerignore`: 가상환경·도구·실제 환경파일·캐시를 빌드에서 제외
 
-Python은 기존 정책인 3.13.9를 유지하며 uv는 0.13.7로 고정합니다. FastAPI·Pydantic·Uvicorn은 실행 의존성, pytest·HTTPX2는 개발 의존성입니다. 선언된 버전 범위에서 `uv.lock`을 생성하며, 공통 실행에서는 `--locked`를 사용해 잠금 파일이 달라져야 할 때 실패하도록 합니다. 의존성을 변경할 때는 별도 작업에서 `uv lock` 후 Windows와 Linux 테스트를 실행합니다. 빌드 도구 setuptools는 기존 버전 범위를 사용하며 격리 빌드 의존성은 프로젝트 lock의 고정 대상이 아닙니다.
+Python은 기존 정책인 3.13.9를 유지하며 uv는 0.13.7로 고정합니다. FastAPI·Pydantic·Uvicorn·OpenAI SDK·tzdata는 실행 의존성, pytest·HTTPX2는 개발 의존성입니다. SDK가 사용하는 HTTPX는 실행 이미지에 포함됩니다. 선언된 버전 범위에서 `uv.lock`을 생성하며, 공통 실행에서는 `--locked`를 사용해 잠금 파일이 달라져야 할 때 실패하도록 합니다. 의존성을 변경할 때는 별도 작업에서 `uv lock` 후 Windows와 Linux 테스트를 실행합니다. 빌드 도구 setuptools는 기존 버전 범위를 사용하며 격리 빌드 의존성은 프로젝트 lock의 고정 대상이 아닙니다.
 
 ## Windows PowerShell 로컬 개발
 
@@ -100,7 +102,7 @@ docker stop capstone-ai-ack18
 운영 의존성 분리는 다음 명령으로 확인할 수 있습니다.
 
 ```powershell
-docker run --rm capstone-ai:ack18 python -c "import importlib.util, os; assert os.getuid() == 10001; assert all(importlib.util.find_spec(n) is None for n in ('pytest', 'httpx', 'httpx2')); import app.main; print('runtime dependencies: OK')"
+docker run --rm capstone-ai:ack18 python -c "import importlib.util, os; assert os.getuid() == 10001; assert all(importlib.util.find_spec(n) is None for n in ('pytest', 'httpx2')); import app.main; print('runtime dependencies: OK')"
 ```
 
 Python 이미지는 `python:3.13.9-slim-bookworm`, uv 이미지는 `ghcr.io/astral-sh/uv:0.13.7`을 사용합니다. 태그는 고정했지만 digest와 OS 패키지까지 완전히 고정한 빌드는 아닙니다. Python 패치·기본 이미지 보안 업데이트는 별도로 검토해야 합니다.
@@ -121,6 +123,16 @@ Python 이미지는 `python:3.13.9-slim-bookworm`, uv 이미지는 `ghcr.io/astr
 
 ## 환경변수 및 범위
 
-현재 필요한 환경변수는 없으며 `.env` 자동 로딩도 하지 않습니다. `.env.example`은 비밀값 없는 안내 파일입니다. API 키·토큰·고객 정보·녹음 파일은 저장소에 넣지 않습니다. 실제 `.env`와 `.env.*`는 Git 및 Docker에서 제외하고 `.env.example`만 예외로 둡니다.
+실제 `POST /internal/v1/analyze` 호출에는 `OPENAI_API_KEY`와 `AI_INTERNAL_API_KEY`가 필요합니다. Backend는 동일한 내부 키를 `X-Internal-Api-Key`로 전달합니다. `/health`와 모의 테스트에는 실제 키가 필요하지 않습니다. `.env`를 자동으로 읽지 않으므로 실행 환경에서 키를 주입합니다. API 키·토큰·고객 정보·녹음 파일은 저장소에 넣지 않습니다. 실제 `.env`와 `.env.*`는 Git 및 Docker에서 제외하고 `.env.example`만 예외로 둡니다.
 
-기존 `/health` API·Pydantic 모델·테스트를 유지합니다. Starlette TestClient가 권장하는 HTTPX2로 개발 의존성을 전환하며 deprecation 경고를 오류로 취급해 호환성을 검증합니다. 기존 infra/compose, PostgreSQL, Spring Boot, Flutter, 루트 npm 및 공통 CI 설정은 변경하지 않습니다. 외부 AI 호출, 상담 분석, 학교 서버 배포·Tailscale 설정은 이번 범위에 포함하지 않습니다.
+## 상담 분석
+
+`POST /internal/v1/analyze`는 Backend가 전사 원문을 DB에 저장한 후 호출하는 동기 API입니다. 요청에는 `analysisRequestId`, `receptionId`, `receptionVersion`, `recordingFileId`, `transcriptFileId`, `transcript`, `referenceTime`, `timeZone`이 필요합니다. `referenceTime`은 RFC 3339의 `+09:00`, `timeZone`은 `Asia/Seoul`을 사용합니다. HTTP 200 응답에 요청의 식별자·버전, `status: SUCCEEDED`, `aiOriginal`, `missingFields`를 반환합니다. 녹음 전사는 ACK-32의 `/internal/v1/transcribe`가 담당하며, 접수 저장과 확정은 Backend가 담당합니다.
+
+작업 유형은 외벽 누수(`EXTERIOR_LEAK`), 내벽 누수(`INTERIOR_LEAK`), 막힘(`BLOCKAGE`), 보일러(`BOILER`), 방수(`WATERPROOFING`)입니다. 방문 시각은 `Asia/Seoul`의 `+09:00`으로 반환합니다.
+
+내부 키가 누락되거나 올바르지 않으면 `401 UNAUTHENTICATED`를 반환합니다. 선택적으로 설정한 `AI_INTERNAL_NO_ANALYZE_API_KEY`에는 `403 FORBIDDEN`을 반환합니다. 입력 검증은 `422 VALIDATION_FAILED`, 기준 시각 오프셋 불일치는 `422 TIME_ZONE_OFFSET_MISMATCH`로 응답합니다.
+
+공급자 오류는 `502 AI_PROVIDER_FAILED`, 서비스 가용성 오류는 `503 TEMPORARILY_UNAVAILABLE`, 공급자 타임아웃은 `504 AI_TIMEOUT`, 모델 응답 검증 실패는 `500 INTERNAL_ERROR`입니다. 오류 본문은 `code`, `message`, `traceId`를 포함합니다. SDK 호출은 30초 네트워크 타임아웃을 사용하며 자동 재시도하지 않습니다.
+
+실제 상담 데이터를 처리하기 전에 개인정보 최소 전송·마스킹 책임과 적용 범위를 정해야 합니다.
