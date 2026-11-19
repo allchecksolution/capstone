@@ -110,6 +110,7 @@ bucket/key, URL lifetime, and create-only policy. `reception.infrastructure.stor
 retains WAV/header verification, recording TTLs, and mapping neutral storage failures to reception errors.
 The former `RECEPTION_STORAGE_ENABLED`, `RECEPTION_STORAGE_REGION`, `RECEPTION_STORAGE_REQUEST_TIMEOUT`,
 and `RECEPTION_STORAGE_BUCKET` settings are replaced by the common SDK settings and reception bucket above.
+
 Terraform for private storage is under `infra/terraform/s3`; its outputs match these bindings.
 
 Completion notifications use `global.notification.FcmClient` and shared `global.config.FcmConfig` for technical
@@ -128,3 +129,69 @@ in the database. OAuth completion is followed by a final execution/access/bindin
 The `analysisRequestId` AI envelope is confirmed. RECEPTION_AI_CONTRACT is optional and defaults to
 analysis-request-id-v1; setting an incompatible contract fails startup. STT/analyze endpoints are still to be
 deployed by the AI service (the current AI application only implements health).
+
+## Operations Integration
+
+Implemented operations routes are declared in `operations.coordination.presentation.api.OperationsApi`.
+The generated `/v3/api-docs` is the implementation contract; the repository-level YAML remains a preliminary
+cross-application draft. In particular, implemented mutation responses use `OperationResponse`
+(`resourceId`, `requestId`, `status`, `version`, `at`, `relatedResourceId`). A matching idempotency replay
+returns the first result with `Idempotency-Replayed: true`; fetch current state after commands. Registration
+and follow-up decisions return the request version; acceptance, work transitions, cancellation and first report
+submission return the work version; report revisions return the report version; photo commands return the
+related work version. Reads and signed URL responses use `Cache-Control: no-store`.
+
+External IDs are `req_`, `round_`, `offer_`, `work_`, `cancel_`, `report_`, `revision_`, `photo_`, and `decision_`
+followed by their numeric IDs. Identity resolution is separate from these resource identifiers.
+`OperationsIdentity` must validate current administrator/driver permission and map trusted authentication to a
+persisted numeric actor. Without it, an otherwise authenticated allowed role receives 503. No production
+account, JWT filter, driver profile, GPS registration, or device registration implementation is supplied here.
+Controlled identity/driver/device adapters used by integration tests never authenticate production requests.
+
+`OperationsDrivers.candidates` must return a complete snapshot or an explicit lookup failure, never a partial
+page presented as a successful empty search. Coordinates use WGS84; eligibility, five-minute location freshness,
+PostGIS distance, existing work occupancy, and past same-request work cancellations are applied by operations.
+`lockForAcceptance` is a short local module call joining the acceptance transaction. Its implementation must
+lock authoritative profile/availability/location state, or provide equivalent version protection through commit;
+it must not make an HTTP call under the operations lock. Lock order is request, operations driver guard, then
+the external driver's eligibility guard. The acceptance time and expiry are checked after acquiring guards.
+
+The nested request, dispatch, and work modules own their aggregates. The coordination module composes their
+public APIs; shared parent contracts have no dependency back into the child implementations. Database partial
+unique indexes protect active rounds, accepted offers, and unfinished driver/request work independently of
+command receipts. Durable tasks use database claims, lease tokens, bounded attempts and due times. Expired
+claims are recovered; a stale result cannot update a new claim or reopen a terminal round. Push transport can
+have an unknown outcome and therefore be delivered more than once; the logical offer/follow-up event remains
+unique and clients refresh authoritative state on receipt. Active progress screens initially poll every five seconds.
+
+All administrators may query `/service-requests`, its detail, `/dispatch-rounds` and `/dispatch-history`,
+`/dispatch-cancellations`, and `/reports`. History includes inline cancellation reasons and redispatch decisions.
+Drivers use `/drivers/me/dispatch-offers`, `/drivers/me/works?scope=CURRENT|HISTORY`, and
+`/drivers/me/work-statistics?month=YYYY-MM`. `HISTORY&month=YYYY-MM` uses Asia/Seoul completion/cancellation
+month; `CURRENT` with a month is invalid. Work and report details allow an owner's historical reads and a
+current driver's previous-work handover chain. Previous drivers cannot read another driver's subsequent work.
+Offer responses expose only the administrative area. Driver customer-phone access ends when their current
+unfinished work ends, including when the request retains its completed-work link.
+
+Photo reservations are `/works/{workId}/photos/upload-requests`, with renewal at
+`/works/{workId}/photos/{photoId}/upload-requests`. Same-key reservations are reused and freshly signed;
+renewal changes no business state and needs no command receipt. Completion verifies S3 HEAD MIME/length/SHA256
+and a conditional range read of the JPEG/PNG signature. This is format identification, not full image decoding.
+Only verified BEFORE/AFTER photos of the same work/driver may be submitted, three to five per phase.
+Photo access uses the related work permissions; responses never expose bucket/object keys. No server report
+draft, DURING photo, administrator approval, or direct ongoing-request edit/cancellation API is provided.
+
+Runtime activation requires the following, in addition to the existing JWT and shared S3/FCM configuration:
+
+| Feature | Configuration and prerequisites |
+|---|---|
+| Database | PostgreSQL 17 with PostGIS. V12 installs the extension in public if absent; provision it beforehand when the migration role lacks extension permission. Unmapped legacy photo references stop V12 without deleting data or guessing new work IDs. Local Compose uses the official PostGIS image with amd64 emulation on Apple Silicon. Existing data volumes are not reset. |
+| Geocoding | `OPERATIONS_SGIS_ENABLED=true`, `OPERATIONS_SGIS_SERVICE_ID`, `OPERATIONS_SGIS_SECRET`, `OPERATIONS_SGIS_CONNECT_TIMEOUT`, `OPERATIONS_SGIS_REQUEST_TIMEOUT`, and the provider's required usage permission. A single complete building-level match is converted from EPSG:5179 to WGS84 in PostGIS; missing/ambiguous results do not create a request or alter reception confirmation. |
+| Photos | `S3_ENABLED=true`, the shared S3 settings/credentials, and private `OPERATIONS_PHOTO_BUCKET` with PUT/HEAD/GET and checksum permissions. Upload/access TTLs default to 15m/10m and are configurable with `OPERATIONS_PHOTO_UPLOAD_URL_TTL` / `OPERATIONS_PHOTO_ACCESS_URL_TTL`. No bucket or public ACL is created by application startup. |
+| Worker | `OPERATIONS_WORKER_ENABLED=true` requires real driver/device adapters and an enabled FCM connection. `OPERATIONS_WORKER_LEASE` defaults to 60s; `OPERATIONS_WORKER_POLL_INTERVAL` to 1s. Configure integration timeouts within the lease and measure production capacity. Missing required bridges fail worker startup rather than generating spurious business failures. |
+| Dispatch | `OPERATIONS_OFFER_LIFETIME` defaults to 1m. Search and driver-device transient retries use three total attempts with 5s/10s delays. A longer provider Retry-After is honored only within offer expiry. |
+| Administrator push | `OPERATIONS_ADMIN_PUSH_MAX_ATTEMPTS` defaults to 3; `OPERATIONS_ADMIN_PUSH_RETRY_DELAY` to 1m. Device resolution revalidates current authorization and binding; only the current unresolved follow-up target may be sent. |
+
+Keys and credentials belong in runtime secret configuration. Live SGIS/S3/FCM verification, production identity
+and driver/device adapter integration, retention/cleanup, and cross-application deployment remain integration
+work. Automated coverage uses isolated PostgreSQL/PostGIS schemas, offline S3 signing, and loopback SGIS/FCM.

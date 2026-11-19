@@ -90,7 +90,7 @@ class OperationsQueries(private val requests: RequestOperations, private val dis
                 round.radiusKm,
                 round.createdAt,
                 round.closedAt,
-                dispatch.offers(round.roundId).map { OfferHistoryResponse(id("offer", it.offerId), id("drv", it.driverId), it.status, it.deliveryStatus.name, it.respondedAt, it.expiresAt) },
+                dispatch.offers(round.roundId).map { OfferHistoryResponse(id("offer", it.offerId), id("drv", it.driverId), it.status, it.deliveryStatus.name, it.respondedAt, it.expiresAt, it.createdAt, it.receivedAt, it.viewedAt) },
                 workByRound[round.roundId]?.let { workResponse(actor, it, reportIds[it.workId]) },
             )
         }

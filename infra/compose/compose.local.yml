@@ -25,7 +25,8 @@ services:
       - "127.0.0.1:8000:8000"
 
   postgres:
-    image: postgres:17
+    image: postgis/postgis:17-3.5
+    platform: linux/amd64 # 공식 PostGIS 이미지의 아키텍처. Apple Silicon은 에뮬레이션 사용.
     container_name: allcheck-postgres
     restart: unless-stopped # 컨테이너 종료 시 자동 재시작
 

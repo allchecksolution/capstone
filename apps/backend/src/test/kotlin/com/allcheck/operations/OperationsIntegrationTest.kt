@@ -407,6 +407,9 @@ class OperationsIntegrationTest @Autowired constructor(
         assertThat(requests.get(request).status).isEqualTo(RequestStatus.OPEN)
         transactions.signal(OperationsActor(ActorRole.DRIVER, 10), offer.offerId, false)
         assertThat(dispatch.offer(offer.offerId).receivedAt).isEqualTo(clock.time)
+        val history = queries.history(admin, request).rounds.single().offers.single()
+        assertThat(history.receivedAt).isEqualTo(clock.time)
+        assertThat(history.viewedAt).isNull()
     }
 
     @Test

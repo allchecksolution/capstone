@@ -16,7 +16,7 @@ info:
     UC-01~16의 관리자 앱·기사 앱 흐름을 대상으로 한다. 세부 미확정 사항은 해당 계약 설명에 표시한다.
     녹음·STT·AI·분석 완료 푸시의 업무 정책은 BR-09, Backend→AI 계약은 apps/ai/docs/openapi.yaml을 따른다.
     녹음 업로드 완료를 검증하면 최초 분석을 자동 접수하고 앱에 202로 응답한다. Backend는 백그라운드에서 STT 동기 호출→원문 DB 저장→구조화 동기 호출→FCM 완료/실패 알림 순서로 처리한다.
-    기존 /files multipart·공통 접근 경로는 녹음·사진의 종류별 S3 경로로 교체했다. STT 원문은 DB에서 접수 상세로 제공하며 STT용 S3 접근 URL은 사용하지 않는다. 실시간 채팅(WebSocket)·배차/채팅 푸시의 상세 연동과 보고서 임시 저장·조회 내보내기는 별도 검토한다.
+    기존 /files multipart·공통 접근 경로는 녹음·사진의 종류별 S3 경로로 교체했다. STT 원문은 DB에서 접수 상세로 제공하며 STT용 S3 접근 URL은 사용하지 않는다. 배차 푸시는 BR-04의 활성 기기 전체 전송·기사 단위 결과 집계를 따른다. 서버 보고서 임시 저장은 MVP에서 제공하지 않는다. 실시간 채팅(WebSocket)·채팅 푸시의 상세 연동과 조회 내보내기는 별도 검토한다.
     실제 녹음의 단계별 소요 시간과 p95/p99·타임아웃을 측정해 제한·동시 실행 수를 정한다. 필요 시 WebClient 또는 AI 비동기 작업/웹훅 전환은 후속 검토한다.
     의뢰 현황·기간 통계·상세·회차 조회는 아래 x-uc04-inquiry-scope와 BR-08을 따른다.
 x-uc04-inquiry-scope:
@@ -38,7 +38,7 @@ x-uc04-inquiry-scope:
   description: >-
     로그인한 관리자가 하나의 화면에서 진행 중·과거 완료/취소 의뢰를 조회한다. 조회 기간과 검색·상태·작업 유형·기사·지역 조건을 조합하며,
     목록과 해당 기간의 통계를 함께 표시한다. 기간 변경은 두 조회에 함께 반영한다. 상세에는 접수 정보·작업 유형·현재 배차 상태·배정 기사·최신 작업 상태가 필요하다.
-    현재 상태와 과거 배차/재배차 이력은 구분하며 최신 배차·작업 상태를 실시간 반영한다. 조회는 기존 의뢰 데이터를 변경하지 않는다.
+    현재 상태와 과거 배차/재배차 이력은 구분하며 최신 배차·작업 상태는 REST 조회와 푸시 수신 후 재조회로 반영한다. 진행 중 화면이 활성 상태일 때 5초 간격 조회를 초기 연동 기준으로 삼고 화면 진입·재진입·푸시 수신·수락 및 취소 동작 후에는 최신 상태를 바로 조회한다. 조회는 기존 의뢰 데이터를 변경하지 않는다.
     보고서 기반 조회·통계에는 최신 유효 수정 내용과 중복 방지 기준을, 기사 탈퇴 관련 데이터에는 UC-15 정책을 적용한다.
   emptyAndErrorHandling: >-
     데이터가 없어도 화면에 접근할 수 있다. 목록 결과 없음(E2), 기간 통계 데이터 없음(E3), 의뢰 없음(E1), 목록·통계·상세 조회 실패(E4)를 구분한다.
@@ -46,8 +46,9 @@ x-uc04-inquiry-scope:
   dispatchDelivery: >-
     후보 미확보·전체 전달 실패를 정상 배차 진행과 구분하고 일부 전달 실패는 기사별 결과와 정상 전달된 기사의 진행 상황을 함께 제공한다.
     푸시 발행·전달 서비스 접수 성공은 실제 수신·확인 성공을 의미하지 않는다.
+    회차가 담당 기사 없이 종료되거나 담당 기사가 작업을 취소해 FOLLOW_UP_REQUIRED로 전환되면 모든 현재 권한 있는 관리자의 활성 기기에 알린다. 정상 진행·완료는 조회 API로 확인하며 관리자 푸시를 발행하지 않는다. 상세 기준은 BR-06을 따른다.
   undecided: >-
-    필터 UI·API 방식, 검색 기준, 지역 분류, 통계 지표·계산 방식·집계 주기·집계 기준, 목록 필터의 통계 연동, 실시간 전송 방식은 미정.
+    필터 UI·API 방식, 검색 기준, 지역 분류, 통계 지표·계산 방식·집계 주기·집계 기준, 목록 필터의 통계 연동은 미정.
     내보내기(UC-04 A2)는 선택 기능으로 정책 결정 후 명세한다.
 x-reception-analysis-push:
   transport: FCM
@@ -342,6 +343,7 @@ paths:
       summary: 확정 접수로 의뢰와 최초 배차 회차 생성
       description: >-
         본인이 생성한 CONFIRMED 접수와 receptionVersion을 검증하고 정확한 방문 시작/종료 시각·연락처를 포함한 확정 데이터를 스냅샷으로 보존한다.
+        확정 주소의 현장 좌표를 확보해야 생성한다. 주소 미일치·복수 후보 미해결·제공자 장애로 좌표를 확정하지 못하면 의뢰·최초 회차·접수 등록 연결을 생성하지 않고 접수의 확정 데이터·상태·버전을 유지한다. 복수 후보를 임의로 선택하지 않는다.
         종료 시각의 미래 여부는 검토 완료 시에만 검사한다. 의뢰 등록 시에는 종료가 이미 지났더라도 이를 재검사하여 거부하거나 재확정을 요구하지 않고 확정된 스냅샷으로 등록한다.
         확정 취소와 경합하면 같은 이전 확정으로 두 작업이 함께 성공하지 않도록 최신 접수 상태·버전·등록 관계를 원자적으로 확인한다.
         의뢰, 최초 회차, 탐색 outbox를 원자적으로 저장한다. 후보 탐색과 전달은 비동기. 201은 생성 성공이며 기사 수신 확인을 의미하지 않는다. 접수당 의뢰 하나는 초안 정책.
@@ -463,7 +465,7 @@ paths:
       description: >-
         본인 요청이 PENDING이고 만료 전이며 의뢰 OPEN·회차 OFFERING인지 확인한다. ACCEPT는 계정 ACTIVATED·availability READY·미완료 작업 미점유와 나머지 후보 조건을 재검증하고
         작업 생성, 의뢰 ACCEPTED, 회차 ASSIGNED, 배차 요청 ACCEPTED, 나머지 대기 요청 마감을 함께 확정한다. REJECT는 본인 유효 요청만 종료하며 READY·미점유 조건을 요구하지 않는다. 동시 수락은
-        의뢰별 미완료 작업 하나·기사별 점유 하나를 보장한다(BR-01·04).
+        의뢰별 미완료 작업 하나·기사별 점유 하나를 보장한다(BR-01·04). 여러 기기는 같은 기사 배차 요청을 공유하며, 먼저 커밋된 유효 수락·거절을 모든 기기에 공통 적용한다.
       tags:
         - Dispatch
       x-requirements:
@@ -730,8 +732,9 @@ paths:
         - BR-06
       summary: 작업 취소와 의뢰 후속 처리 전환
       description: >-
-        현재 담당 기사는 NOT_STARTED·EN_ROUTE·ARRIVED·IN_PROGRESS·REVISIT_REQUIRED 작업을 취소할 수 있다. expectedVersion은 작업 버전이다. 취소 기록, 작업
-        CANCELLED, 의뢰 FOLLOW_UP_REQUIRED를 함께 확정하고 사유·시각·취소 직전 상태를 보존한다. 응답의 version은 갱신된 작업 버전이다. WORK_DONE·CANCELLED 작업의 신규 취소는
+        현재 담당 기사는 NOT_STARTED·EN_ROUTE·ARRIVED·IN_PROGRESS·REVISIT_REQUIRED 작업을 취소할 수 있다. expectedVersion은 작업 버전이다.
+        취소에는 다섯 분류 중 하나와 공백뿐이지 않은 1~1000자의 상세 사유가 모두 필수이며 기타 이외의 분류에도 동일하게 적용한다. 입력 오류이면 취소·배정 해제·알림을 처리하지 않는다.
+        취소 기록, 작업 CANCELLED, 의뢰 FOLLOW_UP_REQUIRED와 관리자 후속 처리 알림 발행 의도를 함께 확정하고 사유·시각·취소 직전 상태를 보존한다. 푸시는 커밋 후 전송하며 알림 실패로 취소 결과를 변경하지 않는다. 응답의 version은 갱신된 작업 버전이다. WORK_DONE·CANCELLED 작업의 신규 취소는
         제한한다. 같은 키의 성공 재시도는 기존 201을 재현하고, 다른 키의 중복 취소는 409와 기존 cancellationId를 반환한다(BR-06).
       tags:
         - Work
@@ -864,8 +867,8 @@ paths:
         FOLLOW_UP_REQUIRED 의뢰의 최신 작업 취소 또는 담당자 없이 종료된 최신 회차에 대해 관리자가 재배차·의뢰 취소 중 하나를 결정한다. target에는 해당 의뢰의 cancellationId 또는
         dispatchRoundId 중 하나만 지정한다. expectedVersion은 최신 의뢰 버전이다. 최신 상태·대상·기존 결정을 재검증하고 대상별 한 번만 확정한다. REDISPATCH는 결정 이력·의뢰 OPEN·새
         SEARCHING 회차를, CANCEL_REQUEST는 결정 이력·의뢰 CANCELLED를 함께 저장한다. 배차 실패 회차는
-        NO_CANDIDATES·DELIVERY_FAILED·NO_ACCEPT·ROUND_CLOSED만 허용하고, 진행 중인 회차나 미완료 작업이 있으면 거부한다. 재배차가 다시 실패하면 새 종료 회차를 대상으로 새 결정을
-        남긴다. 기존 결정은 재실행하거나 덮어쓰지 않는다(BR-06).
+        NO_CANDIDATES·SEARCH_FAILED·DELIVERY_FAILED·NO_ACCEPT·ROUND_CLOSED만 허용하고, 진행 중인 회차나 미완료 작업이 있으면 거부한다. 재배차가 다시 실패하면 새 종료 회차를 대상으로 새 결정을
+        남긴다. 기존 결정은 재실행하거나 덮어쓰지 않는다(BR-06). 새 회차에서는 동일 의뢰의 작업 취소 이력이 있는 기사를 후보 선정과 수락 재검증에서 제외한다. 수락 전 거절·무응답·전달 실패 이력만으로는 제외하지 않는다(BR-04).
       tags:
         - Service Requests
       x-requirements:
@@ -1015,7 +1018,7 @@ paths:
         - BR-07
       summary: 작업 보고서 최초 제출
       description: >-
-        의뢰의 현재 담당자가 IN_PROGRESS 작업의 최초 보고서를 제출한다. expectedVersion은 작업 버전이다. 사진 소유권·작업 연결·업로드 완료·BEFORE/DURING/AFTER 분류와 배열 간 중복을 검증하고 최초 보고서, 작업 WORK_DONE, 의뢰
+        의뢰의 현재 담당자가 IN_PROGRESS 작업의 최초 보고서를 제출한다. expectedVersion은 작업 버전이다. 사진 소유권·작업 연결·업로드 완료·BEFORE/AFTER 분류·전후 각각 3~5장 및 배열 간 중복을 검증하고 최초 보고서, 작업 WORK_DONE, 의뢰
         COMPLETED를 함께 저장한다. 저장 실패 시 일부만 완료하지 않는다. 원본·전후 사진은 보존하며 비용은 단일 totalCost(KRW 정수)를 사용한다. 작업당 최초 보고서는 한 건이고 수정은 새 제출이나 추가
         완료 집계가 아니다. 완료된 작업은 신규 배차 점유에서 제외한다(BR-01·07).
       tags:
@@ -1049,8 +1052,12 @@ paths:
               diagnosis: 배관 이물질 누적
               beforePhotoIds:
                 - file_before_01
+                - file_before_02
+                - file_before_03
               afterPhotoIds:
                 - file_after_01
+                - file_after_02
+                - file_after_03
               totalCost: 100000
       responses:
         "201":
@@ -1074,8 +1081,12 @@ paths:
                   diagnosis: 배관 이물질 누적
                   beforePhotoIds:
                     - file_before_01
+                    - file_before_02
+                    - file_before_03
                   afterPhotoIds:
                     - file_after_01
+                    - file_after_02
+                    - file_after_03
                   totalCost: 100000
         "401":
           description: 인증이 필요합니다.
@@ -1152,7 +1163,7 @@ paths:
         - BR-07
       summary: 원본을 유지하며 관리자 수정 이력 추가
       description: >-
-        허용 필드만 수정. 사진/원본/기사 ID 수정은 400. 서버가 이전 유효값과 새 값, 수정자, 시각을 revision으로 기록하고 effective를 갱신한다.
+        모든 현재 권한 있는 관리자가 진단 결과·작업 내용·총비용만 수정할 수 있으며 공백뿐이지 않은 수정 사유가 필수다. 사진/원본/기사 ID 수정은 400. 서버가 이전 유효값과 새 값, 사유, 수정자, 시각을 revision으로 기록하고 effective를 갱신한다.
         승인/반려 단계 없음. 집계 금액은 갱신하되 완료 건수 증가 금지. 동시 수정은 report version으로 제어. 원본과 파일의 보존/파기는 UC-15 정책을 따른다.
       tags:
         - Reports
@@ -1164,7 +1175,7 @@ paths:
         - "2250:6715"
         - "2250:6749"
       x-roles:
-        - ADMIN_WITH_REPORT_EDIT
+        - ADMIN
       parameters:
         - name: reportId
           in: path
@@ -1181,6 +1192,7 @@ paths:
               $ref: "#/components/schemas/CreateRevision"
             example:
               expectedVersion: 1
+              reason: 현장 정산 내역에 맞춰 비용 정정
               changes:
                 totalCost: 105000
       responses:
@@ -1202,6 +1214,7 @@ paths:
                   revisionId: rev_01
                   editedBy: admin_01
                   editedAt: "2026-10-31T17:30:00+09:00"
+                  reason: 현장 정산 내역에 맞춰 비용 정정
                   changes:
                     - field: totalCost
                       before: 100000
@@ -1211,8 +1224,12 @@ paths:
                   diagnosis: 배관 이물질 누적
                   beforePhotoIds:
                     - file_before_01
+                    - file_before_02
+                    - file_before_03
                   afterPhotoIds:
                     - file_after_01
+                    - file_after_02
+                    - file_after_03
                   totalCost: 105000
         "401":
           description: 인증이 필요합니다.
@@ -1288,6 +1305,7 @@ paths:
         - BR-07
       summary: 원본·최신 유효본·전체 수정 이력 조회
       description: >-
+        권한 있는 관리자 또는 해당 작업의 조회 권한이 있는 기사만 조회한다. 기사는 본인 완료·취소 작업과 현재 담당 의뢰의 인계 대상인 이전 작업을 읽을 수 있으며, 취소 후 다른 기사의 이후 작업에 대한 접근 권한은 얻지 않는다.
         original은 최초 제출 내용과 사진 ID, effective는 최신 수정 반영 내용이다. 전체 revision은 수정 전후/수정자/시각을 제공한다. 파일 ID는 공개 URL이
         아니며 GET /works/{workId}/photos/{photoFileId}/access에서 별도로 인가한다. 탈퇴 기사 관련 데이터 접근/보존은 UC-15를 따른다.
       tags:
@@ -1300,6 +1318,7 @@ paths:
         - "2250:6715"
       x-roles:
         - ADMIN
+        - DRIVER
       parameters:
         - name: reportId
           in: path
@@ -1324,21 +1343,30 @@ paths:
                   diagnosis: 배관 이물질 누적
                   beforePhotoIds:
                     - file_before_01
+                    - file_before_02
+                    - file_before_03
                   afterPhotoIds:
                     - file_after_01
+                    - file_after_02
+                    - file_after_03
                   totalCost: 100000
                 effective:
                   workDescription: 배수구 고압 세척
                   diagnosis: 배관 이물질 누적
                   beforePhotoIds:
                     - file_before_01
+                    - file_before_02
+                    - file_before_03
                   afterPhotoIds:
                     - file_after_01
+                    - file_after_02
+                    - file_after_03
                   totalCost: 105000
                 revisions:
                   - revisionId: rev_01
                     editedBy: admin_01
                     editedAt: "2026-10-31T17:30:00+09:00"
+                    reason: 현장 정산 내역에 맞춰 비용 정정
                     changes:
                       - field: totalCost
                         before: 100000
@@ -3138,9 +3166,9 @@ paths:
   /works/{workId}/photos/upload-requests:
     post:
       operationId: createWorkPhotoUploadRequest
-      summary: 작업 전·중·후 사진 업로드 URL 발급
-      description: 현재 유효 담당 기사가 해당 작업의 사진을 예약한다. phase는 BEFORE/DURING/AFTER이며 S3에 직접 PUT한다. 응답 photoFileId를 완료 확인
-        후 보고서의 해당 사진 ID 배열에 넣는다. 원본 사진 객체 덮어쓰기를 금지한다. 허용 MIME·최대 크기·사진 수 상한은 TODO다.
+      summary: 작업 전·후 사진 업로드 URL 발급
+      description: 현재 유효 담당 기사가 해당 작업의 사진을 예약한다. phase는 BEFORE/AFTER이며 S3에 직접 PUT한다. 작업 중 사진은 MVP에서 지원하지 않는다. 응답 photoFileId를 완료 확인
+        후 보고서의 해당 사진 ID 배열에 넣는다. 원본 사진 객체 덮어쓰기를 금지한다. 보고서 제출 시 전·후 사진은 각각 3~5장이 필요하다. JPEG(image/jpeg)·PNG(image/png)만 허용하고 파일당 최대 크기는 10MB(10,000,000바이트, 포함)다. 완료 확인 시 실제 형식·용량·체크섬과 선언 MIME 일치를 검증한다.
       tags:
       - Files
       x-roles:
@@ -3205,7 +3233,7 @@ paths:
     post:
       operationId: completeWorkPhotoUpload
       summary: 작업 사진 업로드 완료 확인
-      description: 현재 유효 담당자·파일 업로더·작업 연결과 S3 객체의 크기·MIME·체크섬을 확인해 UPLOADED로 바꾼다. 같은 사진의 완료 재통보는 동일 파일을 반환한다. 검증 실패는
+      description: 현재 유효 담당자·파일 업로더·작업 연결과 S3 객체의 실제 JPEG/PNG 형식·크기·MIME·체크섬을 확인해 UPLOADED로 바꾼다. 선언 MIME과 실제 형식이 일치하고 파일당 최대 10MB(10,000,000바이트, 포함) 이하여야 한다. 같은 사진의 완료 재통보는 동일 파일을 반환한다. 검증 실패는
         400 FILE_UPLOAD_NOT_VERIFIED. 완료 확인은 보고서 제출이나 작업 완료를 의미하지 않으며 제출 시 권한·작업 상태·사진 연결을 다시 검증한다.
       tags:
       - Files
@@ -3514,6 +3542,7 @@ paths:
       summary: 관리자·기사 앱 푸시 기기 등록·토큰 갱신
       description: 로그인한 본인의 현재 세션·설치 ID와 FCM 등록 토큰을 연결한다. 사용자 ID는 JWT로 결정한다. 같은 값을 반복 설정해도 결과가 같으므로 Idempotency-Key를 받지 않는다.
         토큰 갱신 시 같은 설치 ID로 재등록하고 토큰을 응답·로그에 노출하지 않는다. 다른 계정으로 이전할 때 이전 연결을 해제하며 소유권 충돌은 409다. 승인 대기·반려 기사도 가입 알림을 위해 등록할 수 있다.
+        배차 제안은 대상 기사의 활성 설치 전체에 전송한다.
       tags:
       - Push Devices
       x-roles:
@@ -3694,8 +3723,10 @@ paths:
       description: >-
         의뢰의 모든 배차 회차를 순서대로 돌려주고, 회차마다 기사별 요청의 응답 상태(수락·거절·만료)와 전달 상태를 보여준다. 후보 미확보(NO_CANDIDATES)와 전체 전달 실패
         (DELIVERY_FAILED)는 정상 진행과 구분된 회차 상태다. 일부 기사만 전달에 실패하면 회차는 OFFERING으로 유지되고 실패한 기사만 deliveryStatus가 FAILED다.
-        PROVIDER_ACCEPTED는 푸시 서비스 접수일 뿐 기사의 실제 수신이 아니며 receivedAt·viewedAt이 있을 때만 수신·확인으로 본다. 현재 상태를 "실시간으로" 반영해야 하는 화면은
-        이 API를 다시 조회한다. 실시간 전송 방식은 미정이다.
+        후보 조회 자체가 실패한 SEARCH_FAILED는 정상 조회 후 후보가 없었던 NO_CANDIDATES와 구분하며, 요청·회차·이력에 보존하고 관리자 후속 결정과 알림의 대상으로 제공한다. 일시적 조회 오류는 동일 조건으로 최초 포함 총 3회까지 시도하며 첫 실패 후 5초, 두 번째 실패 후 10초를 대기한다.
+        기기 수와 관계없이 기사당 요청은 한 건이다. 하나 이상의 활성 기기에서 푸시 서비스 접수에 성공하면 기사 단위 PROVIDER_ACCEPTED이며, 활성 기기가 없거나 모든 대상 기기의 전송이 최종 실패하면 FAILED다. 다른 기기의 실패로 접수 성공을 덮어쓰지 않는다.
+        PROVIDER_ACCEPTED는 푸시 서비스 접수일 뿐 기사의 실제 수신이 아니며 receivedAt·viewedAt이 있을 때만 수신·확인으로 본다. 진행 중 화면은 활성 상태에서 초기 5초 간격으로
+        이 API를 다시 조회하고 화면 재진입·푸시 수신 및 상태 변경 동작 후에는 최신 상태를 바로 조회한다. operations 상태 구독용 SSE·WebSocket은 MVP 범위에 포함하지 않는다.
       tags:
         - Dispatch
       x-business-rules:
@@ -4079,7 +4110,7 @@ paths:
       summary: 내게 온 배차 요청 목록
       description: >-
         본인에게 전달된 배차 요청만 돌려준다. 마감(RESPONSE_CLOSED)·만료(EXPIRED)된 요청도 상태와 함께 조회할 수 있어 안내 화면을 만들 수 있다. 수락 전이므로 상세 주소 대신
-        대략적인 지역만 보여준다. 푸시 알림을 못 받았거나 앱을 껐다 켠 경우에도 이 API로 요청을 확인할 수 있다.
+        시·군·구와 읍·면·동 수준의 지역 및 직선거리만 보여준다. 도로명·건물번호·동호수와 현장 좌표는 포함하지 않는다. 전체 확정 주소는 수락 후 권한 있는 작업 조회에서 제공한다. 푸시 알림을 못 받았거나 앱을 껐다 켠 경우에도 이 API로 요청을 확인할 수 있다.
       tags:
         - Dispatch
       x-business-rules:
@@ -4110,7 +4141,7 @@ paths:
                   - offerId: ofr_01
                     requestId: req_01
                     workType: BLOCKAGE
-                    approximateAddress: 서울 강남구
+                    approximateAddress: 서울특별시 강남구 역삼동
                     distanceKm: 3.2
                     offerStatus: PENDING
                     expiresAt: "2026-10-31T09:10:00+09:00"
@@ -4125,7 +4156,7 @@ paths:
       operationId: getDispatchOffer
       summary: 배차 요청 상세 조회
       description: >-
-        증상, 희망 방문 시간, 대략적인 주소, 거리, 남은 시간(expiresAt)을 돌려준다. 본인에게 온 요청만 조회할 수 있고 다른 기사의 요청은 404다. 이미 마감되거나 만료된 요청도 200으로
+        증상, 희망 방문 시간, 시·군·구와 읍·면·동 수준의 지역, 직선거리, 남은 시간(expiresAt)을 돌려준다. 도로명·건물번호·동호수와 현장 좌표는 포함하지 않으며 전체 확정 주소는 수락 후 권한 있는 작업 조회에서 제공한다. 본인에게 온 요청만 조회할 수 있고 다른 기사의 요청은 404다. 이미 마감되거나 만료된 요청도 200으로
         상태를 알려주며(offerStatus), 수락 가능 여부의 최종 판단은 respondToDispatchOffer 시점에 서버가 한다.
       tags:
         - Dispatch
@@ -4155,7 +4186,7 @@ paths:
                 requestId: req_01
                 workType: BLOCKAGE
                 symptoms: 싱크대 물이 내려가지 않음
-                approximateAddress: 서울 강남구
+                approximateAddress: 서울특별시 강남구 역삼동
                 desiredVisitFrom: "2026-10-31T14:00:00+09:00"
                 desiredVisitTo: "2026-10-31T16:00:00+09:00"
                 distanceKm: 3.2
@@ -4173,7 +4204,8 @@ paths:
       summary: 내 작업 목록
       description: >-
         본인의 작업을 조회한다. scope=CURRENT는 WORK_DONE·CANCELLED를 제외한 미완료 작업, HISTORY는 WORK_DONE·CANCELLED 작업이다. 재방문 대기와 보고서 미제출은 CURRENT에
-        포함한다. 취소·완료 작업의 신규 변경은 허용하지 않는다(BR-01).
+        포함한다. HISTORY에서는 본인 작업 상세·취소 사유·권한 있는 보고서와 사진의 읽기 전용 조회를 지원하며 고객 연락처는 null이다. 취소·완료 작업의 신규 변경과 재배차 후 다른 기사의 이후 작업 조회는 허용하지 않는다(BR-01·02).
+        HISTORY의 month 필터는 Asia/Seoul 기준 완료 작업의 최초 보고서 제출 성공 시각 또는 취소 작업의 취소 확정 시각을 사용한다. 해당 월 시작은 포함하고 다음 월 시작은 제외한다. 배정일·방문 예정일·보고서 수정일은 월별 내역의 기준이 아니다. month를 생략하면 전체 과거 이력을 조회하며 CURRENT와 month의 조합은 입력 오류다.
       tags:
         - Work
       x-business-rules:
@@ -4184,6 +4216,8 @@ paths:
       x-requirements:
         - FR-09
         - UC-11
+      x-figma-node-ids:
+        - "2103:238"
       x-roles:
         - DRIVER
       parameters:
@@ -4191,6 +4225,14 @@ paths:
           in: query
           description: CURRENT(기본) 또는 HISTORY.
           schema: {type: string, enum: [CURRENT, HISTORY], default: CURRENT}
+        - name: month
+          in: query
+          required: false
+          description: HISTORY 전용 조회 월(YYYY-MM). 한국 시간 기준 완료·취소 월이며 생략 시 전체 이력. CURRENT와 함께 사용하면 400.
+          schema:
+            type: string
+            pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$'
+          example: '2026-10'
         - $ref: "#/components/parameters/PageNumber"
         - $ref: "#/components/parameters/PageSize"
       responses:
@@ -4230,7 +4272,7 @@ paths:
       operationId: getWork
       summary: 작업 상세 조회
       description: >-
-        본인 작업 또는 현재 담당 의뢰에 연결된 이전 작업을 조회한다. 인계된 이전 작업은 읽기 전용이며 수정 권한을 부여하지 않는다. previousWorkId로 이전 작업을 연결한다. version은 현재 작업
+        본인의 진행·완료·취소 작업 또는 현재 담당 의뢰에 연결된 이전 작업을 조회한다. 완료·취소 이력과 인계된 이전 작업에서는 고객 연락처를 null로 반환하고 읽기 전용이며 수정 권한을 부여하지 않는다. 취소 후 다른 기사의 이후 작업에는 접근할 수 없다. previousWorkId로 이전 작업을 연결한다. version은 현재 작업
         변경·취소·최초 보고서 제출의 expectedVersion이다. allowedTransitions·canCancel·canSubmitReport는 표시용 힌트이며 서버가 요청 시점에 다시 검증한다. 취소·완료 작업과
         이전 작업은 변경할 수 없고, 접근 관계가 없는 작업은 404다(BR-01·02).
       tags:
@@ -4716,7 +4758,7 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: >-
-        액세스 토큰(Bearer)으로 API를 인증하고 리프레시 토큰으로 갱신한다(FR-01). 관리자는 사전 등록한 아이디·비밀번호 인증에 성공하면 토큰을 받으며 MFA는 구현하지 않는다. x-roles의 ADMIN은 관리자, DRIVER는 계정이 ACTIVATED인 기사, DRIVER_ANY_STATUS는 승인 대기·반려·미가입 기사를 포함한 모든 기사 토큰을 뜻한다. 역할과 리소스 관계, 기사 계정 상태는 요청 시점에 서버가 최신 상태로 다시 검증하며 토큰의 과거 권한만 신뢰하지 않는다. 토큰 검증·수명·갱신 정책은 백엔드 보안 컨벤션을 따른다. 기사의 일반 서비스 API는 ACTIVATED 계정에만 허용한다. PENDING_APPROVAL은 본인 신청·상태 조회·로그아웃, REJECTED는 본인 반려 사유·재신청·로그아웃으로 제한하고 WITHDRAWN은 로그인과 일반 접근을 거부한다(BR-02). ADMIN_WITH_REPORT_EDIT는 보고서 수정 권한이 있는 관리자를 뜻하며 별도 계정 역할이 아니다. MASTER와 SUB는 동일한 업무 권한을 가지며 역할 값만 구분하여 보존한다. 로그인 전 API는 security: []로 표시했다.
+        액세스 토큰(Bearer)으로 API를 인증하고 리프레시 토큰으로 갱신한다(FR-01). 관리자는 사전 등록한 아이디·비밀번호 인증에 성공하면 토큰을 받으며 MFA는 구현하지 않는다. x-roles의 ADMIN은 관리자, DRIVER는 계정이 ACTIVATED인 기사, DRIVER_ANY_STATUS는 승인 대기·반려·미가입 기사를 포함한 모든 기사 토큰을 뜻한다. 역할과 리소스 관계, 기사 계정 상태는 요청 시점에 서버가 최신 상태로 다시 검증하며 토큰의 과거 권한만 신뢰하지 않는다. 토큰 검증·수명·갱신 정책은 백엔드 보안 컨벤션을 따른다. 기사의 일반 서비스 API는 ACTIVATED 계정에만 허용한다. PENDING_APPROVAL은 본인 신청·상태 조회·로그아웃, REJECTED는 본인 반려 사유·재신청·로그아웃으로 제한하고 WITHDRAWN은 로그인과 일반 접근을 거부한다(BR-02). ADMIN_WITH_REPORT_EDIT는 보고서 수정 권한이 있는 관리자를 뜻하며 별도 계정 역할이 아니다. MASTER와 SUB는 동일한 업무 권한을 가지며 역할 값만 구분하여 보존한다. MVP의 operations 조회·후속 결정·보고서 정정은 모든 권한 있는 관리자에게 해당 업무 규칙에 따라 허용한다. 로그인 전 API는 security: []로 표시했다.
   parameters:
     IdempotencyKey:
       name: Idempotency-Key
@@ -5229,6 +5271,8 @@ components:
           type: string
           minLength: 1
           maxLength: 1000
+          pattern: '\S'
+          description: 모든 사유 분류에서 필수인 상세 사유. 1~1000자이며 공백뿐인 값은 허용하지 않는다.
     CancellationCreated:
       type: object
       additionalProperties: false
@@ -5351,24 +5395,20 @@ components:
           items:
             type: string
             minLength: 1
-          minItems: 1
+          minItems: 3
+          maxItems: 5
           uniqueItems: true
         afterPhotoIds:
           type: array
           items:
             type: string
             minLength: 1
-          minItems: 1
+          minItems: 3
+          maxItems: 5
           uniqueItems: true
         totalCost:
           type: integer
           minimum: 0
-        duringPhotoIds:
-          type: array
-          items:
-            $ref: '#/components/schemas/Id'
-          uniqueItems: true
-          description: 선택적인 작업 중 사진 ID. 생략 또는 빈 배열 허용. 업로드 완료·작업 연결·DURING 분류를 검증한다.
     SubmitReport:
       type: object
       additionalProperties: false
@@ -5397,21 +5437,17 @@ components:
           items:
             type: string
             minLength: 1
-          minItems: 1
+          minItems: 3
+          maxItems: 5
           uniqueItems: true
         afterPhotoIds:
           type: array
           items:
             type: string
             minLength: 1
-          minItems: 1
+          minItems: 3
+          maxItems: 5
           uniqueItems: true
-        duringPhotoIds:
-          type: array
-          items:
-            $ref: '#/components/schemas/Id'
-          uniqueItems: true
-          description: 선택적인 작업 중 사진 ID. 생략 또는 빈 배열 허용. 업로드 완료·작업 연결·DURING 분류를 검증한다.
     ReportCreated:
       type: object
       additionalProperties: false
@@ -5456,11 +5492,17 @@ components:
       additionalProperties: false
       required:
         - expectedVersion
+        - reason
         - changes
       properties:
         expectedVersion:
           type: integer
           minimum: 1
+        reason:
+          type: string
+          minLength: 1
+          pattern: '\S'
+          description: 원본과 별도 이력에 기록할 필수 수정 사유.
         changes:
           $ref: "#/components/schemas/ReportChanges"
     FieldChange:
@@ -5492,6 +5534,7 @@ components:
         - revisionId
         - editedBy
         - editedAt
+        - reason
         - changes
       properties:
         revisionId:
@@ -5503,6 +5546,9 @@ components:
         editedAt:
           type: string
           format: date-time
+        reason:
+          type: string
+          minLength: 1
         changes:
           type: array
           items:
@@ -5646,15 +5692,7 @@ components:
           type: integer
           minimum: 1
         status:
-          type: string
-          enum:
-            - SEARCHING
-            - OFFERING
-            - ASSIGNED
-            - NO_CANDIDATES
-            - DELIVERY_FAILED
-            - NO_ACCEPT
-            - ROUND_CLOSED
+          $ref: "#/components/schemas/RoundStatus"
         works:
           type: array
           items:
@@ -5762,10 +5800,10 @@ components:
       description: 외벽 누수(EXTERIOR_LEAK), 내벽 누수(INTERIOR_LEAK), 막힘(BLOCKAGE), 보일러(BOILER), 방수(WATERPROOFING). 기사 전문 분야와 같은 값을 쓴다.
     RoundStatus:
       type: string
-      enum: [SEARCHING, OFFERING, ASSIGNED, NO_CANDIDATES, DELIVERY_FAILED, NO_ACCEPT, ROUND_CLOSED]
+      enum: [SEARCHING, OFFERING, ASSIGNED, NO_CANDIDATES, SEARCH_FAILED, DELIVERY_FAILED, NO_ACCEPT, ROUND_CLOSED]
       description: >-
-        NO_CANDIDATES(후보 없음), DELIVERY_FAILED(전체 전달 실패), NO_ACCEPT(전체 거절), ROUND_CLOSED(수락 없는 만료 등)는 배정 없이 종료된 회차로서
-        의뢰가 OPEN으로 남고 관리자 후속 처리 대상이 된다.
+        NO_CANDIDATES(정상 조회 후 후보 없음), SEARCH_FAILED(후보 조회 실패), DELIVERY_FAILED(전체 전달 최종 실패), NO_ACCEPT(거절을 포함한 거절·전달 최종 실패 조합이며 무응답 만료 없음), ROUND_CLOSED(무응답 만료를 포함한 수락 없는 종료)는 배정 없이 종료된 회차다.
+        회차 종료와 의뢰 FOLLOW_UP_REQUIRED 전환을 함께 확정하고 관리자 후속 결정·알림의 대상으로 삼는다. 이후 작업이 취소되어도 과거 ASSIGNED 회차 결과를 바꾸지 않는다.
     OfferStatus:
       type: string
       enum: [PENDING, ACCEPTED, REJECTED, EXPIRED, RESPONSE_CLOSED]
@@ -6614,7 +6652,7 @@ components:
         needsAdminAction: {type: boolean, description: 의뢰가 FOLLOW_UP_REQUIRED이면 true.}
         followUpReason:
           type: [string, "null"]
-          enum: [WORK_CANCELLED, NO_CANDIDATES, DELIVERY_FAILED, NO_ACCEPT, ROUND_CLOSED, null]
+          enum: [WORK_CANCELLED, NO_CANDIDATES, SEARCH_FAILED, DELIVERY_FAILED, NO_ACCEPT, ROUND_CLOSED, null]
           description: needsAdminAction이 true인 이유.
     StatisticsMetrics:
       type: object
@@ -6739,7 +6777,7 @@ components:
         offerId: {$ref: "#/components/schemas/Id"}
         requestId: {$ref: "#/components/schemas/Id"}
         workType: {$ref: "#/components/schemas/WorkType"}
-        approximateAddress: {type: string, minLength: 1, maxLength: 100, description: 수락 전에는 상세 주소 대신 대략적인 지역만 보여준다.}
+        approximateAddress: {type: string, minLength: 1, maxLength: 100, description: 시·군·구와 읍·면·동 수준의 지역. 도로명·건물번호·동호수는 포함하지 않는다.}
         distanceKm: {type: [number, "null"], minimum: 0, description: 위치가 유효하지 않으면 null.}
         offerStatus: {$ref: "#/components/schemas/OfferStatus"}
         expiresAt: {$ref: "#/components/schemas/DateTime"}
@@ -6762,7 +6800,7 @@ components:
         requestId: {$ref: "#/components/schemas/Id"}
         workType: {$ref: "#/components/schemas/WorkType"}
         symptoms: {type: string, minLength: 1, maxLength: 2000}
-        approximateAddress: {type: string, minLength: 1, maxLength: 100}
+        approximateAddress: {type: string, minLength: 1, maxLength: 100, description: 시·군·구와 읍·면·동 수준의 지역. 도로명·건물번호·동호수는 포함하지 않는다.}
         desiredVisitFrom: {$ref: "#/components/schemas/DateTime"}
         desiredVisitTo: {$ref: "#/components/schemas/DateTime"}
         notes: {type: [string, "null"], maxLength: 2000, description: 관리자 검토 후 의뢰 스냅샷에 보존한 부가정보. 본인에게 전달된 배차 요청에서 조회한다.}
@@ -6791,7 +6829,7 @@ components:
         contactPhone:
           type: [string, "null"]
           pattern: ^[0-9+-]{9,20}$
-          description: 수락 후 해당 의뢰의 담당자로 인가된 기사에게만 제공하는 고객 연락처. 이전 담당 관계나 이력 조회 권한만 있는 경우 null이다.
+          description: 수락 후 해당 의뢰의 현재 미완료 작업 담당자로 인가된 기사에게만 제공하는 고객 연락처. 완료·취소 이력, 이전 담당 관계 또는 인계 조회 권한만 있는 경우 null이다.
         workStatus: {$ref: "#/components/schemas/WorkStatus"}
         version: {type: integer, minimum: 1, description: 작업 상태 변경·취소·보고서 제출의 expectedVersion.}
         updatedAt: {$ref: "#/components/schemas/DateTime"}
@@ -6941,7 +6979,6 @@ components:
       type: string
       enum:
       - BEFORE
-      - DURING
       - AFTER
     WorkPhotoUploadRequest:
       type: object
@@ -6964,11 +7001,13 @@ components:
           type: string
           minLength: 1
           maxLength: 100
-          description: 허용 MIME 목록은 TODO. 실제 파일 형식은 별도 검증한다.
+          enum: [image/jpeg, image/png]
+          description: JPEG 또는 PNG. 완료 시 실제 파일 형식과 MIME 일치를 검증한다.
         sizeBytes:
           type: integer
           minimum: 1
-          description: 예상 바이트 수. 유형별 상한은 TODO이며 완료 시 실제 값과 비교한다.
+          maximum: 10000000
+          description: 예상 바이트 수. 최대 10MB(10,000,000바이트, 포함)이며 완료 시 실제 값과 비교한다.
         checksum:
           $ref: '#/components/schemas/FileChecksum'
     RecordingUploadGrant:
@@ -7185,9 +7224,11 @@ components:
           type: string
           minLength: 1
           maxLength: 100
+          enum: [image/jpeg, image/png]
         sizeBytes:
           type: integer
           minimum: 1
+          maximum: 10000000
         checksum:
           $ref: '#/components/schemas/FileChecksum'
         uploadedAt:
