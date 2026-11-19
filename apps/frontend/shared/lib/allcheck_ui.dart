@@ -34,6 +34,11 @@ String text(Json row, String key, [String fallback = '']) => row[key]?.toString(
 List<Json> records(dynamic value) => value is List ? value.cast<Json>() : <Json>[];
 List<String> strings(dynamic value) => value is List ? value.map((e) => e.toString()).toList() : <String>[];
 String nowIso() => DateTime.now().toUtc().toIso8601String();
+bool validOpeningDate(String value){
+  if(!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(value))return false;
+  final date=DateTime.tryParse(value);
+  return date!=null&&date.year>0&&date.toIso8601String().substring(0,10)==value;
+}
 String uid() => '${DateTime.now().microsecondsSinceEpoch}-${math.Random.secure().nextInt(0x7fffffff)}';
 Future<void> launchAllcheck(AppRole role, {
   FrontendBackend? backend,
@@ -43,7 +48,7 @@ Future<void> launchAllcheck(AppRole role, {
 }) async {
   WidgetsFlutterBinding.ensureInitialized();
   const baseUrl=String.fromEnvironment('API_BASE_URL');
-  backend??=baseUrl.isEmpty?null:HttpFrontendBackend(baseUrl);
+  backend??=baseUrl.isEmpty?null:role==AppRole.driver?DriverOnboardingBackend(baseUrl):HttpFrontendBackend(baseUrl);
   push??=pushEnabled?FirebaseAppPush():null;
   if (role == AppRole.driver) KakaoDriverAuth.initialize();
   if(backend!=null){runApp(AllcheckApp(role:role,store:AppStore(role),backend:backend,push:push,driverAuth:driverAuth,onKakaoAuthenticated:onKakaoAuthenticated));return;}

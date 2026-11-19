@@ -1,10 +1,12 @@
 package com.allcheck.driver.presentation.api
 
 import com.allcheck.driver.domain.vo.DriverAccountStatus
+import com.allcheck.driver.presentation.dto.request.BusinessVerificationRequest
 import com.allcheck.driver.presentation.dto.request.DriverApprovalRequest
 import com.allcheck.driver.presentation.dto.request.DriverRegistrationRequest
 import com.allcheck.driver.presentation.dto.request.DriverResubmissionRequest
 import com.allcheck.driver.presentation.dto.request.DriverWithdrawalRequest
+import com.allcheck.driver.presentation.dto.response.BusinessVerificationResponse
 import com.allcheck.driver.presentation.dto.response.DriverApprovalResult
 import com.allcheck.driver.presentation.dto.response.DriverDetailResponse
 import com.allcheck.driver.presentation.dto.response.DriverListResponse
@@ -51,6 +53,15 @@ import org.springframework.web.bind.annotation.RequestParam
     ApiResponse(responseCode = "503", description = "외부 서비스 검증 불가", content = [Content(schema = Schema(implementation = ErrorResponse::class))]),
 )
 interface DriverApi {
+    @PostMapping("/business-verifications")
+    @PreAuthorize("hasRole('DRIVER')")
+    @Operation(summary = "가입 입력 중 사업자 진위확인", description = "계속사업자 여부를 확인하며 신청은 생성하지 않는다. 최종 가입·재신청 때 다시 검증한다.", operationId = "verifyDriverBusiness")
+    @ApiResponse(responseCode = "200", description = "진위 일치 및 계속사업자 확인")
+    fun verifyBusiness(
+        @Parameter(hidden = true) @AuthenticationPrincipal principal: AuthPrincipal,
+        @Valid @RequestBody request: BusinessVerificationRequest,
+    ): ResponseEntity<BusinessVerificationResponse>
+
     @GetMapping("/me/registration")
     @PreAuthorize("hasRole('DRIVER')")
     @Operation(summary = "내 가입 신청 상태 조회", operationId = "getMyRegistration")

@@ -3,12 +3,15 @@ package com.allcheck.driver.presentation
 import com.allcheck.driver.application.DriverCommandService
 import com.allcheck.driver.application.DriverQueryService
 import com.allcheck.driver.application.DriverRegistrationService
+import com.allcheck.driver.domain.vo.BusinessIdentity
 import com.allcheck.driver.domain.vo.DriverAccountStatus
 import com.allcheck.driver.presentation.api.DriverApi
+import com.allcheck.driver.presentation.dto.request.BusinessVerificationRequest
 import com.allcheck.driver.presentation.dto.request.DriverApprovalRequest
 import com.allcheck.driver.presentation.dto.request.DriverRegistrationRequest
 import com.allcheck.driver.presentation.dto.request.DriverResubmissionRequest
 import com.allcheck.driver.presentation.dto.request.DriverWithdrawalRequest
+import com.allcheck.driver.presentation.dto.response.BusinessVerificationResponse
 import com.allcheck.driver.presentation.dto.response.DriverApprovalResult
 import com.allcheck.driver.presentation.dto.response.DriverCommandResult
 import com.allcheck.driver.presentation.dto.response.DriverDetailResponse
@@ -28,6 +31,11 @@ class DriverController(
     private val queries: DriverQueryService,
     private val commands: DriverCommandService,
 ) : DriverApi {
+    override fun verifyBusiness(principal: AuthPrincipal, request: BusinessVerificationRequest): ResponseEntity<BusinessVerificationResponse> {
+        val verified = registration.verifyBusiness(BusinessIdentity(request.businessRegistrationNumber, request.openedOn, request.representativeName))
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(BusinessVerificationResponse(verifiedAt = verified.verifiedAt))
+    }
+
     override fun mine(principal: AuthPrincipal): ResponseEntity<DriverRegistrationView> = ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(queries.mine(principal.accountId))
 
     override fun submit(principal: AuthPrincipal, key: String, request: DriverRegistrationRequest): ResponseEntity<DriverRegistrationResult> = command(registration.submit(principal.accountId, key, request), HttpStatus.CREATED)

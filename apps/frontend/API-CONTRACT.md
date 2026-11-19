@@ -4,9 +4,22 @@
 
 ## 서버 어댑터
 
-`shared/lib/src/backend.dart`의 `FrontendBackend.call(operation, data)`가 유일한 HTTP 연결 지점입니다. 기본 어댑터는 `API_BASE_URL` 뒤에 아래 operation을 붙여 JSON POST를 보냅니다. 아래는 연결을 위한 프론트 계약이며 서버에 이 API들이 이미 있다는 의미가 아닙니다. 기존 REST 규격을 사용하려면 이 인터페이스를 구현해 `launchAllcheck(backend: ...)`로 주입하세요.
+기사 앱의 `API_BASE_URL`이 지정되면 `DriverOnboardingBackend`를 사용합니다. base URL은 `/api/v1`까지 포함합니다. 카카오 로그인·갱신·로그아웃, 가입 상태 조회, 사업자 확인, 가입/재신청은 현재 백엔드 REST 계약으로 연결했습니다. 아래 operation 표는 나머지 기존 프론트 계약의 참조이며, 모든 업무 API가 연결됐다는 의미는 아닙니다. 관리자 앱은 기존 `HttpFrontendBackend`를 유지합니다.
 
-HTTPS를 기본으로 사용합니다. debug 빌드의 localhost/127.0.0.1/10.0.2.2만 HTTP를 허용합니다. Android 평문 통신까지 허용하려면 개발용 네트워크 설정이 별도로 필요합니다. 리다이렉트는 따라가지 않으며 응답 본문의 오류/개인정보는 사용자에게 그대로 노출하지 않습니다.
+| 기사 operation | 실제 REST 요청 |
+|---|---|
+| auth/kakao | POST `/auth/sessions/kakao`의 `kakaoAccessToken`, 이후 GET `/drivers/me/registration` |
+| auth/refresh | POST `/auth/tokens/refresh` |
+| auth/logout | POST `/auth/sessions/logout`의 현재 `refreshToken` |
+| workflow/state | GET `/drivers/me/registration` |
+| drivers/business-check | POST `/drivers/business-verifications`, 번호·개업일자·대표자명 |
+| drivers/register | POST `/drivers/me/registration`, 반려 후에는 `/resubmission`과 expectedVersion |
+
+확인한 사업자 정보가 바뀌면 세 가지 입력의 확인 결과를 무효로 취급합니다. 최종 가입에서는 서버 DTO의 profile/business로 변환하고 `Idempotency-Key`를 보내며 로컬 확인 플래그를 보내지 않습니다. 현재 서버의 전문 분야는 `BLOCKAGE/INTERIOR_LEAK/EXTERIOR_LEAK` 세 종류입니다. 실제 인증키·기기 연결은 [국세청 연결 안내](../../docs/api/nts-business-verification.md)를 따릅니다.
+
+`shared/lib/src/backend.dart`의 `FrontendBackend.call(operation, data)`가 HTTP 연결 지점입니다. 기존 `HttpFrontendBackend`는 `API_BASE_URL` 뒤에 operation을 붙여 JSON POST를 보냅니다. 기사 어댑터는 `driver_backend.dart`에서 위 REST 요청으로 변환합니다. 다른 규격은 이 인터페이스를 구현해 `launchAllcheck(backend: ...)`로 주입할 수 있습니다.
+
+HTTPS를 기본으로 사용합니다. debug 빌드의 localhost/127.0.0.1/10.0.2.2만 HTTP를 허용합니다. 기사 앱은 debug manifest에서 로컬 평문 통신을 허용하며 release에는 적용하지 않습니다. 리다이렉트는 따라가지 않으며 응답 본문의 오류/개인정보는 사용자에게 그대로 노출하지 않습니다.
 
 인증 응답의 `accessToken`은 메모리에 보관하고 Bearer 헤더로 전송합니다. 선택적으로 `refreshToken`을 반환하면 401 시 `auth/refresh`를 한 번 호출하고 원래 요청을 재시도합니다. 토큰은 디스크에 보관하지 않으므로 재시작 시 로그인해야 합니다. 서버는 Refresh Token 회전/폐기 정책을 구현해야 합니다. 클라이언트가 보내는 role/id/상태/후보 목록을 권한 검증의 근거로 신뢰하면 안 됩니다.
 
@@ -36,6 +49,8 @@ HTTPS를 기본으로 사용합니다. debug 빌드의 localhost/127.0.0.1/10.0.
 ```
 
 계정은 `{status, profile, reason?}` 형식입니다. 상태는 `활성/승인 대기/반려/탈퇴`로 구분합니다. 조회 전용 관리자의 UI role은 `viewer`입니다. 실제 마스터/부 관리자 정책은 서버 권한에서 적용합니다. 관리자는 전체 조회 대상, 기사는 본인의 요청·작업만 포함해야 합니다. 기사 수락 전에는 고객 연락처·정확한 주소를 projection에서 제외하세요.
+
+신규 기사는 카카오 인증 뒤 가입 정보를 입력하고 신청을 제출한 다음 승인 대기로 이동합니다. 서버 어댑터가 반환하는 `account: null`은 가입 정보 입력 화면으로 연결합니다. SDK 단독 로그인에서 쓰는 `미신청`은 로컬 화면 구분값이며 서버의 신청·심사 상태가 아닙니다. 서버 미연결 상태에서는 사업자 확인이나 신청 접수를 성공으로 만들지 않습니다. 디버그 빌드의 `ALLCHECK_DEV_ACCESS`가 켜져 있으면 가입 입력·승인 대기 화면에서 임시 개발용 홈에 진입할 수 있으며, 이 상태는 서버에 전송하거나 영속 저장하지 않습니다.
 
 배차 요청은 `id,type,title,area,symptom,visit,expires,status,assigned`를 포함합니다. `expires`는 UTC ISO-8601, 대기 상태는 `응답 대기`입니다. 수락 후 주소·연락처를 추가하고 상태를 `이동 중/현장 도착/작업 중/작업 완료/재방문 필요` 등으로 갱신합니다. 서버가 최신 상태와 배정 소유권을 검증해야 합니다.
 

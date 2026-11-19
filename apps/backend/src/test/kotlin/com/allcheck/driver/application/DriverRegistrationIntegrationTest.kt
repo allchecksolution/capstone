@@ -12,6 +12,7 @@ import com.allcheck.driver.infrastructure.push.FcmSendResult
 import com.allcheck.driver.infrastructure.repository.DriverRepository
 import com.allcheck.driver.presentation.dto.request.ApprovalDecision
 import com.allcheck.driver.presentation.dto.request.BusinessInfoRequest
+import com.allcheck.driver.presentation.dto.request.BusinessVerificationRequest
 import com.allcheck.driver.presentation.dto.request.DriverApprovalRequest
 import com.allcheck.driver.presentation.dto.request.DriverProfileRequest
 import com.allcheck.driver.presentation.dto.request.DriverRegistrationRequest
@@ -727,6 +728,70 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
         // then
         Mockito.verify(fcm, Mockito.never()).send(anyTarget(), anyFcmData())
         assertThat(jdbc.queryForObject("select count(*) from driver_notification_events where driver_id = ? and event_type = 'DRIVER_REJECTED' and status = 'SKIPPED'", Long::class.java, registered.driverId)).isEqualTo(1)
+    }
+
+    @Test
+    fun `가입 전 사업자 확인은 신청을 생성하지 않으며 최종 신청에서 다시 검증한다`() {
+        // given
+        val actor = driver()
+        val request = BusinessVerificationRequest("1234567890", LocalDate.of(2020, 1, 15), "홍길동")
+
+        // when
+        mvc.perform(
+            post("/api/v1/drivers/business-verifications").header(HttpHeaders.AUTHORIZATION, actor.header)
+                .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(request)),
+        )
+            .andExpect(status().isOk)
+            .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+            .andExpect(jsonPath("$.status").value("VERIFIED"))
+            .andExpect(jsonPath("$.verifiedAt").exists())
+
+        // then
+        assertThat(drivers.findByAccountId(actor.accountId)).isNull()
+        submit(actor, request())
+        Mockito.verify(nts, Mockito.times(2)).verify(anyIdentity())
+    }
+
+    @Test
+    fun `사업자 확인은 기사 인증과 엄격한 세 가지 입력을 요구한다`() {
+        // given
+        val path = "/api/v1/drivers/business-verifications"
+        val valid = """{"businessRegistrationNumber":"1234567890","openedOn":"2020-01-15","representativeName":"홍길동"}"""
+        val actor = driver()
+        val administrator = admin()
+
+        // when & then
+        mvc.perform(post(path).contentType(MediaType.APPLICATION_JSON).content(valid)).andExpect(status().isUnauthorized)
+        mvc.perform(post(path).header(HttpHeaders.AUTHORIZATION, administrator.header).contentType(MediaType.APPLICATION_JSON).content(valid)).andExpect(status().isForbidden)
+        listOf(
+            valid.replace("1234567890", "123"),
+            valid.replace("2020-01-15", "2020-02-30"),
+            valid.replace("홍길동", " "),
+            valid.replace("}", ""","verified":true}"""),
+            "{}",
+        ).forEach { body ->
+            mvc.perform(post(path).header(HttpHeaders.AUTHORIZATION, actor.header).contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isBadRequest)
+        }
+        Mockito.verify(nts, Mockito.never()).verify(anyIdentity())
+    }
+
+    @Test
+    fun `휴업 폐업과 외부 검증 장애는 사업자 확인 성공으로 처리하지 않는다`() {
+        // given
+        val actor = driver()
+        val path = "/api/v1/drivers/business-verifications"
+        val body = """{"businessRegistrationNumber":"1234567890","openedOn":"2020-01-15","representativeName":"홍길동"}"""
+
+        // when & then
+        listOf(BusinessOperatingStatus.SUSPENDED, BusinessOperatingStatus.CLOSED).forEach { operating ->
+            Mockito.`when`(nts.verify(anyIdentity())).thenAnswer { VerifiedBusinessIdentity(it.getArgument(0), operating, Instant.now()) }
+            mvc.perform(post(path).header(HttpHeaders.AUTHORIZATION, actor.header).contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isBadRequest).andExpect(jsonPath("$.code").value("BUSINESS_INFO_INVALID"))
+        }
+        Mockito.`when`(nts.verify(anyIdentity())).thenThrow(BusinessException(DriverErrorCode.BUSINESS_VERIFICATION_UNAVAILABLE))
+        mvc.perform(post(path).header(HttpHeaders.AUTHORIZATION, actor.header).contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isServiceUnavailable).andExpect(jsonPath("$.code").value("BUSINESS_VERIFICATION_UNAVAILABLE"))
+        assertThat(drivers.findByAccountId(actor.accountId)).isNull()
     }
 
     private fun registerDevice(actor: Actor, installation: String, token: String): String = mvc.perform(

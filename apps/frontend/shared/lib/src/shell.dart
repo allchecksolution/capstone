@@ -58,7 +58,7 @@ class _WorkflowShellState extends State<WorkflowShell> with WidgetsBindingObserv
   Widget button(String text,VoidCallback fn,{bool secondary=false,bool danger=false})=>secondary?OutlinedButton(onPressed:busy?null:fn,child:Padding(padding:const EdgeInsets.symmetric(vertical:12),child:Text(text))):FilledButton(style:danger?FilledButton.styleFrom(backgroundColor:const Color(0xfff04c62)):null,onPressed:busy?null:fn,child:Text(text));
   Widget link(String title,String target,{String item=''})=>button(title,()=>go(target,item:item),secondary:true);
   Widget kv(String label,Object? content)=>stack([small(label),Text(content?.toString().isNotEmpty==true?content.toString():'미등록',style:const TextStyle(fontWeight:FontWeight.w600))]);
-  Widget field(String key,String label,{String initial='',bool required=true,bool lines=false,bool number=false,bool email=false,bool readOnly=false})=>TextFormField(key:ValueKey('$page/$id/$key'),controller:controller(key,initial),obscureText:key=='password',readOnly:readOnly,maxLines:lines?4:1,keyboardType:number?TextInputType.number:email?TextInputType.emailAddress:TextInputType.text,decoration:InputDecoration(labelText:'$label${required?' *':''}'),validator:(v){if(required&&(v??'').trim().isEmpty)return '필수 항목입니다.';if(number&&v?.isNotEmpty==true&&(double.tryParse(v!)==null||double.parse(v)<0))return '0 이상의 숫자를 입력해 주세요.';if(email&&v?.isNotEmpty==true&&!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(v!))return '이메일 형식을 확인해 주세요.';return null;});
+  Widget field(String key,String label,{String initial='',String helperText='',bool required=true,bool lines=false,bool number=false,bool email=false,bool readOnly=false})=>TextFormField(key:ValueKey('$page/$id/$key'),controller:controller(key,initial),obscureText:key=='password',readOnly:readOnly,maxLines:lines?4:1,keyboardType:number?TextInputType.number:email?TextInputType.emailAddress:TextInputType.text,decoration:InputDecoration(labelText:'$label${required?' *':''}',helperText:helperText.isEmpty?null:helperText,helperMaxLines:3),validator:(v){if(required&&(v??'').trim().isEmpty)return '필수 항목입니다.';if(number&&v?.isNotEmpty==true&&(double.tryParse(v!)==null||double.parse(v)<0))return '0 이상의 숫자를 입력해 주세요.';if(email&&v?.isNotEmpty==true&&!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(v!))return '이메일 형식을 확인해 주세요.';return null;});
   Widget dropdown(String key,String label,List<String> options,{String initial='',bool required=false}){final c=controller(key,initial);final selected=options.contains(c.text)?c.text:null;return DropdownButtonFormField<String>(initialValue:selected,isExpanded:true,decoration:InputDecoration(labelText:label),items:options.map((v)=>DropdownMenuItem(value:v,child:Text(v,overflow:TextOverflow.ellipsis))).toList(),onChanged:(v){c.text=v??'';setState((){});},validator:required?((v)=>v==null||v.isEmpty?'선택해 주세요.':null):null);}
   Widget choices(String key,String label,List<String> options,{List<String> initial=const []}){final selected=choiceValue(key,initial);return stack([heading(label),Wrap(spacing:8,runSpacing:6,children:options.map((v)=>FilterChip(label:Text(v),selected:selected.contains(v),onSelected:busy?null:(yes)=>setState(()=>yes?selected.add(v):selected.remove(v)))).toList())]);}
   Widget form(List<Widget> children)=>Form(key:formKey,child:stack(children));
@@ -81,14 +81,19 @@ class _WorkflowShellState extends State<WorkflowShell> with WidgetsBindingObserv
     catch(e){message(e.toString().replaceFirst('Bad state: ',''));}
     finally{if(mounted)setState(()=>busy=false);}
   }
-  Future<void> enterDevelopment()async{
+  Future<void> enterDevelopment({bool preserveProfile=false})async{
     if(!developmentAccessEnabled||busy)return;
+    final profile=preserveProfile?<String,dynamic>{...s.profile,...s.draft,
+      if(page=='register')...{for(final e in fields.entries)if(e.key.startsWith('register/$id/'))e.key.substring('register/$id/'.length):e.value.text.trim()}}:<String,dynamic>{'name':'기사','phone':''};
+    final wasTransient=s.transientSession;
     s.transientSession=true;
     if(!await act((){
-      if(!admin)s.data['account']=<String,dynamic>{'status':'활성',
-        'profile':<String,dynamic>{'name':'기사','phone':''}};
-    }))return;
+      final names=Map<String,dynamic>.from(s.displayNames);
+      s.data=AppStore.empty(widget.role);s.data['displayNames']=names;
+      if(!admin)s.data['account']=<String,dynamic>{'status':'활성','profile':profile};
+    })){s.transientSession=wasTransient;return;}
     if(!mounted)return;
+    stateVersion++;
     developmentSession=true;adminName=admin?'관리자':'';signedIn=true;
     kakaoIdentity=null;history.clear();go('home',replace:true);
   }
@@ -102,12 +107,13 @@ class _WorkflowShellState extends State<WorkflowShell> with WidgetsBindingObserv
           final names=Map<String,dynamic>.from(s.displayNames);
           s.data=AppStore.empty(AppRole.driver);
           s.data['displayNames']=names;
-          s.data['account']=<String,dynamic>{'provider':'kakao','userId':identity.userId,'status':'승인 대기',
+          s.data['account']=<String,dynamic>{'provider':'kakao','userId':identity.userId,'status':'미신청',
             'profile':<String,dynamic>{'name':names[identity.userId]??(identity.nickname?.trim().isNotEmpty==true?identity.nickname!.trim():'카카오 사용자'),if(identity.email!=null)'email':identity.email}};
+          s.data['draft']=Map<String,dynamic>.from(s.profile);
         });
         if(!mounted)return;
         for(final c in fields.values){c.dispose();}fields.clear();selections.clear();history.clear();
-        signedIn=true;kakaoIdentity=null;go('home',replace:true);
+        signedIn=true;kakaoIdentity=null;registrationStep=1;go('register',replace:true);
       }catch(_){message('로그인 정보를 준비하지 못했습니다. 다시 시도해 주세요.');}
       finally{if(mounted)setState(()=>busy=false);}
       return;
@@ -141,21 +147,21 @@ class _WorkflowShellState extends State<WorkflowShell> with WidgetsBindingObserv
     if(page=='result')return stack([const SizedBox(height:60),const Icon(Icons.check_circle_outline,size:76,color:Color(0xff55bbcc)),heading(outcomeTitle),small(outcomeText),link('계속',outcomeTarget,item:outcomeId),link('홈으로 이동','home')]);
     return const SizedBox.shrink();
   }
-  Widget sdkApprovalPage()=>page=='settings'&&id=='profile'?genericSettings():stack([
+  Widget sdkRegistrationPage()=>page=='settings'&&id=='profile'?genericSettings():stack([
     heading('${text(s.profile,'name','카카오 사용자')}님, 안녕하세요'),
-    const Icon(Icons.schedule,size:64),
-    heading('관리자 승인 대기'),
-    notice('최초 가입자는 관리자 승인 후 업무를 이용할 수 있습니다.'),
-    small('현재 서버가 연결되지 않아 가입·승인 요청은 아직 전송되지 않았습니다. 서버 연결 후 가입 신청과 승인 상태 확인이 필요합니다.'),
+    const Icon(Icons.assignment_outlined,size:64),
+    heading('가입 정보를 입력해 주세요.'),
+    notice('가입 정보를 입력하고 신청을 완료하면 관리자 검토가 시작됩니다.'),
+    button('가입 정보 입력',()=>go('register')),
     button('내 정보 수정',()=>go('settings',item:'profile'),secondary:true),
     button('로그아웃',logout,secondary:true),
   ]);
   @override Widget build(BuildContext context){
     final allowed=signedIn&&(admin||!sdkOnlySession&&s.account?['status']=='활성');
-    final content=sdkOnlySession?sdkApprovalPage():page=='notifications'&&signedIn?inbox():page=='result'?commonPage():!signedIn||page=='register'?publicPage():!allowed?gated():page=='result'?commonPage():admin?this.adminPage():this.driverPage();
+    final content=page=='register'?publicPage():sdkOnlySession?sdkRegistrationPage():page=='notifications'&&signedIn?inbox():page=='result'?commonPage():!signedIn?publicPage():!allowed?gated():page=='result'?commonPage():admin?this.adminPage():this.driverPage();
     final navPages=['home','jobs','chat','more'];final index=page=='chat'?2:['more','settings','recordings','drivers','driver','cancellations','cancellation'].contains(page)?3:['home','stats','notifications'].contains(page)?0:1;final showNav=allowed&&!['register','login'].contains(page);
     final wide=admin&&showNav&&MediaQuery.sizeOf(context).width>900;
-    final scroll=Align(alignment:Alignment.topCenter,child:ConstrainedBox(constraints:BoxConstraints(maxWidth:admin?1100:520),child:SingleChildScrollView(padding:const EdgeInsets.all(24),child:stack([if(sdkOnlySession)notice('카카오 로그인 완료 · 배차·가입 승인 등 서버 기능은 연결 후 사용할 수 있습니다.'),if(s.startupWarning.isNotEmpty)notice(s.startupWarning,error:true),if(locationError.isNotEmpty)notice(locationError,error:true),if(developmentAccessEnabled&&page=='login')button('개발용으로 입장',enterDevelopment,secondary:true),content]))));
+    final scroll=Align(alignment:Alignment.topCenter,child:ConstrainedBox(constraints:BoxConstraints(maxWidth:admin?1100:520),child:SingleChildScrollView(padding:const EdgeInsets.all(24),child:stack([if(sdkOnlySession)notice('카카오 로그인 완료 · 가입 정보는 입력할 수 있으며 사업자 확인과 가입 신청은 서버 연결 후 가능합니다.'),if(developmentSession)notice('개발용 화면입니다. 실제 가입 승인이나 서버 데이터 변경은 이루어지지 않습니다.'),if(s.startupWarning.isNotEmpty)notice(s.startupWarning,error:true),if(locationError.isNotEmpty)notice(locationError,error:true),if(developmentAccessEnabled&&page=='login')button('개발용으로 입장',enterDevelopment,secondary:true),if(developmentAccessEnabled&&!admin&&!developmentSession&&(page=='register'||signedIn&&s.account?['status']=='승인 대기'))button('개발용: 승인 대기 건너뛰기',()=>enterDevelopment(preserveProfile:true),secondary:true),content]))));
     return PopScope(canPop:false,onPopInvokedWithResult:(didPop,result){if(!didPop)back();},child:Scaffold(appBar:AppBar(title:Text(title),leading:history.isNotEmpty?IconButton(icon:const Icon(Icons.chevron_left),onPressed:back):null,actions:[if(allowed)IconButton(tooltip:'알림',icon:const Icon(Icons.notifications_outlined),onPressed:(){go('notifications');unawaited(loadInbox());}),if(allowed)IconButton(tooltip:'새로고침',icon:const Icon(Icons.refresh),onPressed:busy?null:refreshState),if(busy)const Padding(padding:EdgeInsets.all(16),child:SizedBox(width:22,height:22,child:CircularProgressIndicator(strokeWidth:2)))]),body:SafeArea(top:false,child:LayoutBuilder(builder:(context,constraints)=>admin&&showNav&&constraints.maxWidth>900?Row(children:[NavigationRail(selectedIndex:index,onDestinationSelected:(i)=>go(navPages[i]),labelType:NavigationRailLabelType.all,destinations:const [NavigationRailDestination(icon:Icon(Icons.home_outlined),label:Text('홈')),NavigationRailDestination(icon:Icon(Icons.assignment_outlined),label:Text('작업목록')),NavigationRailDestination(icon:Icon(Icons.chat_bubble_outline),label:Text('문의')),NavigationRailDestination(icon:Icon(Icons.more_horiz),label:Text('더보기'))]),const VerticalDivider(width:1),Expanded(child:scroll)]):scroll)),bottomNavigationBar:showNav&&!wide?SafeArea(top:false,child:NavigationBar(selectedIndex:index,onDestinationSelected:(i)=>go(navPages[i]),destinations:const [NavigationDestination(icon:Icon(Icons.home_outlined),label:'홈'),NavigationDestination(icon:Icon(Icons.assignment_outlined),label:'작업목록'),NavigationDestination(icon:Icon(Icons.chat_bubble_outline),label:'문의'),NavigationDestination(icon:Icon(Icons.more_horiz),label:'더보기')])):null));
   }
 }
