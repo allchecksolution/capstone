@@ -4,10 +4,10 @@ import com.allcheck.global.exception.BusinessException
 import com.allcheck.operations.ActorRole
 import com.allcheck.operations.CancellationReason
 import com.allcheck.operations.CandidateContext
-import com.allcheck.operations.DriverAvailability
 import com.allcheck.operations.FollowUpChoice
 import com.allcheck.operations.FollowUpTarget
 import com.allcheck.operations.OperationsActor
+import com.allcheck.operations.OperationsDrivers
 import com.allcheck.operations.RequestIntake
 import com.allcheck.operations.RequestStatus
 import com.allcheck.operations.SiteCoordinates
@@ -25,6 +25,7 @@ import com.allcheck.operations.work.WorkOperations
 import com.allcheck.reception.ReceptionOperations
 import com.allcheck.reception.ReceptionSnapshot
 import jakarta.persistence.EntityManager
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
@@ -39,11 +40,13 @@ class OperationsTransactions(
     private val tasks: OperationsTaskRepository,
     private val spatial: OperationsSpatial,
     private val em: EntityManager,
+    private val drivers: ObjectProvider<OperationsDrivers>,
 ) {
     @Transactional
     fun register(actor: OperationsActor, receptionId: Long, expected: Int, key: String, source: ReceptionSnapshot, site: SiteCoordinates): CommandResult {
         role(actor, ActorRole.ADMIN)
         return commands.execute(actor, "REGISTER", receptionId, key, expected) {
+            commands.receptionLock(receptionId)
             // 좌표 조회 이후 다시 확인한다. reception의 낙관적 잠금이 확정 취소와의 경합을 보호한다.
             val current = receptions.confirmedSnapshot(actor.id, receptionId, expected)
             validInput(source == current)
@@ -60,7 +63,7 @@ class OperationsTransactions(
     }
 
     @Transactional
-    fun respond(actor: OperationsActor, offerId: Long, key: String, accept: Boolean, availability: DriverAvailability?): CommandResult {
+    fun respond(actor: OperationsActor, offerId: Long, key: String, accept: Boolean): CommandResult {
         role(actor, ActorRole.DRIVER)
         val offered = dispatch.offer(offerId)
         own(actor.id == offered.driverId)
@@ -76,19 +79,24 @@ class OperationsTransactions(
             }
             commands.driverLock(actor.id)
             val context = CandidateContext(request.intake.workType, request.site, dispatch.round(offer.roundId).radiusKm, now)
+            val bridge = drivers.ifAvailable ?: throw BusinessException(OperationsErrorCode.OPERATIONS_INTEGRATION_UNAVAILABLE)
+            val availability = bridge.lockForAcceptance(actor.id, context)
             if (availability == null ||
                 availability.driverId != actor.id ||
-                !availability.eligible(context) ||
+                !availability.eligible(context.copy(observedAt = commands.now())) ||
                 works.occupied(actor.id) ||
                 actor.id in works.excluded(request.requestId) ||
                 spatial.within(request.site, context.radiusKm, listOf(availability)).isEmpty()
             ) {
                 throw BusinessException(OperationsErrorCode.DRIVER_NOT_ELIGIBLE)
             }
-            dispatch.accept(offerId, now)
-            val work = works.create(request.requestId, offer.roundId, offerId, actor.id, request.currentWorkId, now)
-            requests.accept(request.requestId, offer.roundId, work.workId, now)
-            CommandOutcome(work.workId, request.requestId, work.status.name, work.version, offerId, now)
+            // 자격 행 잠금과 공간 조회 대기 중 만료되었을 수 있으므로 수락 직전에 다시 읽는다.
+            val acceptedAt = commands.now()
+            if (!availability.eligible(context.copy(observedAt = acceptedAt))) throw BusinessException(OperationsErrorCode.DRIVER_NOT_ELIGIBLE)
+            dispatch.accept(offerId, acceptedAt)
+            val work = works.create(request.requestId, offer.roundId, offerId, actor.id, request.currentWorkId, acceptedAt)
+            requests.accept(request.requestId, offer.roundId, work.workId, acceptedAt)
+            CommandOutcome(work.workId, request.requestId, work.status.name, work.version, offerId, acceptedAt)
         }
     }
 

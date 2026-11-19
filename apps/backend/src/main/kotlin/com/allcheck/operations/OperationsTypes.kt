@@ -47,7 +47,11 @@ data class FollowUpTarget(val kind: String, val id: Long) {
     }
 }
 
-data class ReportContent(val workDescription: String, val diagnosis: String, val totalCost: Long) {
+data class ReportContent(
+    @field:io.swagger.v3.oas.annotations.media.Schema(description = "수행한 작업 내용") val workDescription: String,
+    @field:io.swagger.v3.oas.annotations.media.Schema(description = "현장 진단") val diagnosis: String,
+    @field:io.swagger.v3.oas.annotations.media.Schema(description = "원 단위 정수 총액") val totalCost: Long,
+) {
     init {
         validInput(workDescription.isNotBlank() && diagnosis.isNotBlank() && totalCost >= 0)
     }

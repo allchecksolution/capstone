@@ -47,6 +47,9 @@ class OperationsCommands(private val receipts: OperationsReceiptRepository, priv
 
     @Transactional(propagation = Propagation.MANDATORY)
     fun driverLock(driverId: Long) = lock("driver:$driverId")
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    fun receptionLock(receptionId: Long) = lock("reception-registration:$receptionId")
     fun now(): Instant = clock.instant().truncatedTo(ChronoUnit.MICROS)
     private fun validateKey(key: String) = validInput(key.isNotBlank() && key.codePointCount(0, key.length) <= 200)
     private fun lock(scope: String) {

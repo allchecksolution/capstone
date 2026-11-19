@@ -36,6 +36,6 @@ class OperationsSpatial(private val jdbc: JdbcTemplate) {
             { row, _ -> SiteCoordinates(row.getDouble("lon"), row.getDouble("lat"), area) },
             x,
             y,
-        ) ?: error("Coordinate transformation returned no result")
+        )
     }
 }

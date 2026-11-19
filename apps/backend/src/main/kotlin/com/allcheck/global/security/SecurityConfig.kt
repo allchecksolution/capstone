@@ -66,6 +66,14 @@ class SecurityConfig(
                 // 기본 인증 요구
                 authorize("/api/v1/receptions", hasRole("ADMIN"))
                 authorize("/api/v1/receptions/**", hasRole("ADMIN"))
+                authorize("/api/v1/service-requests", hasRole("ADMIN"))
+                authorize("/api/v1/service-requests/**", hasRole("ADMIN"))
+                authorize("/api/v1/dispatch-cancellations", hasRole("ADMIN"))
+                authorize("/api/v1/dispatch-cancellations/**", hasRole("ADMIN"))
+                authorize("/api/v1/drivers/me/works", hasRole("DRIVER"))
+                authorize("/api/v1/drivers/me/work-statistics", hasRole("DRIVER"))
+                authorize("/api/v1/drivers/me/dispatch-offers", hasRole("DRIVER"))
+                authorize("/api/v1/dispatch-offers/**", hasRole("DRIVER"))
                 authorize(anyRequest, authenticated)
             }
             exceptionHandling {

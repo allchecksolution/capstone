@@ -1,6 +1,7 @@
 package com.allcheck.operations.coordination.application
 
 import com.allcheck.global.notification.FcmClient
+import com.allcheck.global.notification.FcmConnection
 import com.allcheck.global.notification.FcmException
 import com.allcheck.global.notification.FcmFailure
 import com.allcheck.operations.ActorRole
@@ -108,7 +109,7 @@ class OperationsWorker(
             fcm.send(binding.token, transactions.payload(claim)) { transactions.valid(claim) && bridge.current(actor, installation) == binding }
             transactions.delivered(claim, true)
         } catch (failure: FcmException) {
-            if (failure.failure == FcmFailure.UNREGISTERED) bridge.invalidateIfCurrent(actor, installation, binding)
+            if (failure.failure == FcmFailure.UNREGISTERED) runCatching { bridge.invalidateIfCurrent(actor, installation, binding) }
             transactions.delivered(claim, false, failure.failure.retryable || failure.failure == FcmFailure.CANCELLED, failure.retryAfter)
         } catch (_: Exception) {
             transactions.delivered(claim, false, true)
@@ -119,7 +120,18 @@ class OperationsWorker(
 @Configuration(proxyBeanMethods = false)
 @EnableScheduling
 @ConditionalOnProperty(name = ["operations.worker.enabled"], havingValue = "true")
-class OperationsWorkerSchedule(private val worker: OperationsWorker) {
+class OperationsWorkerSchedule(
+    private val worker: OperationsWorker,
+    drivers: ObjectProvider<OperationsDrivers>,
+    devices: ObjectProvider<OperationsPushDevices>,
+    fcm: ObjectProvider<FcmConnection>,
+) {
+    init {
+        require(drivers.ifAvailable != null && devices.ifAvailable != null && fcm.ifAvailable != null) {
+            "Operations worker requires driver/device bridges and an enabled FCM connection."
+        }
+    }
+
     @Scheduled(fixedDelayString = "\${operations.worker.poll-interval:1s}")
     fun poll() = worker.tick()
 }

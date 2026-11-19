@@ -84,14 +84,15 @@ class SgisGeocoder(private val connections: ObjectProvider<SgisConnection>, priv
         val token = result.path("accessToken").asString("")
         val expiry = result.path("accessTimeout").asString("").toLongOrNull() ?: throw BusinessException(OperationsErrorCode.GEOCODER_UNAVAILABLE)
         if (token.isBlank()) throw BusinessException(OperationsErrorCode.GEOCODER_UNAVAILABLE)
-        tokenExpiry = Instant.ofEpochSecond(expiry)
+        // epoch seconds와 epoch milliseconds 응답을 모두 만료 시각으로 정규화한다.
+        tokenExpiry = if (expiry >= 100_000_000_000L) Instant.ofEpochMilli(expiry) else Instant.ofEpochSecond(expiry)
         if (tokenExpiry <= clock.instant()) throw BusinessException(OperationsErrorCode.GEOCODER_UNAVAILABLE)
         cachedToken = token
         return token
     }
     private fun call(request: RestClient.RequestHeadersSpec<*>): JsonNode {
-        val response = request.retrieve().toEntity(String::class.java)
+        val response = request.retrieve().toEntity(ByteArray::class.java)
         if (response.statusCode.value() != 200) throw BusinessException(OperationsErrorCode.GEOCODER_UNAVAILABLE)
-        return mapper.readTree(response.body ?: "")
+        return mapper.readTree(response.body ?: byteArrayOf())
     }
 }

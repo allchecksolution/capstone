@@ -12,6 +12,12 @@ interface OperationsIdentity {
 interface OperationsDrivers {
     fun candidates(context: CandidateContext): List<DriverAvailability>
     fun current(driverId: Long, context: CandidateContext): DriverAvailability?
+
+    /**
+     * 수락 트랜잭션에 참여하는 짧은 로컬 조회. 자격·READY·지역·GPS의 권위 있는 행을 잠그거나
+     * 동등한 버전 검증으로 커밋까지 변경 경합을 보호한다. 원격 HTTP 호출을 여기서 수행하지 않는다.
+     */
+    fun lockForAcceptance(driverId: Long, context: CandidateContext): DriverAvailability?
 }
 
 data class CandidateContext(val workType: WorkType, val site: SiteCoordinates, val radiusKm: Int, val observedAt: Instant)

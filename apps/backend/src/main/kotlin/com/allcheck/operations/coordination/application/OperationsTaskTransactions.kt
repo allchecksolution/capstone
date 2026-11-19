@@ -85,7 +85,8 @@ class OperationsTaskTransactions(
         val eligible = candidates.distinctBy { it.driverId }.filter { it.eligible(context) && it.driverId !in excluded }
         val distances = spatial.within(context.site, context.radiusKm, eligible)
         // 조회 시점 이후 새 작업을 맡은 기사도 제외한다. 최종 수락에서는 다시 검사한다.
-        val available = distances.filterKeys { !works.occupied(it) }
+        val occupied = works.occupiedDrivers(distances.keys)
+        val available = distances.filterKeys { it !in occupied }
         task.finish(true)
         if (available.isNotEmpty()) {
             dispatch.publish(task.subjectId, available, now, offerLifetime).forEach { offer ->
@@ -192,6 +193,10 @@ class OperationsTaskTransactions(
         val offer = dispatch.offer(task.subjectId)
         val request = requests.get(task.requestId)
         if (request.status != RequestStatus.OPEN || request.currentRoundId != offer.roundId || dispatch.round(offer.roundId).status != RoundStatus.OFFERING) return
+        if (commands.now() >= offer.expiresAt) {
+            dispatch.reconcile(offer.roundId, commands.now())?.let { followUp(task.requestId, offer.roundId, it) }
+            return
+        }
         tasks.flush()
         val sends = tasks.findAllByKindAndSubjectId(TaskKind.PUSH_OFFER, task.subjectId)
         val expansion = tasks.findAllByKindAndSubjectId(TaskKind.EXPAND_OFFER, task.subjectId)

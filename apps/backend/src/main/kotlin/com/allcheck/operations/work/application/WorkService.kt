@@ -26,7 +26,13 @@ class WorkService(private val works: WorkOrderRepository, private val cancellati
     override fun get(workId: Long) = snapshot(entity(workId), cancellations.findByWorkId(workId))
     override fun forRequest(requestId: Long) = snapshots(works.findAllByRequestIdOrderByWorkId(requestId))
     override fun occupied(driverId: Long) = works.occupied(driverId)
+    override fun occupiedDrivers(driverIds: Set<Long>) = if (driverIds.isEmpty()) emptySet() else works.occupiedDrivers(driverIds)
     override fun excluded(requestId: Long) = cancellations.excluded(requestId)
+    override fun cancelled(page: Int, size: Int): List<WorkSnapshot> = snapshots(em.createQuery("select w from WorkOrder w where w.status=com.allcheck.operations.WorkStatus.CANCELLED order by w.cancelledAt desc,w.workId desc", WorkOrder::class.java).setFirstResult((page - 1) * size).setMaxResults(size).resultList)
+    override fun cancellation(cancellationId: Long): WorkSnapshot {
+        val cancellation = cancellations.findById(cancellationId).orElseThrow { BusinessException(OperationsErrorCode.OPERATIONS_NOT_FOUND) }
+        return snapshot(entity(cancellation.workId), cancellation)
+    }
 
     @Transactional(propagation = Propagation.MANDATORY)
     override fun transition(workId: Long, driverId: Long, version: Int, target: WorkStatus, reason: String?, planned: Instant?, now: Instant): WorkSnapshot {
@@ -56,12 +62,13 @@ class WorkService(private val works: WorkOrderRepository, private val cancellati
     }
     override fun driverWorks(driverId: Long, history: Boolean, from: Instant?, to: Instant?, page: Int, size: Int): List<WorkSnapshot> {
         val query = if (history) {
-            "select w from WorkOrder w where w.driverId=:driver and w.status in (com.allcheck.operations.WorkStatus.WORK_DONE,com.allcheck.operations.WorkStatus.CANCELLED) and (:from is null or coalesce(w.completedAt,w.cancelledAt)>=:from) and (:to is null or coalesce(w.completedAt,w.cancelledAt)<:to) order by coalesce(w.completedAt,w.cancelledAt) desc,w.workId desc"
+            val month = if (from != null && to != null) " and coalesce(w.completedAt,w.cancelledAt)>=:from and coalesce(w.completedAt,w.cancelledAt)<:to" else ""
+            "select w from WorkOrder w where w.driverId=:driver and w.status in (com.allcheck.operations.WorkStatus.WORK_DONE,com.allcheck.operations.WorkStatus.CANCELLED)$month order by coalesce(w.completedAt,w.cancelledAt) desc,w.workId desc"
         } else {
             "select w from WorkOrder w where w.driverId=:driver and w.status not in (com.allcheck.operations.WorkStatus.WORK_DONE,com.allcheck.operations.WorkStatus.CANCELLED) order by w.assignedAt desc,w.workId desc"
         }
         val typed = em.createQuery(query, WorkOrder::class.java).setParameter("driver", driverId)
-        if (history) {
+        if (history && from != null && to != null) {
             typed.setParameter("from", from)
             typed.setParameter("to", to)
         }
@@ -70,7 +77,7 @@ class WorkService(private val works: WorkOrderRepository, private val cancellati
     override fun statistics(driverId: Long, from: Instant, to: Instant): MonthlyFacts {
         fun count(column: String) = (em.createNativeQuery("select count(*) from work_orders where driver_id=:driver and $column>=:from and $column<:to", Long::class.java).setParameter("driver", driverId).setParameter("from", from).setParameter("to", to).singleResult as Number).toLong()
         val rows = em.createNativeQuery("select r.intake->>'workType',count(*) from work_orders w join service_requests r on r.request_id=w.request_id where w.driver_id=:driver and w.completed_at>=:from and w.completed_at<:to group by r.intake->>'workType'", Array<Any>::class.java).setParameter("driver", driverId).setParameter("from", from).setParameter("to", to).resultList
-        val types = rows.associate { (it as Array<*>)[0].toString() to ((it as Array<*>)[1] as Number).toLong() }
+        val types = rows.associate { (it as Array<*>)[0].toString() to (it[1] as Number).toLong() }
         return MonthlyFacts(count("assigned_at"), count("completed_at"), count("cancelled_at"), types)
     }
     private fun snapshots(list: List<WorkOrder>): List<WorkSnapshot> {

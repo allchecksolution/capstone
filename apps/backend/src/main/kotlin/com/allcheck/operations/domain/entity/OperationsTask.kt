@@ -24,7 +24,7 @@ class OperationsTask(
     @field:Column(nullable = false, length = 30, updatable = false) val kind: TaskKind,
     @field:Column(nullable = false, updatable = false) val requestId: Long,
     @field:Column(nullable = false, updatable = false) val subjectId: Long,
-    @field:Column(nullable = false, length = 250, unique = true, updatable = false) val logicalKey: String,
+    @field:Column(nullable = false, length = 400, unique = true, updatable = false) val logicalKey: String,
     @field:Column(nullable = false, updatable = false) val createdAt: Instant,
     @field:Enumerated(EnumType.STRING)
     @field:Column(length = 10, updatable = false) val actorRole: ActorRole? = null,

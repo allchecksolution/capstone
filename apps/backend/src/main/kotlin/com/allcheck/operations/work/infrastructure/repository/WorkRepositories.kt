@@ -10,6 +10,9 @@ interface WorkOrderRepository : JpaRepository<WorkOrder, Long> {
 
     @Query(value = "select exists(select 1 from work_orders where driver_id=:driverId and status not in ('WORK_DONE','CANCELLED'))", nativeQuery = true)
     fun occupied(driverId: Long): Boolean
+
+    @Query("select distinct w.driverId from WorkOrder w where w.driverId in :ids and w.status not in (com.allcheck.operations.WorkStatus.WORK_DONE,com.allcheck.operations.WorkStatus.CANCELLED)")
+    fun occupiedDrivers(ids: Set<Long>): Set<Long>
 }
 interface WorkCancellationRepository : JpaRepository<WorkCancellation, Long> {
     fun findByWorkId(workId: Long): WorkCancellation?
