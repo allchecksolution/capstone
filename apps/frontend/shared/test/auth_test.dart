@@ -204,7 +204,7 @@ void main() {
   });
 
   for(final pending in [false,true]){
-    testWidgets('development bypass is temporary and obeys the build flag (pending=$pending)', (tester) async {
+    testWidgets('temporary home obeys its access flag (pending=$pending)', (tester) async {
       final auth=FakeAuth();var saves=0;
       final store=AppStore(AppRole.driver,save:(_)async{saves++;});
       final backend=pending?RegistrationBackend():null;
@@ -213,8 +213,17 @@ void main() {
         onKakaoAuthenticated:pending?(_)async=>account:null));
       await tapLogin(tester);auth.result.complete(identity);await tester.pumpAndSettle();
       await tapText(tester,'계속');
-      const label='개발용: 승인 대기 건너뛰기';
-      if(developmentAccessEnabled){
+      final label=pending?'임시로 관리자 검토 건너뛰기':'개발용: 승인 대기 건너뛰기';
+      if(pending?temporaryReviewAccessEnabled:developmentAccessEnabled){
+        if(pending){
+          expect(find.text(label),findsOneWidget);
+          expect(find.widgetWithText(FilledButton,label),findsOneWidget);
+          final review=tester.getTopLeft(find.text('관리자 검토가 진행 중입니다.'));
+          final skip=tester.getTopLeft(find.text(label));
+          final logout=tester.getTopLeft(find.text('로그아웃'));
+          expect(skip.dy,greaterThan(review.dy));
+          expect(skip.dy,lessThan(logout.dy));
+        }
         if(!pending)await fillRegistration(tester,{'name':'입력 중인 기사'});
         final savedBefore=saves;final callsBefore=backend?.operations.length;
         await tapText(tester,label);

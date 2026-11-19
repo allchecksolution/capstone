@@ -29,6 +29,9 @@ part 'src/location.dart';
 enum AppRole { admin, driver }
 const developmentAccessEnabled = kDebugMode &&
     bool.fromEnvironment('ALLCHECK_DEV_ACCESS', defaultValue: true);
+// Temporary review preview also works in installed release/profile builds.
+const temporaryReviewAccessEnabled =
+    bool.fromEnvironment('ALLCHECK_TEMP_REVIEW_ACCESS', defaultValue: true);
 typedef Json = Map<String, dynamic>;
 String text(Json row, String key, [String fallback = '']) => row[key]?.toString() ?? fallback;
 List<Json> records(dynamic value) => value is List ? value.cast<Json>() : <Json>[];
