@@ -93,6 +93,33 @@ def assert_error(response, status, code):
     assert error["traceId"]
 
 
+@pytest.mark.parametrize(("work_type", "transcript"), [
+    ("EXTERIOR_LEAK", "비가 올 때 외벽에서 물이 샙니다."),
+    ("INTERIOR_LEAK", "집 안쪽 벽에서 물이 샙니다."),
+    ("BLOCKAGE", "싱크대 배수구가 막혔습니다."),
+    ("BOILER", "보일러가 점화되지 않아 수리를 요청합니다."),
+    ("WATERPROOFING", "옥상 방수층을 다시 시공해 주세요."),
+])
+def test_analyze_supports_backend_work_types(client, mock_openai, work_type, transcript):
+    def respond(request):
+        body = json.loads(request.content)
+        work_type_schema = body["text"]["format"]["schema"]["properties"]["workType"]
+        assert work_type_schema["anyOf"][0]["enum"] == [
+            "EXTERIOR_LEAK", "INTERIOR_LEAK", "BLOCKAGE", "BOILER", "WATERPROOFING",
+        ]
+        assert work_type in body["instructions"]
+        assert body["input"] == transcript
+        return model_response({**EMPTY_EXTRACTION, "workType": work_type})
+
+    mock_openai(respond)
+    response = client.post(PATH, json={**REQUEST, "transcript": transcript})
+    assert response.status_code == 200
+    assert response.json()["aiOriginal"] == {"workType": work_type}
+    assert response.json()["missingFields"] == [
+        "symptoms", "address", "desiredVisitFrom", "desiredVisitTo",
+    ]
+
+
 def test_analyze_normal_consultation_and_relative_dates(client, mock_openai, caplog):
     def respond(request):
         assert request.url.path == "/v1/responses"

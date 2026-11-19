@@ -123,17 +123,16 @@ Python 이미지는 `python:3.13.9-slim-bookworm`, uv 이미지는 `ghcr.io/astr
 
 ## 환경변수 및 범위
 
-실제 `POST /internal/v1/analyze` 호출에는 서버 프로세스의 `OPENAI_API_KEY`가 필요합니다. `/health`와 모의 테스트에는 키가 필요하지 않습니다. `.env`를 자동으로 읽지 않으므로 실행 환경에서 키를 주입합니다. API 키·토큰·고객 정보·녹음 파일은 저장소에 넣지 않습니다. 실제 `.env`와 `.env.*`는 Git 및 Docker에서 제외하고 `.env.example`만 예외로 둡니다.
+실제 `POST /internal/v1/analyze` 호출에는 `OPENAI_API_KEY`와 `AI_INTERNAL_API_KEY`가 필요합니다. Backend는 동일한 내부 키를 `X-Internal-Api-Key`로 전달합니다. `/health`와 모의 테스트에는 실제 키가 필요하지 않습니다. `.env`를 자동으로 읽지 않으므로 실행 환경에서 키를 주입합니다. API 키·토큰·고객 정보·녹음 파일은 저장소에 넣지 않습니다. 실제 `.env`와 `.env.*`는 Git 및 Docker에서 제외하고 `.env.example`만 예외로 둡니다.
 
 ## 상담 분석
 
-`POST /internal/v1/analyze`는 Backend 작업자의 동기 호출을 받습니다. JSON 요청에 `jobId`, `receptionId`, `receptionVersion`, `transcript`, `referenceTime`, `timeZone`을 넣습니다. 기준 시각에는 RFC 3339 오프셋을, 시간대에는 `Asia/Seoul` 같은 IANA 이름을 사용합니다. GPT-5.4 Responses API의 Structured Outputs를 검증한 뒤 HTTP 200으로 `aiOriginal`과 `missingFields`를 반환합니다. 접수 저장과 확정은 Backend에서 담당합니다.
+`POST /internal/v1/analyze`는 Backend가 전사 원문을 DB에 저장한 후 호출하는 동기 API입니다. 요청에는 `analysisRequestId`, `receptionId`, `receptionVersion`, `recordingFileId`, `transcriptFileId`, `transcript`, `referenceTime`, `timeZone`이 필요합니다. `referenceTime`은 RFC 3339의 `+09:00`, `timeZone`은 `Asia/Seoul`을 사용합니다. HTTP 200 응답에 요청의 식별자·버전, `status: SUCCEEDED`, `aiOriginal`, `missingFields`를 반환합니다. 녹음 전사는 ACK-32의 `/internal/v1/transcribe`가 담당하며, 접수 저장과 확정은 Backend가 담당합니다.
 
-입력 검증 실패는 `422 VALIDATION_FAILED`, 외부 호출 실패와 타임아웃은 `503 TEMPORARILY_UNAVAILABLE`, 모델 거절·불완전 응답·스키마 위반은 `500 INTERNAL_ERROR`로 반환합니다. 오류 본문은 `code`, `message`, `traceId`를 포함합니다. SDK 호출은 30초 네트워크 타임아웃을 사용하며 자동 재시도하지 않습니다.
+작업 유형은 외벽 누수(`EXTERIOR_LEAK`), 내벽 누수(`INTERIOR_LEAK`), 막힘(`BLOCKAGE`), 보일러(`BOILER`), 방수(`WATERPROOFING`)입니다. 방문 시각은 `Asia/Seoul`의 `+09:00`으로 반환합니다.
 
-### 운영 배포 차단 사항
+내부 키가 누락되거나 올바르지 않으면 `401 UNAUTHENTICATED`를 반환합니다. 선택적으로 설정한 `AI_INTERNAL_NO_ANALYZE_API_KEY`에는 `403 FORBIDDEN`을 반환합니다. 입력 검증은 `422 VALIDATION_FAILED`, 기준 시각 오프셋 불일치는 `422 TIME_ZONE_OFFSET_MISMATCH`로 응답합니다.
 
-- 분석 엔드포인트에는 내부 인증이 구현되지 않았습니다. 로컬 검증 환경에서만 사용하고, Backend와 인증·권한 정책을 합의해 적용하고 검증하기 전에는 운영 배포하거나 외부에 노출하지 않습니다.
-- 상담 원문은 모델 입력이 됩니다. 실제 상담 데이터를 처리하기 전에 개인정보 최소 전송·마스킹 책임과 적용 범위를 정해야 합니다.
+공급자 오류는 `502 AI_PROVIDER_FAILED`, 서비스 가용성 오류는 `503 TEMPORARILY_UNAVAILABLE`, 공급자 타임아웃은 `504 AI_TIMEOUT`, 모델 응답 검증 실패는 `500 INTERNAL_ERROR`입니다. 오류 본문은 `code`, `message`, `traceId`를 포함합니다. SDK 호출은 30초 네트워크 타임아웃을 사용하며 자동 재시도하지 않습니다.
 
-기준 시각 오프셋과 시간대가 어긋날 때의 처리 및 `409` 적용 조건도 팀 합의 후 적용합니다. 현재 `401`, `403`, `409`는 ACK-23 계약 초안의 응답이며 이 엔드포인트에서 구현된 응답은 아닙니다.
+실제 상담 데이터를 처리하기 전에 개인정보 최소 전송·마스킹 책임과 적용 범위를 정해야 합니다.

@@ -35,7 +35,7 @@ DateTime = Annotated[
     WithJsonSchema({"type": "string", "format": "date-time"}),
 ]
 Id = Annotated[str, StringConstraints(strict=True, min_length=1, max_length=64)]
-WorkType = Literal["EXTERIOR_LEAK", "INTERIOR_LEAK", "BLOCKAGE"]
+WorkType = Literal["EXTERIOR_LEAK", "INTERIOR_LEAK", "BLOCKAGE", "BOILER", "WATERPROOFING"]
 NonEmptyString = Annotated[str, StringConstraints(min_length=1)]
 Symptoms = Annotated[str, StringConstraints(min_length=1, max_length=2000)]
 Address = Annotated[str, StringConstraints(min_length=1, max_length=300)]
