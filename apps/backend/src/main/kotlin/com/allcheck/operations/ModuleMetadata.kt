@@ -3,6 +3,6 @@ package com.allcheck.operations
 import org.springframework.modulith.ApplicationModule
 import org.springframework.modulith.PackageInfo
 
-@ApplicationModule
+@ApplicationModule(displayName = "Service Operations")
 @PackageInfo
-class ModuleMetadata
+internal class ModuleMetadata
