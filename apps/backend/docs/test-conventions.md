@@ -120,7 +120,8 @@ not prevent registration of an already confirmed snapshot.
 `ReceptionCommandServiceTest` verifies database transaction-scoped advisory locking, successful command receipts,
 unchanged first-response replay, payload mismatch rejection, rollback, and current ownership checks on replay.
 `ReceptionApiIntegrationTest` exercises real HTTP serialization, authorization, validation, generated OpenAPI,
-and review flows against PostgreSQL with a test-only administrator identity adapter.
+and review flows against PostgreSQL with an administrator `AuthPrincipal` supplied through Spring Security's
+MockMvc test support.
 
 Full application and security tests also use owned UUID-named schemas. The `test` profile does not enable local
 Swagger automatically; tests that verify the documentation endpoints enable it explicitly. Run all backend

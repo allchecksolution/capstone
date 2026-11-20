@@ -2400,8 +2400,6 @@ paths:
           $ref: '#/components/responses/ReceptionHttpForbidden'
         '400':
           $ref: '#/components/responses/ReceptionHttpValidationFailed'
-        '503':
-          $ref: '#/components/responses/ReceptionHttpServiceUnavailable'
     post:
       operationId: createReception
       x-access-scope: RECEPTION_OWNER
@@ -2465,8 +2463,6 @@ paths:
           $ref: '#/components/responses/ReceptionHttpForbidden'
         '409':
           $ref: '#/components/responses/ReceptionHttpVersionConflict'
-        '503':
-          $ref: '#/components/responses/ReceptionHttpServiceUnavailable'
   /receptions/{receptionId}:
     get:
       operationId: getReception
@@ -2589,8 +2585,6 @@ paths:
           $ref: '#/components/responses/ReceptionHttpForbidden'
         '404':
           $ref: '#/components/responses/ReceptionHttpNotFound'
-        '503':
-          $ref: '#/components/responses/ReceptionHttpServiceUnavailable'
     patch:
       operationId: updateReception
       x-access-scope: RECEPTION_OWNER
@@ -2748,8 +2742,6 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/ReceptionHttpError'}
               example: {code: RECEPTION_ALREADY_REGISTERED, message: 의뢰로 등록된 접수는 변경할 수 없습니다.}
-        '503':
-          $ref: '#/components/responses/ReceptionHttpServiceUnavailable'
   /receptions/{receptionId}/recordings/upload-requests:
     post:
       operationId: createRecordingUploadRequest
@@ -3534,8 +3526,6 @@ paths:
           $ref: '#/components/responses/ReceptionHttpForbidden'
         '404':
           $ref: '#/components/responses/ReceptionHttpNotFound'
-        '503':
-          $ref: '#/components/responses/ReceptionHttpServiceUnavailable'
   /push-devices/{installationId}:
     put:
       operationId: registerPushDevice
@@ -4907,14 +4897,14 @@ components:
             code: VERSION_CONFLICT
             message: 접수 버전 또는 처리 상태 충돌. 현재 상태를 조회한 뒤 다시 요청한다.
     ReceptionHttpServiceUnavailable:
-      description: 접수 HTTP 503 응답. 검토·중복·처리 충돌은 code로 구분한다.
+      description: 녹음 저장소를 사용할 수 없습니다.
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ReceptionHttpError'
           example:
-            code: RECEPTION_IDENTITY_UNAVAILABLE
-            message: 관리자 인증 연동이 준비되지 않았습니다.
+            code: RECORDING_STORAGE_UNAVAILABLE
+            message: 녹음 저장소를 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.
     Unauthorized:
       description: 인증이 필요하거나 토큰이 만료·무효입니다.
       content:
