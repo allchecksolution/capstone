@@ -80,7 +80,7 @@ class SessionAuthenticationIntegrationTest @Autowired constructor(
     private lateinit var kakaoClient: KakaoClient
 
     private val transactions = TransactionTemplate(transactionManager)
-    private val ownAccounts = mutableListOf<String>()
+    private val ownAccounts = mutableListOf<Long>()
     private val now: Instant = clock.instant()
     private val endpoint = "/api/v1/auth/accounts/me"
     private val socialLogin = SocialLogin.kakao(500000001)
@@ -89,7 +89,7 @@ class SessionAuthenticationIntegrationTest @Autowired constructor(
     fun removeOwnFixtures() {
         transactions.executeWithoutResult {
             ownAccounts.forEach { accountId ->
-                sessions.deleteAllByIdInBatch(sessions.findAllByAccountId(accountId).map { it.id })
+                sessions.deleteAllByIdInBatch(sessions.findAllByAccountId(accountId).map { checkNotNull(it.id) })
                 accounts.deleteById(accountId)
             }
         }
@@ -115,7 +115,7 @@ class SessionAuthenticationIntegrationTest @Autowired constructor(
 
         // then
         val result = request.andExpect(status().isOk)
-            .andExpect(content().json("""{"accountId":"$accountId","userType":"DRIVER","role":null}"""))
+            .andExpect(content().json("""{"accountId":$accountId,"userType":"DRIVER","role":null}"""))
             .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
             .andExpect(header().doesNotExist(HttpHeaders.SET_COOKIE))
             .andReturn()
@@ -129,7 +129,7 @@ class SessionAuthenticationIntegrationTest @Autowired constructor(
         // given
         val account = saveAccount(Account.administrator(AdminCredential("stage5-admin", "test-password-hash", role), now))
         val session = saveSession(account)
-        val token = signedClaims(account.id, session.id, mapOf("role" to "MASTER", "authorities" to listOf("TEST_ACCESS")))
+        val token = signedClaims(checkNotNull(account.id), checkNotNull(session.id), mapOf("role" to "MASTER", "authorities" to listOf("TEST_ACCESS")))
 
         // when & then
         mockMvc.perform(get(endpoint).header(HttpHeaders.AUTHORIZATION, "Bearer $token"))
@@ -138,9 +138,9 @@ class SessionAuthenticationIntegrationTest @Autowired constructor(
             .andExpect(jsonPath("$.role").value(role.name))
         mockMvc.perform(get("/api/v1/session-tests/principal").header(HttpHeaders.AUTHORIZATION, "Bearer $token"))
             .andExpect(status().isOk)
-            .andExpect(jsonPath("$.accountId").value(account.id))
-            .andExpect(jsonPath("$.name").value(account.id))
-            .andExpect(jsonPath("$.sessionId").value(session.id))
+            .andExpect(jsonPath("$.accountId").value(checkNotNull(account.id)))
+            .andExpect(jsonPath("$.name").value(checkNotNull(account.id)))
+            .andExpect(jsonPath("$.sessionId").value(checkNotNull(session.id)))
             .andExpect(jsonPath("$.userType").value("ADMIN"))
             .andExpect(jsonPath("$.role").value(role.name))
             .andExpect(jsonPath("$.authorities[0]").value("ROLE_ADMIN"))
@@ -154,7 +154,7 @@ class SessionAuthenticationIntegrationTest @Autowired constructor(
         // given
         val account = saveDriver()
         val session = saveSession(account)
-        val token = signedClaims(account.id, session.id, mapOf("userType" to "ADMIN", "role" to "MASTER"))
+        val token = signedClaims(checkNotNull(account.id), checkNotNull(session.id), mapOf("userType" to "ADMIN", "role" to "MASTER"))
 
         // when & then
         mockMvc.perform(get(endpoint).header(HttpHeaders.AUTHORIZATION, "bearer $token"))
@@ -167,12 +167,12 @@ class SessionAuthenticationIntegrationTest @Autowired constructor(
     fun `토큰을 발급한 뒤 계정을 비활성화하면 다음 요청부터 모든 세션을 차단한다`() {
         // given
         val account = saveDriver()
-        val token = tokens.createAccessToken(account.id, saveSession(account).id)
-        val otherToken = tokens.createAccessToken(account.id, saveSession(account).id)
+        val token = tokens.createAccessToken(checkNotNull(account.id), checkNotNull(saveSession(account).id))
+        val otherToken = tokens.createAccessToken(checkNotNull(account.id), checkNotNull(saveSession(account).id))
         mockMvc.perform(get(endpoint).header(HttpHeaders.AUTHORIZATION, "Bearer $token")).andExpect(status().isOk)
 
         // when
-        transactions.executeWithoutResult { accounts.findById(account.id).orElseThrow().disable(now) }
+        transactions.executeWithoutResult { accounts.findById(checkNotNull(account.id)).orElseThrow().disable(now) }
 
         // then
         expectInvalidToken(token)
@@ -184,12 +184,12 @@ class SessionAuthenticationIntegrationTest @Autowired constructor(
         // given
         val account = saveDriver()
         val session = saveSession(account)
-        val token = tokens.createAccessToken(account.id, session.id)
-        val otherToken = tokens.createAccessToken(account.id, saveSession(account).id)
+        val token = tokens.createAccessToken(checkNotNull(account.id), checkNotNull(session.id))
+        val otherToken = tokens.createAccessToken(checkNotNull(account.id), checkNotNull(saveSession(account).id))
         mockMvc.perform(get(endpoint).header(HttpHeaders.AUTHORIZATION, "Bearer $token")).andExpect(status().isOk)
 
         // when
-        transactions.executeWithoutResult { sessions.findById(session.id).orElseThrow().revoke(now) }
+        transactions.executeWithoutResult { sessions.findById(checkNotNull(session.id)).orElseThrow().revoke(now) }
 
         // then
         expectInvalidToken(token)
@@ -209,11 +209,11 @@ class SessionAuthenticationIntegrationTest @Autowired constructor(
             else -> saveSession(account)
         }
         val accountId = when (scenario) {
-            "unknown-account" -> "missing-account"
-            "mismatch" -> saveAccount(Account.driver(SocialLogin.kakao(500000002), now)).id
-            else -> account.id
+            "unknown-account" -> Long.MAX_VALUE
+            "mismatch" -> checkNotNull(saveAccount(Account.driver(SocialLogin.kakao(500000002), now)).id)
+            else -> checkNotNull(account.id)
         }
-        val sessionId = if (scenario == "unknown-session") "missing-session" else session.id
+        val sessionId = if (scenario == "unknown-session") Long.MAX_VALUE else checkNotNull(session.id)
 
         // when & then
         expectInvalidToken(tokens.createAccessToken(accountId, sessionId))
@@ -225,7 +225,7 @@ class SessionAuthenticationIntegrationTest @Autowired constructor(
         // given
         val account = saveDriver()
         val session = saveSession(account)
-        val claims = HashMap<String, Any>(tokens.parseClaims(tokens.createAccessToken(account.id, session.id)))
+        val claims = HashMap<String, Any>(tokens.parseClaims(tokens.createAccessToken(checkNotNull(account.id), checkNotNull(session.id))))
         when (scenario) {
             "expired" -> {
                 claims["iat"] = Date.from(now.minusSeconds(120))
@@ -243,8 +243,8 @@ class SessionAuthenticationIntegrationTest @Autowired constructor(
             "unsigned" -> Jwts.builder().claims(claims).compact()
             "other-algorithm" -> Jwts.builder().claims(claims).signWith(SecretKeySpec(ByteArray(64) { 9 }, "HmacSHA512"), Jwts.SIG.HS512).compact()
             "tampered" -> {
-                val parts = tokens.createAccessToken(account.id, session.id).split('.')
-                val payload = String(Base64.getUrlDecoder().decode(parts[1]), Charsets.UTF_8).replace(account.id, "other-account")
+                val parts = tokens.createAccessToken(checkNotNull(account.id), checkNotNull(session.id)).split('.')
+                val payload = String(Base64.getUrlDecoder().decode(parts[1]), Charsets.UTF_8).replace(checkNotNull(account.id).toString(), "other-account")
                 val encoded = Base64.getUrlEncoder().withoutPadding().encodeToString(payload.toByteArray(Charsets.UTF_8))
                 "${parts[0]}.$encoded.${parts[2]}"
             }
@@ -272,7 +272,7 @@ class SessionAuthenticationIntegrationTest @Autowired constructor(
     fun `중복 Authorization 헤더는 거부한다`() {
         // given
         val account = saveDriver()
-        val token = tokens.createAccessToken(account.id, saveSession(account).id)
+        val token = tokens.createAccessToken(checkNotNull(account.id), checkNotNull(saveSession(account).id))
 
         // when & then
         mockMvc.perform(get(endpoint).header(HttpHeaders.AUTHORIZATION, "Bearer $token", "Bearer $token"))
@@ -294,7 +294,7 @@ class SessionAuthenticationIntegrationTest @Autowired constructor(
         // given
         Mockito.`when`(kakaoClient.verify("sdk-token")).thenReturn(socialLogin)
         val expired = JwtTokenProvider(secretKey, Duration.ofMinutes(15), Clock.offset(clock, Duration.ofHours(-1)))
-            .createAccessToken("old-account", "old-session")
+            .createAccessToken(1L, 2L)
 
         // when
         val response = mockMvc.perform(
@@ -324,15 +324,15 @@ class SessionAuthenticationIntegrationTest @Autowired constructor(
 
     private fun saveAccount(account: Account): Account {
         val saved = transactions.execute { accounts.saveAndFlush(account) }
-        ownAccounts.add(saved.id)
+        ownAccounts.add(checkNotNull(saved.id))
         return saved
     }
 
     private fun saveSession(account: Account, createdAt: Instant = now, expiresAt: Instant = now.plusSeconds(3600)): AuthSession = transactions.execute {
-        sessions.saveAndFlush(AuthSession(account.id, refreshTokens.hash(refreshTokens.generate()), createdAt, expiresAt))
+        sessions.saveAndFlush(AuthSession(checkNotNull(account.id), refreshTokens.hash(refreshTokens.generate()), createdAt, expiresAt))
     }
 
-    private fun signedClaims(accountId: String, sessionId: String, extras: Map<String, Any>): String {
+    private fun signedClaims(accountId: Long, sessionId: Long, extras: Map<String, Any>): String {
         val claims = HashMap<String, Any>(tokens.parseClaims(tokens.createAccessToken(accountId, sessionId)))
         claims.putAll(extras)
         return Jwts.builder().claims(claims).signWith(secretKey, Jwts.SIG.HS256).compact()

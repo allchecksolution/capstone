@@ -6,7 +6,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 
-data class ProvisionedAdministrator(val accountId: String, val loginId: String, val role: AdminRole)
+data class ProvisionedAdministrator(val accountId: Long, val loginId: String, val role: AdminRole)
 
 /** 운영자 진입점에서만 사용하며 HTTP 계정 생성 경로로 노출하지 않는다. */
 @Service

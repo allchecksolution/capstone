@@ -5,10 +5,10 @@ import com.allcheck.identity.UserType
 import java.security.Principal
 
 data class AuthPrincipal(
-    val accountId: String,
-    val sessionId: String,
+    val accountId: Long,
+    val sessionId: Long,
     val userType: UserType,
     val role: AdminRole?,
 ) : Principal {
-    override fun getName(): String = accountId
+    override fun getName(): String = accountId.toString()
 }

@@ -14,9 +14,9 @@ class DriverPushSender(private val fcm: FcmClient) {
 
     fun send(target: PushTarget, data: DriverPushData, beforeSend: () -> Boolean = { true }): DriverPushResult? {
         val payload = mapOf(
-            "eventId" to data.eventId,
+            "eventId" to data.eventId.toString(),
             "eventType" to data.eventType,
-            "driverId" to data.driverId,
+            "driverId" to data.driverId.toString(),
             "revision" to data.revision.toString(),
         )
         return try {

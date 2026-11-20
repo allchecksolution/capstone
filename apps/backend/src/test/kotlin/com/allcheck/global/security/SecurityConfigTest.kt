@@ -103,7 +103,7 @@ class SecurityConfigTest {
     @Test
     fun `서명이 유효해도 저장된 계정과 세션이 없으면 401을 반환한다`() {
         // given
-        val token = jwtTokenProvider.createAccessToken("test-subject", "test-session")
+        val token = jwtTokenProvider.createAccessToken(1L, 2L)
 
         // when
         val result = mockMvc.perform(

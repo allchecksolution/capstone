@@ -61,8 +61,8 @@ class AdminAccountProvisioningIntegrationTest @Autowired constructor(
         tx.executeWithoutResult {
             ownLoginIds.forEach { id ->
                 val account = accounts.findByAdminCredentialLoginId(id) ?: return@forEach
-                sessions.deleteAllByIdInBatch(sessions.findAllByAccountId(account.id).map { it.id })
-                accounts.deleteById(account.id)
+                sessions.deleteAllByIdInBatch(sessions.findAllByAccountId(checkNotNull(account.id)).map { checkNotNull(it.id) })
+                accounts.deleteById(checkNotNull(account.id))
             }
         }
     }
@@ -79,12 +79,12 @@ class AdminAccountProvisioningIntegrationTest @Autowired constructor(
         // then
         val account = checkNotNull(accounts.findByAdminCredentialLoginId(id))
         val credential = checkNotNull(account.adminCredential)
-        assertThat(account.id).isEqualTo(created.accountId)
+        assertThat(checkNotNull(account.id)).isEqualTo(created.accountId)
         assertThat(account.userType).isEqualTo(UserType.ADMIN)
         assertThat(credential.role).isEqualTo(role)
         assertThat(credential.passwordHash).doesNotContain(password)
         assertThat(passwords.matches(password, credential.passwordHash)).isTrue()
-        assertThat(sessions.findAllByAccountId(account.id)).isEmpty()
+        assertThat(sessions.findAllByAccountId(checkNotNull(account.id))).isEmpty()
         assertThat(login.login(id, password).user.role).isEqualTo(role)
     }
 
@@ -97,18 +97,18 @@ class AdminAccountProvisioningIntegrationTest @Autowired constructor(
         login.login(id, password)
         if (disabled) tx.executeWithoutResult { checkNotNull(accounts.findByIdForUpdate(original.accountId)).disable(Instant.now()) }
         val before = accounts.findById(original.accountId).orElseThrow()
-        val sessionIds = sessions.findAllByAccountId(before.id).map { it.id }
+        val sessionIds = sessions.findAllByAccountId(checkNotNull(before.id)).map { checkNotNull(it.id) }
 
         // when & then
         assertThatThrownBy { provisioning.provision(id, "different-password", AdminRole.SUB) }
             .isInstanceOfSatisfying(BusinessException::class.java) { assertThat(it.errorCode).isEqualTo(IdentityErrorCode.ADMIN_LOGIN_ID_ALREADY_EXISTS) }
         val after = accounts.findByAdminCredentialLoginId(id)
-        assertThat(after?.id).isEqualTo(before.id)
+        assertThat(after?.id).isEqualTo(checkNotNull(before.id))
         assertThat(after?.adminCredential?.passwordHash).isEqualTo(before.adminCredential?.passwordHash)
         assertThat(after?.adminCredential?.role).isEqualTo(AdminRole.MASTER)
         assertThat(after?.enabled).isEqualTo(!disabled)
         assertThat(after?.version).isEqualTo(before.version)
-        assertThat(sessions.findAllByAccountId(before.id).map { it.id }).containsExactlyElementsOf(sessionIds)
+        assertThat(sessions.findAllByAccountId(checkNotNull(before.id)).map { checkNotNull(it.id) }).containsExactlyElementsOf(sessionIds)
     }
 
     @Test
@@ -168,9 +168,9 @@ class AdminAccountProvisioningIntegrationTest @Autowired constructor(
             val winner = results.filterIsInstance<ProvisionedAdministrator>().single()
             assertThat(results.filterIsInstance<IdentityErrorCode>()).containsExactly(IdentityErrorCode.ADMIN_LOGIN_ID_ALREADY_EXISTS)
             val account = checkNotNull(accounts.findByAdminCredentialLoginId(id))
-            assertThat(account.id).isEqualTo(winner.accountId)
+            assertThat(checkNotNull(account.id)).isEqualTo(winner.accountId)
             assertThat(account.adminCredential?.role).isEqualTo(winner.role)
-            assertThat(sessions.findAllByAccountId(account.id)).isEmpty()
+            assertThat(sessions.findAllByAccountId(checkNotNull(account.id))).isEmpty()
         } finally {
             executor.shutdownNow()
             check(executor.awaitTermination(10, TimeUnit.SECONDS))

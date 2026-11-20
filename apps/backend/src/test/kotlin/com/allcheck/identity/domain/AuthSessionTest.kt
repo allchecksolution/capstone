@@ -65,7 +65,7 @@ class AuthSessionTest {
     fun `한 세션을 폐기해도 다른 기기 세션은 유지되고 폐기된 세션은 갱신할 수 없다`() {
         // given
         val session = session()
-        val otherSession = AuthSession("account-01", replacementHash, createdAt, expiresAt)
+        val otherSession = AuthSession(1L, replacementHash, createdAt, expiresAt)
         val revokedAt = createdAt.plusSeconds(60)
 
         // when
@@ -84,7 +84,7 @@ class AuthSessionTest {
     @ValueSource(longs = [-1, 0])
     fun `생성 이후에 만료되지 않는 세션은 만들 수 없다`(seconds: Long) {
         // when & then
-        assertThatThrownBy { AuthSession("account-01", initialHash, createdAt, createdAt.plusSeconds(seconds)) }
+        assertThatThrownBy { AuthSession(1L, initialHash, createdAt, createdAt.plusSeconds(seconds)) }
             .isInstanceOf(IllegalArgumentException::class.java)
     }
 
@@ -112,5 +112,5 @@ class AuthSessionTest {
         assertThatThrownBy { RefreshTokenHash(value) }.isInstanceOf(IllegalArgumentException::class.java)
     }
 
-    private fun session(): AuthSession = AuthSession("account-01", initialHash, createdAt, expiresAt)
+    private fun session(): AuthSession = AuthSession(1L, initialHash, createdAt, expiresAt)
 }

@@ -13,9 +13,9 @@ class SessionAuthenticationService(
     private val sessions: AuthSessionRepository,
     private val clock: Clock = Clock.systemUTC(),
 ) : IdentityOperations {
-    override fun findAuthenticatedAccount(accountId: String, sessionId: String): AuthenticatedAccount? {
+    override fun findAuthenticatedAccount(accountId: Long, sessionId: Long): AuthenticatedAccount? {
         val state = sessions.findAuthenticationState(accountId, sessionId) ?: return null
         if (!state.account.enabled || !state.session.isActiveAt(clock.instant())) return null
-        return AuthenticatedAccount(state.account.id, state.account.userType, state.account.adminCredential?.role)
+        return AuthenticatedAccount(checkNotNull(state.account.id), state.account.userType, state.account.adminCredential?.role)
     }
 }

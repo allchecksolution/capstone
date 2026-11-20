@@ -17,14 +17,14 @@ class DriverAccessService(
     private val drivers: DriverRepository,
     private val identity: IdentityAccountOperations,
 ) : DriverOperations {
-    override fun isActiveDriverAccount(accountId: String): Boolean = drivers.existsByAccountIdAndAccountStatus(accountId, DriverAccountStatus.ACTIVATED)
+    override fun isActiveDriverAccount(accountId: Long): Boolean = drivers.existsByAccountIdAndAccountStatus(accountId, DriverAccountStatus.ACTIVATED)
 
     @Transactional(propagation = Propagation.MANDATORY)
-    override fun lockActiveDriver(driverId: String): DriverIdentity {
+    override fun lockActiveDriver(driverId: Long): DriverIdentity {
         val accountId = drivers.findAccountId(driverId) ?: throw BusinessException(DriverErrorCode.DRIVER_NOT_FOUND)
         identity.lockActiveDriverAccount(accountId)
         val driver = drivers.findByIdForUpdate(driverId) ?: throw BusinessException(DriverErrorCode.DRIVER_NOT_FOUND)
         driver.requireActive()
-        return DriverIdentity(driver.id, driver.accountId)
+        return DriverIdentity(checkNotNull(driver.id), driver.accountId)
     }
 }

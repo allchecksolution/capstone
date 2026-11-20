@@ -5,11 +5,12 @@ import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
+import jakarta.persistence.GeneratedValue
+import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.Table
 import java.time.Instant
 import java.time.LocalDate
-import java.util.UUID
 
 @Entity
 @Table(name = "driver_businesses")
@@ -27,6 +28,8 @@ class DriverBusiness(
     @Column(name = "verified_at", nullable = false) val verifiedAt: Instant,
 ) {
     @Id
-    @Column(name = "business_id", length = 64, nullable = false, updatable = false)
-    val id: String = UUID.randomUUID().toString()
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "business_id", nullable = false, updatable = false)
+    var id: Long? = null
+        protected set
 }

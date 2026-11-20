@@ -21,14 +21,14 @@ class DriverIdempotencyService(
     private val mapper: JsonMapper,
     private val clock: Clock = Clock.systemUTC(),
 ) {
-    fun <T> known(actor: String, scope: String, key: String, request: Any, type: Class<T>): DriverCommandResult<T>? {
+    fun <T> known(actor: Long, scope: String, key: String, request: Any, type: Class<T>): DriverCommandResult<T>? {
         val record = records.findByActorIdAndOperationScopeAndKeyHash(actor, scope, hash(key.toByteArray())) ?: return null
         if (record.requestFingerprint != fingerprint(request)) throw BusinessException(DriverErrorCode.IDEMPOTENCY_KEY_REUSED)
         return DriverCommandResult(mapper.readValue(record.responseJson, type), true)
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
-    fun <T : Any> execute(actor: String, scope: String, key: String, request: Any, type: Class<T>, action: () -> T): DriverCommandResult<T> {
+    fun <T : Any> execute(actor: Long, scope: String, key: String, request: Any, type: Class<T>, action: () -> T): DriverCommandResult<T> {
         val digest = MessageDigest.getInstance("SHA-256").digest(mapper.writeValueAsBytes(listOf(actor, scope, key)))
         if (!records.tryLock(ByteBuffer.wrap(digest).long)) throw BusinessException(DriverErrorCode.OPERATION_IN_PROGRESS)
         val previous = known(actor, scope, key, request, type)

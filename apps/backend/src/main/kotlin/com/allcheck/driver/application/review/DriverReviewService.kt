@@ -28,7 +28,7 @@ class DriverReviewService(
     private val clock: Clock = Clock.systemUTC(),
 ) {
     @Transactional
-    fun decide(actor: String, driverId: String, key: String, request: ReviewDriverCommand): DriverCommandResult<DriverApprovalResult> = idempotency.execute(actor, "POST:/api/v1/drivers/$driverId/approval", key, request, DriverApprovalResult::class.java) {
+    fun decide(actor: Long, driverId: Long, key: String, request: ReviewDriverCommand): DriverCommandResult<DriverApprovalResult> = idempotency.execute(actor, "POST:/api/v1/drivers/$driverId/approval", key, request, DriverApprovalResult::class.java) {
         val accountId = drivers.findAccountId(driverId) ?: throw BusinessException(DriverErrorCode.DRIVER_NOT_FOUND)
         identity.lockActiveDriverAccount(accountId)
         val driver = drivers.findByIdForUpdate(driverId) ?: throw BusinessException(DriverErrorCode.DRIVER_NOT_FOUND)
@@ -37,9 +37,9 @@ class DriverReviewService(
         val approved = request.decision == ApprovalDecision.APPROVE
         if (approved) driver.approve() else driver.reject(checkNotNull(request.rejectionReason), now)
         val eventType = if (approved) "APPROVED" else "REJECTED"
-        history.save(DriverHistory(driver.id, driver.revision, eventType, actor, now, reason = if (approved) null else request.rejectionReason))
-        events.save(DriverNotificationEvent(driver.id, driver.revision, "DRIVER_$eventType", driver.accountId, now))
+        history.save(DriverHistory(checkNotNull(driver.id), driver.revision, eventType, actor, now, reason = if (approved) null else request.rejectionReason))
+        events.save(DriverNotificationEvent(checkNotNull(driver.id), driver.revision, "DRIVER_$eventType", driver.accountId, now))
         drivers.flush()
-        DriverApprovalResult(driver.id, driver.accountStatus, driver.version, now)
+        DriverApprovalResult(checkNotNull(driver.id), driver.accountStatus, driver.version, now)
     }
 }

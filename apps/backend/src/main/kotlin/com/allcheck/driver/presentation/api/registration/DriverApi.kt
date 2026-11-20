@@ -106,7 +106,7 @@ interface DriverApi {
     @GetMapping("/{driverId}")
     @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "기사 신청 상세와 반려 이력 조회", operationId = "getDriver")
-    fun detail(@Size(min = 1, max = 64) @PathVariable driverId: String): ResponseEntity<DriverDetailResponse>
+    fun detail(@Min(1) @PathVariable driverId: Long): ResponseEntity<DriverDetailResponse>
 
     @PostMapping("/{driverId}/approval")
     @PreAuthorize("hasRole('ADMIN')")
@@ -114,7 +114,7 @@ interface DriverApi {
     @ApiResponse(responseCode = "200", description = "심사 결과 반영", headers = [Header(name = "Idempotency-Replayed", description = "동일 요청의 최초 성공 결과 재현 여부", schema = Schema(type = "boolean"))])
     fun decide(
         @Parameter(hidden = true) @AuthenticationPrincipal principal: AuthPrincipal,
-        @Size(min = 1, max = 64) @PathVariable driverId: String,
+        @Min(1) @PathVariable driverId: Long,
         @NotBlank @Size(max = 200) @RequestHeader("Idempotency-Key") key: String,
         @Valid @RequestBody request: DriverApprovalRequest,
     ): ResponseEntity<DriverApprovalResult>

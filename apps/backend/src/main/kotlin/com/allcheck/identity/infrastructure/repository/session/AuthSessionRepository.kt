@@ -9,11 +9,11 @@ import org.springframework.data.jpa.repository.Lock
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 
-interface AuthSessionRepository : JpaRepository<AuthSession, String> {
+interface AuthSessionRepository : JpaRepository<AuthSession, Long> {
     fun findByRefreshTokenHash(refreshTokenHash: RefreshTokenHash): AuthSession?
 
     @Query("select session.accountId from AuthSession session where session.refreshTokenHash = :hash")
-    fun findAccountIdByRefreshTokenHash(@Param("hash") hash: RefreshTokenHash): String?
+    fun findAccountIdByRefreshTokenHash(@Param("hash") hash: RefreshTokenHash): Long?
 
     @Query(
         """
@@ -28,11 +28,11 @@ interface AuthSessionRepository : JpaRepository<AuthSession, String> {
     @Query("select session from AuthSession session where session.refreshTokenHash = :hash")
     fun findByRefreshTokenHashForUpdate(@Param("hash") hash: RefreshTokenHash): AuthSession?
 
-    fun findAllByAccountId(accountId: String): List<AuthSession>
+    fun findAllByAccountId(accountId: Long): List<AuthSession>
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select session from AuthSession session where session.accountId = :accountId order by session.id")
-    fun findAllByAccountIdForUpdate(@Param("accountId") accountId: String): List<AuthSession>
+    fun findAllByAccountIdForUpdate(@Param("accountId") accountId: Long): List<AuthSession>
 
     @Query(
         """
@@ -41,7 +41,7 @@ interface AuthSessionRepository : JpaRepository<AuthSession, String> {
         where account.id = :accountId and session.id = :sessionId
         """,
     )
-    fun findAuthenticationState(@Param("accountId") accountId: String, @Param("sessionId") sessionId: String): AuthenticationState?
+    fun findAuthenticationState(@Param("accountId") accountId: Long, @Param("sessionId") sessionId: Long): AuthenticationState?
 }
 
 /** 계정과 세션을 한 쿼리의 동일한 DB 스냅샷에서 조회한다. 모듈 내부에서만 사용한다. */

@@ -112,7 +112,9 @@ again after expiry of the limit window. Do not bypass the limits when counter st
 
 ### Driver Registration Persistence
 
-`Driver` owns separate personal-profile and business-information records. Personal settlement accounts and tax-invoice email belong to the profile, not the business. Each authentication account has at most one Driver. Keep full submitted snapshots and review actors, reasons, timestamps, and application revisions in append-only history; resubmission retains the same Driver and Account IDs.
+Generated Account, AuthSession, PushDevice, Driver, business/history/receipt/notification/delivery and WorkOrder keys use `Long` / `BIGINT` IDENTITY. Public account/driver identifiers are positive JSON integers; JWT account/session claims and FCM identifier data retain their required string representation. Installation IDs, provider member numbers, idempotency keys, hashes and delivery claims remain distinct business/technical identifiers. The user confirmed V12-V17 are unapplied; these branch migrations are updated together, preserving main V1-V11 unchanged.
+
+`Driver` embeds its personal profile as an immutable value object and owns a separate business-information record. Profile scalar fields are stored in `drivers`; specialties, regions and equipment collections reference `driver_id`, with no independent profile identity. Personal settlement accounts and tax-invoice email belong to the profile, not the business. Each authentication account has at most one Driver. Keep full submitted snapshots and review actors, reasons, timestamps, and application revisions in append-only history; resubmission retains the same Driver and Account IDs.
 
 Registration changes, review history, idempotency results, and notification publication intent commit together. Verify business information outside write transactions. The user confirmed on 2026-11-18 that registration and resubmission require a matching NTS business number, opening date, and representative name with CONTINUING operating status. Suspended and closed businesses cannot apply. Administrator name/business-name search uses partial matching.
 

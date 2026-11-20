@@ -273,7 +273,7 @@ paths:
         - name: driverId
           in: query
           description: 현재·과거 담당 기사 필터. workStatus와 함께 사용하면 같은 작업 기록에 두 조건을 적용한다.
-          schema: {$ref: "#/components/schemas/Id"}
+          schema: {$ref: "#/components/schemas/DatabaseId"}
         - name: region
           in: query
           description: 지역 필터. 지역 분류 체계는 미정이라 자유 문자열.
@@ -306,7 +306,7 @@ paths:
                         address: 서울시 강남구 예시로 10
                         dispatchStatus: ASSIGNED
                         workStatus: IN_PROGRESS
-                        assignedDriver: {driverId: drv_01, workerName: 홍길동}
+                        assignedDriver: {driverId: 1, workerName: 홍길동}
                         needsAdminAction: false
                         createdAt: "2026-10-31T09:00:00+09:00"
                         updatedAt: "2026-10-31T14:20:00+09:00"
@@ -1424,7 +1424,7 @@ paths:
                 requestId: req_01
                 currentWork:
                   workId: work_02
-                  driverId: drv_02
+                  driverId: 2
                   workStatus: NOT_STARTED
                   previousWorkId: work_01
                   assignedAt: "2026-10-31T10:20:00+09:00"
@@ -1444,7 +1444,7 @@ paths:
                     status: ASSIGNED
                     works:
                       - workId: work_01
-                        driverId: drv_01
+                        driverId: 1
                         workStatus: CANCELLED
                         previousWorkId: null
                         assignedAt: "2026-10-31T09:30:00+09:00"
@@ -1474,7 +1474,7 @@ paths:
                     status: ASSIGNED
                     works:
                       - workId: work_02
-                        driverId: drv_02
+                        driverId: 2
                         workStatus: NOT_STARTED
                         previousWorkId: work_01
                         assignedAt: "2026-10-31T10:20:00+09:00"
@@ -1565,7 +1565,7 @@ paths:
                 expiresIn: 900
                 refreshExpiresIn: 1209600
                 user:
-                  accountId: acc_admin_01
+                  accountId: 1
                   userType: ADMIN
                   role: MASTER
         "400":
@@ -1639,7 +1639,7 @@ paths:
                 expiresIn: 900
                 refreshExpiresIn: 1208700
                 user:
-                  accountId: acc_admin_01
+                  accountId: 1
                   userType: ADMIN
                   role: MASTER
         "400":
@@ -1749,7 +1749,7 @@ paths:
                 expiresIn: 900
                 refreshExpiresIn: 1209600
                 user:
-                  accountId: acc_driver_01
+                  accountId: 1
                   userType: DRIVER
                   role: null
         "400":
@@ -1816,7 +1816,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/AuthUser"
               example:
-                accountId: acc_driver_01
+                accountId: 1
                 userType: DRIVER
                 role: null
         "401":
@@ -1859,7 +1859,7 @@ paths:
                 pending:
                   summary: 승인 대기(A2). 대기 안내 화면
                   value:
-                    driverId: drv_03
+                    driverId: 3
                     accountStatus: PENDING_APPROVAL
                     version: 1
                     submittedAt: "2026-11-01T10:00:00+09:00"
@@ -1888,7 +1888,7 @@ paths:
                 approved:
                   summary: 승인됨. 정상 이용 가능
                   value:
-                    driverId: drv_03
+                    driverId: 3
                     accountStatus: ACTIVATED
                     version: 2
                     submittedAt: "2026-11-01T10:00:00+09:00"
@@ -1917,7 +1917,7 @@ paths:
                 rejected:
                   summary: 반려(A3). 반려 사유 안내 화면
                   value:
-                    driverId: drv_03
+                    driverId: 3
                     accountStatus: REJECTED
                     version: 3
                     submittedAt: "2026-11-01T10:00:00+09:00"
@@ -2003,7 +2003,7 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/DriverRegistrationResult"}
-              example: {driverId: drv_02, accountStatus: PENDING_APPROVAL, submittedAt: "2026-11-02T10:00:00+09:00", version: 1}
+              example: {driverId: 2, accountStatus: PENDING_APPROVAL, submittedAt: "2026-11-02T10:00:00+09:00", version: 1}
         "401": {$ref: "#/components/responses/Unauthorized"}
         "403": {$ref: "#/components/responses/Forbidden"}
         "409":
@@ -2098,7 +2098,7 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/DriverRegistrationResult"}
-              example: {driverId: drv_03, accountStatus: PENDING_APPROVAL, submittedAt: "2026-11-02T11:00:00+09:00", version: 4}
+              example: {driverId: 3, accountStatus: PENDING_APPROVAL, submittedAt: "2026-11-02T11:00:00+09:00", version: 4}
         "401": {$ref: "#/components/responses/Unauthorized"}
         "403": {$ref: "#/components/responses/Forbidden"}
         "404": {$ref: "#/components/responses/NotFound"}
@@ -2158,7 +2158,7 @@ paths:
               schema: {$ref: "#/components/schemas/DriverList"}
               example:
                 items:
-                  - {driverId: drv_02, workerName: 홍길동, businessName: 길동설비, accountStatus: PENDING_APPROVAL, submittedAt: "2026-11-02T10:00:00+09:00", version: 1}
+                  - {driverId: 2, workerName: 홍길동, businessName: 길동설비, accountStatus: PENDING_APPROVAL, submittedAt: "2026-11-02T10:00:00+09:00", version: 1}
                 page: {page: 1, size: 20, totalElements: 1, totalPages: 1}
         "401": {$ref: "#/components/responses/Unauthorized"}
         "403": {$ref: "#/components/responses/Forbidden"}
@@ -2191,7 +2191,7 @@ paths:
             application/json:
               schema: {$ref: "#/components/schemas/DriverDetail"}
               example:
-                driverId: drv_02
+                driverId: 2
                 accountStatus: PENDING_APPROVAL
                 version: 1
                 submittedAt: "2026-11-02T10:00:00+09:00"
@@ -2266,7 +2266,7 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/DriverApprovalResult"}
-              example: {driverId: drv_02, accountStatus: ACTIVATED, version: 2, decidedAt: "2026-11-02T14:00:00+09:00"}
+              example: {driverId: 2, accountStatus: ACTIVATED, version: 2, decidedAt: "2026-11-02T14:00:00+09:00"}
         "401": {$ref: "#/components/responses/Unauthorized"}
         "403": {$ref: "#/components/responses/Forbidden"}
         "404": {$ref: "#/components/responses/NotFound"}
@@ -3638,7 +3638,7 @@ paths:
                       closedAt: "2026-10-31T09:03:00+09:00"
                       offers:
                         - offerId: ofr_01
-                          driver: {driverId: drv_01, workerName: 홍길동}
+                          driver: {driverId: 1, workerName: 홍길동}
                           offerStatus: ACCEPTED
                           deliveryStatus: PROVIDER_ACCEPTED
                           providerAcceptedAt: "2026-10-31T09:00:03+09:00"
@@ -3649,7 +3649,7 @@ paths:
                     currentWork:
                       workId: work_01
                       previousWorkId: null
-                      driver: {driverId: drv_01, workerName: 홍길동}
+                      driver: {driverId: 1, workerName: 홍길동}
                       workStatus: IN_PROGRESS
                       workUpdatedAt: "2026-10-31T14:20:00+09:00"
                     reportId: null
@@ -3734,7 +3734,7 @@ paths:
                     closedAt: null
                     offers:
                       - offerId: ofr_01
-                        driver: {driverId: drv_01, workerName: 홍길동}
+                        driver: {driverId: 1, workerName: 홍길동}
                         offerStatus: PENDING
                         deliveryStatus: PROVIDER_ACCEPTED
                         providerAcceptedAt: "2026-10-31T09:00:03+09:00"
@@ -3743,7 +3743,7 @@ paths:
                         respondedAt: null
                         expiresAt: "2026-10-31T09:10:00+09:00"
                       - offerId: ofr_02
-                        driver: {driverId: drv_04, workerName: 김철수}
+                        driver: {driverId: 4, workerName: 김철수}
                         offerStatus: PENDING
                         deliveryStatus: FAILED
                         providerAcceptedAt: null
@@ -3849,7 +3849,7 @@ paths:
                   - cancellationId: can_01
                     requestId: req_01
                     workId: work_01
-                    driver: {driverId: drv_01, workerName: 홍길동}
+                    driver: {driverId: 1, workerName: 홍길동}
                     reasonCode: SCHEDULE_CONFLICT
                     workStatusBeforeCancellation: IN_PROGRESS
                     requestStatus: FOLLOW_UP_REQUIRED
@@ -3893,7 +3893,7 @@ paths:
                 cancellationId: can_01
                 requestId: req_01
                 workId: work_01
-                driver: {driverId: drv_01, workerName: 홍길동}
+                driver: {driverId: 1, workerName: 홍길동}
                 reasonCode: SCHEDULE_CONFLICT
                 workStatusBeforeCancellation: IN_PROGRESS
                 reasonDetail: 앞선 작업이 길어져 방문이 어렵습니다.
@@ -3931,7 +3931,7 @@ paths:
         - name: driverId
           in: query
           description: 특정 기사의 보고서만 조회.
-          schema: {$ref: "#/components/schemas/Id"}
+          schema: {$ref: "#/components/schemas/DatabaseId"}
         - name: from
           in: query
           description: 제출일 시작(포함).
@@ -3953,7 +3953,7 @@ paths:
                   - reportId: rpt_01
                     requestId: req_01
                     workId: work_01
-                    driver: {driverId: drv_01, workerName: 홍길동}
+                    driver: {driverId: 1, workerName: 홍길동}
                     submittedAt: "2026-10-31T16:40:00+09:00"
                     totalCost: 105000
                     revised: true
@@ -4203,7 +4203,7 @@ paths:
                 items:
                   - workId: work_01
                     requestId: req_01
-                    driverId: drv_01
+                    driverId: 1
                     previousWorkId: null
                     workType: BLOCKAGE
                     symptoms: 싱크대 물이 내려가지 않음
@@ -4261,7 +4261,7 @@ paths:
               example:
                 workId: work_01
                 requestId: req_01
-                driverId: drv_01
+                driverId: 1
                 previousWorkId: null
                 workType: BLOCKAGE
                 symptoms: 싱크대 물이 내려가지 않음
@@ -4303,7 +4303,7 @@ paths:
             application/json:
               schema: {$ref: "#/components/schemas/DriverProfileView"}
               example:
-                driverId: drv_01
+                driverId: 1
                 accountStatus: ACTIVATED
                 version: 3
                 profile:
@@ -4368,7 +4368,7 @@ paths:
             application/json:
               schema: {$ref: "#/components/schemas/ProfileUpdated"}
               example:
-                driverId: drv_01
+                driverId: 1
                 version: 4
                 updatedAt: "2026-10-31T18:00:00+09:00"
                 profile:
@@ -4424,7 +4424,7 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/WithdrawalResult"}
-              example: {driverId: drv_01, accountStatus: WITHDRAWN, withdrawnAt: "2026-11-02T18:00:00+09:00"}
+              example: {driverId: 1, accountStatus: WITHDRAWN, withdrawnAt: "2026-11-02T18:00:00+09:00"}
         "401": {$ref: "#/components/responses/Unauthorized"}
         "403": {$ref: "#/components/responses/Forbidden"}
         "409":
@@ -4472,8 +4472,8 @@ paths:
               schema: {$ref: "#/components/schemas/ChatMessagePage"}
               example:
                 items:
-                  - {messageId: msg_02, driverId: drv_01, sender: ADMIN, body: 현장 상황을 알려 주세요., sentAt: "2026-10-31T14:30:00+09:00", readAt: null}
-                  - {messageId: msg_01, driverId: drv_01, sender: DRIVER, body: 도착했습니다., sentAt: "2026-10-31T14:10:00+09:00", readAt: "2026-10-31T14:11:00+09:00"}
+                  - {messageId: msg_02, driverId: 1, sender: ADMIN, body: 현장 상황을 알려 주세요., sentAt: "2026-10-31T14:30:00+09:00", readAt: null}
+                  - {messageId: msg_01, driverId: 1, sender: DRIVER, body: 도착했습니다., sentAt: "2026-10-31T14:10:00+09:00", readAt: "2026-10-31T14:11:00+09:00"}
                 nextCursor: null
                 readOnly: false
         "401": {$ref: "#/components/responses/Unauthorized"}
@@ -4514,7 +4514,7 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/ChatMessage"}
-              example: {messageId: msg_01, driverId: drv_01, sender: DRIVER, body: 도착했습니다., sentAt: "2026-10-31T14:10:00+09:00", readAt: null}
+              example: {messageId: msg_01, driverId: 1, sender: DRIVER, body: 도착했습니다., sentAt: "2026-10-31T14:10:00+09:00", readAt: null}
         "401": {$ref: "#/components/responses/Unauthorized"}
         "403":
           description: 계정 상태가 활성이 아니거나 채팅 권한이 없다.
@@ -4584,9 +4584,9 @@ paths:
               schema: {$ref: "#/components/schemas/ChatRoomList"}
               example:
                 items:
-                  - driver: {driverId: drv_01, workerName: 홍길동}
+                  - driver: {driverId: 1, workerName: 홍길동}
                     driverAccountStatus: ACTIVATED
-                    lastMessage: {messageId: msg_01, driverId: drv_01, sender: DRIVER, body: 도착했습니다., sentAt: "2026-10-31T14:10:00+09:00", readAt: null}
+                    lastMessage: {messageId: msg_01, driverId: 1, sender: DRIVER, body: 도착했습니다., sentAt: "2026-10-31T14:10:00+09:00", readAt: null}
                     unreadCount: 1
                     readOnly: false
                 page: {page: 1, size: 20, totalElements: 1, totalPages: 1}
@@ -4621,7 +4621,7 @@ paths:
               schema: {$ref: "#/components/schemas/ChatMessagePage"}
               example:
                 items:
-                  - {messageId: msg_01, driverId: drv_01, sender: DRIVER, body: 도착했습니다., sentAt: "2026-10-31T14:10:00+09:00", readAt: null}
+                  - {messageId: msg_01, driverId: 1, sender: DRIVER, body: 도착했습니다., sentAt: "2026-10-31T14:10:00+09:00", readAt: null}
                 nextCursor: null
                 readOnly: false
         "401": {$ref: "#/components/responses/Unauthorized"}
@@ -4663,7 +4663,7 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/ChatMessage"}
-              example: {messageId: msg_02, driverId: drv_01, sender: ADMIN, body: 현장 상황을 알려 주세요., sentAt: "2026-10-31T14:30:00+09:00", readAt: null}
+              example: {messageId: msg_02, driverId: 1, sender: ADMIN, body: 현장 상황을 알려 주세요., sentAt: "2026-10-31T14:30:00+09:00", readAt: null}
         "401": {$ref: "#/components/responses/Unauthorized"}
         "403":
           description: 기사 계정이 활성이 아니거나 채팅 권한이 없다.
@@ -4754,8 +4754,8 @@ components:
       name: driverId
       in: path
       required: true
-      schema: {$ref: "#/components/schemas/Id"}
-      example: drv_01
+      schema: {$ref: "#/components/schemas/DatabaseId"}
+      example: 1
     OfferIdPath:
       name: offerId
       in: path
@@ -5575,8 +5575,7 @@ components:
           type: string
           minLength: 1
         driverId:
-          type: string
-          minLength: 1
+          $ref: "#/components/schemas/DatabaseId"
         workStatus:
           $ref: "#/components/schemas/WorkStatus"
         previousWorkId:
@@ -5732,6 +5731,11 @@ components:
       minLength: 1
       maxLength: 64
       description: 불투명 식별자. 형식은 서버가 정하며 클라이언트는 해석하지 않는다. 접수·녹음·분석·원문 ID는 Backend의 숫자 PK를 rec_·file_rec_·anl_·file_stt_ 접두어가 있는 문자열로 변환한다. AI는 받은 식별자를 변경 없이 반환한다.
+    DatabaseId:
+      type: integer
+      format: int64
+      minimum: 1
+      description: Backend가 IDENTITY로 생성하는 내부 BIGINT 식별자.
     NullableId:
       type: [string, "null"]
       minLength: 1
@@ -5785,7 +5789,7 @@ components:
       additionalProperties: false
       required: [driverId, workerName]
       properties:
-        driverId: {$ref: "#/components/schemas/Id"}
+        driverId: {$ref: "#/components/schemas/DatabaseId"}
         workerName: {type: string, minLength: 1, maxLength: 100}
     # ---------- 인증 ----------
     IdentityError:
@@ -5842,7 +5846,7 @@ components:
       properties:
         accountId:
           allOf:
-            - $ref: "#/components/schemas/Id"
+            - $ref: "#/components/schemas/DatabaseId"
           description: identity 내부 계정 ID. 카카오 회원번호 및 driverId와 구분한다.
         userType:
           type: string
@@ -5932,8 +5936,47 @@ components:
       required: [bankName, accountNumber, holderName]
       properties:
         bankName: {type: string, minLength: 1, maxLength: 50}
-        accountNumber: {type: string, pattern: "^[0-9*-]{6,30}$", description: 조회 응답에서는 일부가 *로 마스킹되어 반환될 수 있다.}
+        accountNumber: {type: string, minLength: 6, maxLength: 30, description: 조회 응답에서는 일부가 *로 마스킹되어 반환될 수 있다.}
         holderName: {type: string, minLength: 1, maxLength: 50}
+    SettlementAccountInput:
+      type: object
+      additionalProperties: false
+      required: [bankName, accountNumber, holderName]
+      properties:
+        bankName: {type: string, minLength: 1, maxLength: 50}
+        accountNumber: {type: string, minLength: 6, maxLength: 30, pattern: "^[0-9]+(-[0-9]+)*$", description: 숫자 그룹으로 구성된 원본 계좌번호. 별표 마스킹 입력은 거부한다.}
+        holderName: {type: string, minLength: 1, maxLength: 50}
+    DriverProfileInput:
+      type: object
+      additionalProperties: false
+      description: 기사 개인정보와 배차 조건. 정산계좌와 세금계산서 이메일은 사업자가 아닌 기사 개인 명의.
+      required: [workerName, phone, email, residence, vehicleNumber, settlementAccount, taxInvoiceEmail, specialties, activityRegions, equipment]
+      properties:
+        workerName: {type: string, minLength: 1, maxLength: 100}
+        phone: {type: string, pattern: "^[0-9+-]{9,20}$"}
+        email: {type: string, format: email, maxLength: 254}
+        residence: {type: string, minLength: 1, maxLength: 200}
+        vehicleNumber: {type: string, minLength: 1, maxLength: 20}
+        settlementAccount: {$ref: "#/components/schemas/SettlementAccountInput"}
+        taxInvoiceEmail: {type: string, format: email, maxLength: 254}
+        specialties:
+          type: array
+          items: {$ref: "#/components/schemas/WorkType"}
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+        activityRegions:
+          type: array
+          items: {type: string, minLength: 1, maxLength: 100}
+          minItems: 1
+          maxItems: 20
+          uniqueItems: true
+          description: 활동지. 지역 세부 분류 체계는 미정이라 자유 문자열로 둔 제안.
+        equipment:
+          type: array
+          items: {type: string, minLength: 1, maxLength: 100}
+          maxItems: 50
+          uniqueItems: true
     DriverProfileFields:
       type: object
       additionalProperties: false
@@ -5994,14 +6037,14 @@ components:
       additionalProperties: false
       required: [profile, business]
       properties:
-        profile: {$ref: "#/components/schemas/DriverProfileFields"}
+        profile: {$ref: "#/components/schemas/DriverProfileInput"}
         business: {$ref: "#/components/schemas/BusinessInfo"}
     DriverRegistrationResult:
       type: object
       additionalProperties: false
       required: [driverId, accountStatus, submittedAt, version]
       properties:
-        driverId: {$ref: "#/components/schemas/Id"}
+        driverId: {$ref: "#/components/schemas/DatabaseId"}
         accountStatus: {type: string, const: PENDING_APPROVAL}
         submittedAt: {$ref: "#/components/schemas/DateTime"}
         version: {type: integer, minimum: 1}
@@ -6017,7 +6060,7 @@ components:
       additionalProperties: false
       required: [driverId, accountStatus, version, submittedAt, rejection, profile, business, businessVerification]
       properties:
-        driverId: {$ref: "#/components/schemas/Id"}
+        driverId: {$ref: "#/components/schemas/DatabaseId"}
         accountStatus: {$ref: "#/components/schemas/DriverAccountStatus"}
         version: {type: integer, minimum: 1}
         submittedAt: {$ref: "#/components/schemas/DateTime"}
@@ -6040,7 +6083,7 @@ components:
       additionalProperties: false
       required: [driverId, workerName, businessName, accountStatus, submittedAt, version]
       properties:
-        driverId: {$ref: "#/components/schemas/Id"}
+        driverId: {$ref: "#/components/schemas/DatabaseId"}
         workerName: {type: string, minLength: 1, maxLength: 100}
         businessName: {type: string, minLength: 1, maxLength: 100}
         accountStatus: {$ref: "#/components/schemas/DriverAccountStatus"}
@@ -6060,7 +6103,7 @@ components:
       additionalProperties: false
       required: [driverId, accountStatus, version, submittedAt, profile, business, businessVerification, rejectionHistory, availability]
       properties:
-        driverId: {$ref: "#/components/schemas/Id"}
+        driverId: {$ref: "#/components/schemas/DatabaseId"}
         accountStatus: {$ref: "#/components/schemas/DriverAccountStatus"}
         version: {type: integer, minimum: 1, description: 승인·반려 요청의 expectedVersion.}
         submittedAt: {$ref: "#/components/schemas/DateTime"}
@@ -6093,7 +6136,7 @@ components:
       additionalProperties: false
       required: [driverId, accountStatus, version, decidedAt]
       properties:
-        driverId: {$ref: "#/components/schemas/Id"}
+        driverId: {$ref: "#/components/schemas/DatabaseId"}
         accountStatus: {type: string, enum: [ACTIVATED, REJECTED]}
         version: {type: integer, minimum: 1}
         decidedAt: {$ref: "#/components/schemas/DateTime"}
@@ -6149,7 +6192,7 @@ components:
       additionalProperties: false
       required: [driverId, accountStatus, version, profile, business, notificationSettings]
       properties:
-        driverId: {$ref: "#/components/schemas/Id"}
+        driverId: {$ref: "#/components/schemas/DatabaseId"}
         accountStatus: {$ref: "#/components/schemas/DriverAccountStatus"}
         version: {type: integer, minimum: 1}
         profile: {$ref: "#/components/schemas/DriverProfileFields"}
@@ -6198,7 +6241,7 @@ components:
       additionalProperties: false
       required: [driverId, version, updatedAt, profile, notificationSettings]
       properties:
-        driverId: {$ref: "#/components/schemas/Id"}
+        driverId: {$ref: "#/components/schemas/DatabaseId"}
         version: {type: integer, minimum: 1}
         updatedAt: {$ref: "#/components/schemas/DateTime"}
         profile: {$ref: "#/components/schemas/DriverProfileFields"}
@@ -6215,7 +6258,7 @@ components:
       additionalProperties: false
       required: [driverId, accountStatus, withdrawnAt]
       properties:
-        driverId: {$ref: "#/components/schemas/Id"}
+        driverId: {$ref: "#/components/schemas/DatabaseId"}
         accountStatus: {type: string, const: WITHDRAWN}
         withdrawnAt: {$ref: "#/components/schemas/DateTime"}
     # ---------- 접수 ----------
@@ -6737,7 +6780,7 @@ components:
       properties:
         workId: {$ref: "#/components/schemas/Id"}
         requestId: {$ref: "#/components/schemas/Id"}
-        driverId: {$ref: "#/components/schemas/Id"}
+        driverId: {$ref: "#/components/schemas/DatabaseId"}
         previousWorkId: {$ref: "#/components/schemas/NullableId"}
         workType: {$ref: "#/components/schemas/WorkType"}
         symptoms: {type: string, minLength: 1, maxLength: 2000}
@@ -6777,7 +6820,7 @@ components:
       required: [messageId, driverId, sender, body, sentAt, readAt]
       properties:
         messageId: {$ref: "#/components/schemas/Id"}
-        driverId: {$ref: "#/components/schemas/Id"}
+        driverId: {$ref: "#/components/schemas/DatabaseId"}
         sender: {type: string, enum: [ADMIN, DRIVER]}
         body: {type: string, minLength: 1, maxLength: 2000}
         sentAt: {$ref: "#/components/schemas/DateTime"}

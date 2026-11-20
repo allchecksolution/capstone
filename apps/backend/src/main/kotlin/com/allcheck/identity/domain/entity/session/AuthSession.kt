@@ -4,13 +4,14 @@ import com.allcheck.identity.domain.vo.session.RefreshTokenHash
 import jakarta.persistence.Column
 import jakarta.persistence.Embedded
 import jakarta.persistence.Entity
+import jakarta.persistence.GeneratedValue
+import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.Index
 import jakarta.persistence.Table
 import jakarta.persistence.UniqueConstraint
 import jakarta.persistence.Version
 import java.time.Instant
-import java.util.UUID
 
 @Entity
 @Table(
@@ -21,8 +22,8 @@ import java.util.UUID
     indexes = [Index(name = "ix_identity_auth_sessions_account", columnList = "account_id")],
 )
 class AuthSession(
-    @Column(name = "account_id", nullable = false, length = 64, updatable = false)
-    val accountId: String,
+    @Column(name = "account_id", nullable = false, updatable = false)
+    val accountId: Long,
     refreshTokenHash: RefreshTokenHash,
     @Column(name = "created_at", nullable = false, updatable = false)
     val createdAt: Instant,
@@ -30,8 +31,10 @@ class AuthSession(
     val expiresAt: Instant,
 ) {
     @Id
-    @Column(name = "session_id", nullable = false, length = 64, updatable = false)
-    val id: String = UUID.randomUUID().toString()
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "session_id", nullable = false, updatable = false)
+    var id: Long? = null
+        protected set
 
     @Embedded
     var refreshTokenHash: RefreshTokenHash = refreshTokenHash
@@ -51,7 +54,7 @@ class AuthSession(
         protected set
 
     init {
-        require(accountId.isNotBlank() && accountId.length <= 64) { "Invalid session account ID." }
+        require(accountId > 0) { "Invalid session account ID." }
         require(expiresAt.isAfter(createdAt)) { "Session expiry must follow creation." }
     }
 

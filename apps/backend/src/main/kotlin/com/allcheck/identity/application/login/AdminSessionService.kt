@@ -10,7 +10,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
 /** 비밀번호 해시가 자동 toString 등으로 노출되지 않게 일반 클래스로 보관한다. */
-class AdminLoginCandidate(val accountId: String, val loginId: String, val passwordHash: String)
+class AdminLoginCandidate(val accountId: Long, val loginId: String, val passwordHash: String)
 
 @Service
 @Transactional(readOnly = true)
@@ -22,7 +22,7 @@ class AdminSessionService(
         val account = accounts.findByAdminCredentialLoginId(loginId) ?: return null
         val credential = account.adminCredential ?: return null
         if (account.userType != UserType.ADMIN) return null
-        return AdminLoginCandidate(account.id, credential.loginId, credential.passwordHash)
+        return AdminLoginCandidate(checkNotNull(account.id), credential.loginId, credential.passwordHash)
     }
 
     @Transactional

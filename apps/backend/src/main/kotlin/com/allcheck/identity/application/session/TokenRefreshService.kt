@@ -16,7 +16,7 @@ class TokenRefreshService(
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     fun refresh(refreshToken: String): TokenPairResponse {
         val accountId = sessions.identifyRefreshAccount(refreshToken)
-        limits.check(accountId, REFRESH_LIMIT)
+        limits.check(accountId.toString(), REFRESH_LIMIT)
         // 식별 이후 회전·로그아웃·비활성화가 발생할 수 있으므로 잠금 후 다시 검증한다.
         return sessions.refresh(refreshToken)
     }

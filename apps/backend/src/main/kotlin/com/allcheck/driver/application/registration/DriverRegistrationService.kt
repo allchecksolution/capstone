@@ -34,8 +34,8 @@ class DriverRegistrationService(
     }
 
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
-    fun submit(accountId: String, key: String, request: RegisterDriverCommand): DriverCommandResult<DriverRegistrationResult> {
-        limits.check(accountId, REGISTRATION_LIMIT)
+    fun submit(accountId: Long, key: String, request: RegisterDriverCommand): DriverCommandResult<DriverRegistrationResult> {
+        limits.check(accountId.toString(), REGISTRATION_LIMIT)
         val previous = idempotency.known(accountId, "POST:/api/v1/drivers/me/registration", key, request, DriverRegistrationResult::class.java)
         if (previous != null) return previous
         queries.checkCanSubmit(accountId)
@@ -44,8 +44,8 @@ class DriverRegistrationService(
     }
 
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
-    fun resubmit(accountId: String, key: String, request: ResubmitDriverCommand): DriverCommandResult<DriverRegistrationResult> {
-        limits.check(accountId, REGISTRATION_LIMIT)
+    fun resubmit(accountId: Long, key: String, request: ResubmitDriverCommand): DriverCommandResult<DriverRegistrationResult> {
+        limits.check(accountId.toString(), REGISTRATION_LIMIT)
         val previous = idempotency.known(accountId, "POST:/api/v1/drivers/me/registration/resubmission", key, request, DriverRegistrationResult::class.java)
         if (previous != null) return previous
         queries.checkCanResubmit(accountId, request.expectedVersion)

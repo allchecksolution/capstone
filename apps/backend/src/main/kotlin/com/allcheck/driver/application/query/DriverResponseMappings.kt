@@ -2,7 +2,7 @@ package com.allcheck.driver.application.query
 
 import com.allcheck.driver.domain.entity.registration.Driver
 import com.allcheck.driver.domain.entity.registration.DriverBusiness
-import com.allcheck.driver.domain.entity.registration.DriverProfile
+import com.allcheck.driver.domain.vo.registration.DriverProfile
 import com.allcheck.driver.presentation.dto.response.registration.BusinessInfoResponse
 import com.allcheck.driver.presentation.dto.response.registration.BusinessVerificationResponse
 import com.allcheck.driver.presentation.dto.response.registration.DriverProfileResponse
@@ -28,7 +28,7 @@ internal fun DriverBusiness.response(): BusinessInfoResponse = BusinessInfoRespo
 )
 
 internal fun Driver.view(): DriverRegistrationView = DriverRegistrationView(
-    id,
+    checkNotNull(id),
     accountStatus,
     version,
     submittedAt,

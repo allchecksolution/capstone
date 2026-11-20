@@ -2,14 +2,14 @@ package com.allcheck.driver.application.registration
 
 import com.allcheck.driver.domain.entity.registration.Driver
 import com.allcheck.driver.domain.entity.registration.DriverBusiness
-import com.allcheck.driver.domain.entity.registration.DriverProfile
 import com.allcheck.driver.domain.vo.registration.BusinessIdentity
+import com.allcheck.driver.domain.vo.registration.DriverProfile
 import com.allcheck.driver.domain.vo.registration.VerifiedBusinessIdentity
 import com.allcheck.driver.presentation.dto.response.registration.DriverRegistrationResult
 
 internal fun BusinessInfoInput.identity(): BusinessIdentity = BusinessIdentity(businessRegistrationNumber, openedOn, representativeName)
 
-internal fun DriverProfileInput.entity(): DriverProfile = DriverProfile(
+internal fun DriverProfileInput.toProfile(): DriverProfile = DriverProfile(
     workerName, phone, email, residence, vehicleNumber,
     settlementAccount.bankName, settlementAccount.accountNumber, settlementAccount.holderName,
     taxInvoiceEmail, specialties.toList(), activityRegions.toList(), equipment.toList(),
@@ -25,4 +25,4 @@ internal fun BusinessInfoInput.entity(verified: VerifiedBusinessIdentity): Drive
     )
 }
 
-internal fun Driver.result(): DriverRegistrationResult = DriverRegistrationResult(id, accountStatus, submittedAt, version)
+internal fun Driver.result(): DriverRegistrationResult = DriverRegistrationResult(checkNotNull(id), accountStatus, submittedAt, version)

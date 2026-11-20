@@ -30,15 +30,15 @@ class SessionIssuanceService(
         if (!account.enabled) throw BusinessException(IdentityErrorCode.ACCOUNT_DISABLED)
         val issuedAt = clock.instant()
         val refreshToken = refreshTokens.generate()
-        val session = AuthSession(account.id, refreshTokens.hash(refreshToken), issuedAt, issuedAt.plus(properties.expiration))
+        val session = AuthSession(checkNotNull(account.id), refreshTokens.hash(refreshToken), issuedAt, issuedAt.plus(properties.expiration))
         sessions.saveAndFlush(session)
-        val accessToken = accessTokens.createAccessToken(account.id, session.id)
+        val accessToken = accessTokens.createAccessToken(checkNotNull(account.id), checkNotNull(session.id))
         return TokenPairResponse(
             accessToken = accessToken,
             refreshToken = refreshToken,
             expiresIn = accessTokens.lifetimeSeconds,
             refreshExpiresIn = properties.expiration.seconds,
-            user = AuthUserResponse(account.id, account.userType, account.adminCredential?.role),
+            user = AuthUserResponse(checkNotNull(account.id), account.userType, account.adminCredential?.role),
         )
     }
 }

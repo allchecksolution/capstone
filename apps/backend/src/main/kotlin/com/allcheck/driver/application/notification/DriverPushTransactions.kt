@@ -13,7 +13,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
 
-data class DriverPushClaim(val deliveryId: String, val claimId: String, val eventId: String, val accountId: String, val installationId: String)
+data class DriverPushClaim(val deliveryId: Long, val claimId: String, val eventId: Long, val accountId: Long, val installationId: String)
 
 @Service
 @Transactional(readOnly = true)
@@ -34,7 +34,7 @@ class DriverPushTransactions(
         }
         val recipients = event.recipientAccountId?.let { listOf(it) } ?: devices.activeAdminAccountIds()
         val targets = devices.activeDevices(recipients)
-        deliveries.saveAll(targets.map { DriverPushDelivery(event.id, it.accountId, it.installationId, clock.instant()) })
+        deliveries.saveAll(targets.map { DriverPushDelivery(checkNotNull(event.id), it.accountId, it.installationId, clock.instant()) })
         event.expand()
         return true
     }
@@ -44,7 +44,7 @@ class DriverPushTransactions(
         val now = clock.instant()
         val delivery = deliveries.nextPending(now) ?: return null
         val claim = delivery.claim(now, now.plus(properties.lease))
-        return DriverPushClaim(delivery.id, claim, delivery.eventId, delivery.recipientAccountId, delivery.installationId)
+        return DriverPushClaim(checkNotNull(delivery.id), claim, delivery.eventId, delivery.recipientAccountId, delivery.installationId)
     }
 
     fun target(claim: DriverPushClaim): PushTarget? {
@@ -59,9 +59,9 @@ class DriverPushTransactions(
         return devices.currentDevice(claim.installationId, claim.accountId)
     }
 
-    fun event(eventId: String): DriverPushData {
+    fun event(eventId: Long): DriverPushData {
         val event = events.findById(eventId).orElseThrow()
-        return DriverPushData(event.id, event.eventType, event.driverId, event.revision)
+        return DriverPushData(checkNotNull(event.id), event.eventType, event.driverId, event.revision)
     }
 
     @Transactional

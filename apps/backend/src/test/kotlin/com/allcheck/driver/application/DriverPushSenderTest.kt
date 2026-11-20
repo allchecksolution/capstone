@@ -22,8 +22,8 @@ import java.util.concurrent.CopyOnWriteArrayList
 class DriverPushSenderTest {
     private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
     private val requests = CopyOnWriteArrayList<String>()
-    private val target = PushTarget("private-account-id", "installation", "test-device-token", "digest")
-    private val data = DriverPushData("event", "DRIVER_APPROVED", "driver", 1)
+    private val target = PushTarget(999999L, "installation", "test-device-token", "digest")
+    private val data = DriverPushData(1L, "DRIVER_APPROVED", 2L, 1)
 
     @AfterEach
     fun close() {
@@ -43,13 +43,13 @@ class DriverPushSenderTest {
         val message = JsonMapper.builder().build().readTree(requests.single()).path("message")
         assertThat(message.path("token").asString()).isEqualTo(target.token)
         assertThat(message.path("data").size()).isEqualTo(4)
-        assertThat(message.path("data").path("eventId").asString()).isEqualTo(data.eventId)
+        assertThat(message.path("data").path("eventId").asString()).isEqualTo(data.eventId.toString())
         assertThat(message.path("data").path("eventType").asString()).isEqualTo(data.eventType)
-        assertThat(message.path("data").path("driverId").asString()).isEqualTo(data.driverId)
+        assertThat(message.path("data").path("driverId").asString()).isEqualTo(data.driverId.toString())
         assertThat(message.path("data").path("revision").asString()).isEqualTo("1")
         assertThat(message.path("notification").path("title").asString()).isEqualTo("기사 가입 상태 안내")
         assertThat(message.path("notification").path("body").asString()).isEqualTo("앱에서 최신 가입 신청 상태를 확인해 주세요.")
-        assertThat(requests.single()).doesNotContain(target.accountId, "rejectionReason", "accountNumber")
+        assertThat(requests.single()).doesNotContain(target.accountId.toString(), "rejectionReason", "accountNumber")
         assertThat(result?.messageId).isEqualTo("projects/test-project/messages/accepted")
         assertThat(result?.errorCode).isNull()
     }

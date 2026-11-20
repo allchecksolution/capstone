@@ -24,12 +24,12 @@ class SessionLifecycleService(
     private val devices: PushDeviceRepository,
     private val clock: Clock = Clock.systemUTC(),
 ) {
-    fun identifyRefreshAccount(refreshToken: String): String {
+    fun identifyRefreshAccount(refreshToken: String): Long {
         val state = sessions.findRefreshAuthenticationState(refreshTokens.hash(refreshToken))
             ?: throw BusinessException(IdentityErrorCode.REFRESH_TOKEN_INVALID)
         if (!state.session.isActiveAt(clock.instant())) throw BusinessException(IdentityErrorCode.REFRESH_TOKEN_INVALID)
         if (!state.account.enabled) throw BusinessException(IdentityErrorCode.ACCOUNT_DISABLED)
-        return state.account.id
+        return checkNotNull(state.account.id)
     }
 
     @Transactional
@@ -50,13 +50,13 @@ class SessionLifecycleService(
         check(session.rotateRefreshToken(expectedHash, refreshTokens.hash(replacement), now))
         sessions.flush()
         // 서명 실패를 포함해 트랜잭션이 실패하면 기존 Refresh Token도 그대로 유지한다.
-        val accessToken = accessTokens.createAccessToken(account.id, session.id)
+        val accessToken = accessTokens.createAccessToken(checkNotNull(account.id), checkNotNull(session.id))
         return TokenPairResponse(
             accessToken = accessToken,
             refreshToken = replacement,
             expiresIn = accessTokens.lifetimeSeconds,
             refreshExpiresIn = Duration.between(clock.instant(), session.expiresAt).seconds.coerceAtLeast(0),
-            user = AuthUserResponse(account.id, account.userType, account.adminCredential?.role),
+            user = AuthUserResponse(checkNotNull(account.id), account.userType, account.adminCredential?.role),
         )
     }
 
@@ -69,6 +69,6 @@ class SessionLifecycleService(
         val now = clock.instant()
         if (!session.isActiveAt(now)) return
         session.revoke(now)
-        devices.revokeSession(session.id, now)
+        devices.revokeSession(checkNotNull(session.id), now)
     }
 }

@@ -1,7 +1,6 @@
 package com.allcheck.identity.application.login
 
 import com.allcheck.identity.application.session.SessionIssuanceService
-import com.allcheck.identity.domain.entity.account.Account
 import com.allcheck.identity.domain.vo.account.SocialLogin
 import com.allcheck.identity.domain.vo.account.SocialProvider
 import com.allcheck.identity.infrastructure.repository.account.AccountRepository
@@ -20,8 +19,7 @@ class KakaoSessionService(
     @Transactional
     fun login(socialLogin: SocialLogin): TokenPairResponse {
         require(socialLogin.provider == SocialProvider.KAKAO) { "Kakao login requires a Kakao identity." }
-        val candidate = Account.driver(socialLogin, clock.instant())
-        accounts.insertKakaoIfAbsent(candidate.id, socialLogin.providerUserId, candidate.createdAt)
+        accounts.insertKakaoIfAbsent(socialLogin.providerUserId, clock.instant())
         val account = checkNotNull(accounts.findBySocialLoginForUpdate(socialLogin)) { "Kakao account was not resolved." }
         return issuance.issue(account)
     }

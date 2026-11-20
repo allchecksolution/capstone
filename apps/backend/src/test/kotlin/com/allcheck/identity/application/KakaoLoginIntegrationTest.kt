@@ -19,7 +19,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.EnumSource
 import org.junit.jupiter.params.provider.ValueSource
-import org.mockito.ArgumentMatchers.anyString
+import org.mockito.ArgumentMatchers.anyLong
 import org.mockito.Mockito
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
@@ -88,8 +88,8 @@ class KakaoLoginIntegrationTest @Autowired constructor(
     fun removeOwnFixtures() {
         transactions.executeWithoutResult {
             val account = accounts.findBySocialLogin(socialLogin) ?: return@executeWithoutResult
-            sessions.deleteAllByIdInBatch(sessions.findAllByAccountId(account.id).map { it.id })
-            accounts.deleteById(account.id)
+            sessions.deleteAllByIdInBatch(sessions.findAllByAccountId(checkNotNull(account.id)).map { checkNotNull(it.id) })
+            accounts.deleteById(checkNotNull(account.id))
         }
     }
 
@@ -109,14 +109,14 @@ class KakaoLoginIntegrationTest @Autowired constructor(
 
         // then
         val account = checkNotNull(accounts.findBySocialLogin(socialLogin))
-        val session = sessions.findAllByAccountId(account.id).single()
+        val session = sessions.findAllByAccountId(checkNotNull(account.id)).single()
         val claims = accessTokens.parseClaims(response.accessToken)
-        assertThat(response.user.accountId).isEqualTo(account.id).isNotEqualTo(socialLogin.providerUserId)
+        assertThat(response.user.accountId).isEqualTo(checkNotNull(account.id)).isNotEqualTo(socialLogin.providerUserId)
         assertThat(response.tokenType).isEqualTo("Bearer")
         assertThat(response.expiresIn).isEqualTo(900)
         assertThat(response.refreshExpiresIn).isEqualTo(1209600)
-        assertThat(claims.subject).isEqualTo(account.id)
-        assertThat(claims.get("sid", String::class.java)).isEqualTo(session.id)
+        assertThat(claims.subject).isEqualTo(checkNotNull(account.id).toString())
+        assertThat(claims.get("sid", String::class.java)).isEqualTo(checkNotNull(session.id).toString())
         assertThat(session.refreshTokenHash).isEqualTo(refreshTokens.hash(response.refreshToken))
         assertThat(session.refreshTokenHash.value).isNotEqualTo(response.refreshToken)
         assertThat(Duration.between(session.createdAt, session.expiresAt)).isEqualTo(Duration.ofDays(14))
@@ -155,9 +155,9 @@ class KakaoLoginIntegrationTest @Autowired constructor(
 
         // then
         val stored = checkNotNull(accounts.findBySocialLogin(socialLogin))
-        assertThat(stored.id).isEqualTo(account.id)
+        assertThat(checkNotNull(stored.id)).isEqualTo(checkNotNull(account.id))
         assertThat(stored.enabled).isFalse()
-        assertThat(sessions.findAllByAccountId(account.id)).isEmpty()
+        assertThat(sessions.findAllByAccountId(checkNotNull(account.id))).isEmpty()
     }
 
     @ParameterizedTest
@@ -178,13 +178,13 @@ class KakaoLoginIntegrationTest @Autowired constructor(
     @Test
     fun `JWT 발급 실패 시 신규 계정과 세션 저장을 함께 롤백한다`() {
         // given
-        var accountId: String? = null
-        var sessionId: String? = null
+        var accountId: Long? = null
+        var sessionId: Long? = null
         Mockito.doAnswer {
             accountId = it.getArgument(0)
             sessionId = it.getArgument(1)
             throw IllegalStateException("test-signing-failure")
-        }.`when`(accessTokens).createAccessToken(anyString(), anyString())
+        }.`when`(accessTokens).createAccessToken(anyLong(), anyLong())
 
         // when
         mockMvc.perform(post(endpoint).contentType(MediaType.APPLICATION_JSON).content(request()))
@@ -202,7 +202,7 @@ class KakaoLoginIntegrationTest @Autowired constructor(
         val response = transactions.execute { loginService.login(token) }
 
         // then
-        assertThat(response.user.accountId).isNotBlank()
+        assertThat(response.user.accountId).isPositive()
         Mockito.verify(kakaoClient).verify(token)
     }
 
@@ -227,9 +227,9 @@ class KakaoLoginIntegrationTest @Autowired constructor(
 
             // then
             val account = checkNotNull(accounts.findBySocialLogin(socialLogin))
-            assertThat(responses.map { it.user.accountId }).containsOnly(account.id)
+            assertThat(responses.map { it.user.accountId }).containsOnly(checkNotNull(account.id))
             assertThat(responses.map { it.refreshToken }).doesNotHaveDuplicates()
-            assertThat(sessions.findAllByAccountId(account.id)).hasSize(2)
+            assertThat(sessions.findAllByAccountId(checkNotNull(account.id))).hasSize(2)
         } finally {
             executor.shutdownNow()
             check(executor.awaitTermination(10, TimeUnit.SECONDS))

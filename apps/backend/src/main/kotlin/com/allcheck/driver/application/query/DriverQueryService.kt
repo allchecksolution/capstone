@@ -23,31 +23,31 @@ class DriverQueryService(
     private val drivers: DriverRepository,
     private val history: DriverHistoryRepository,
 ) {
-    fun checkCanSubmit(accountId: String) {
+    fun checkCanSubmit(accountId: Long) {
         if (drivers.existsByAccountId(accountId)) throw BusinessException(DriverErrorCode.DRIVER_ALREADY_REGISTERED)
     }
 
-    fun checkCanResubmit(accountId: String, expectedVersion: Long) {
+    fun checkCanResubmit(accountId: Long, expectedVersion: Long) {
         val driver = drivers.findByAccountId(accountId) ?: throw BusinessException(DriverErrorCode.DRIVER_NOT_FOUND)
         driver.checkVersion(expectedVersion)
         driver.requireRejected()
     }
 
-    fun mine(accountId: String): DriverRegistrationView = (drivers.findByAccountId(accountId) ?: throw BusinessException(DriverErrorCode.DRIVER_NOT_FOUND)).view()
+    fun mine(accountId: Long): DriverRegistrationView = (drivers.findByAccountId(accountId) ?: throw BusinessException(DriverErrorCode.DRIVER_NOT_FOUND)).view()
 
     fun list(status: DriverAccountStatus?, query: String?, page: Int, size: Int): DriverListResponse {
         val pattern = query?.lowercase(Locale.ROOT)?.replace("!", "!!")?.replace("%", "!%")?.replace("_", "!_")?.let { "%$it%" } ?: ""
         val result = drivers.search(status, pattern, PageRequest.of(page - 1, size))
         return DriverListResponse(
-            result.content.map { DriverSummary(it.id, it.profile.workerName, it.business.businessName, it.accountStatus, it.submittedAt, it.version) },
+            result.content.map { DriverSummary(checkNotNull(it.id), it.profile.workerName, it.business.businessName, it.accountStatus, it.submittedAt, it.version) },
             DriverPageInfo(page, size, result.totalElements, result.totalPages),
         )
     }
 
-    fun detail(driverId: String): DriverDetailResponse {
+    fun detail(driverId: Long): DriverDetailResponse {
         val driver = drivers.findById(driverId).orElseThrow { BusinessException(DriverErrorCode.DRIVER_NOT_FOUND) }
         return DriverDetailResponse(
-            driver.id,
+            checkNotNull(driver.id),
             driver.accountStatus,
             driver.version,
             driver.submittedAt,

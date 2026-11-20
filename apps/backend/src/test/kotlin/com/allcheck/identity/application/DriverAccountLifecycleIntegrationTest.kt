@@ -63,13 +63,13 @@ class DriverAccountLifecycleIntegrationTest @Autowired constructor(
 ) {
     private val now = clock.instant()
     private val transactions = TransactionTemplate(transactionManager)
-    private val ownAccounts = mutableListOf<String>()
+    private val ownAccounts = mutableListOf<Long>()
 
     @AfterEach
     fun removeOwnFixtures() {
         transactions.executeWithoutResult {
             ownAccounts.forEach { accountId ->
-                sessions.deleteAllByIdInBatch(sessions.findAllByAccountId(accountId).map { it.id })
+                sessions.deleteAllByIdInBatch(sessions.findAllByAccountId(accountId).map { checkNotNull(it.id) })
                 accounts.deleteById(accountId)
             }
         }
@@ -79,56 +79,56 @@ class DriverAccountLifecycleIntegrationTest @Autowired constructor(
     fun `기사 비활성화는 모든 세션을 폐기하고 다른 계정과 기존 자격 증명을 보존한다`() {
         // given
         val account = saveDriver()
-        val active = session(account.id)
-        val second = session(account.id)
-        val expired = session(account.id, now.minusSeconds(1))
-        val revoked = session(account.id)
-        transactions.executeWithoutResult { sessions.findById(revoked.id).orElseThrow().revoke(now.minusSeconds(60)) }
+        val active = session(checkNotNull(account.id))
+        val second = session(checkNotNull(account.id))
+        val expired = session(checkNotNull(account.id), now.minusSeconds(1))
+        val revoked = session(checkNotNull(account.id))
+        transactions.executeWithoutResult { sessions.findById(checkNotNull(revoked.id)).orElseThrow().revoke(now.minusSeconds(60)) }
         val otherAccount = saveDriver()
-        val otherSession = session(otherAccount.id)
+        val otherSession = session(checkNotNull(otherAccount.id))
 
         // when
-        accountLifecycle.deactivateDriverAccount(account.id)
+        accountLifecycle.deactivateDriverAccount(checkNotNull(account.id))
 
         // then
-        val disabled = accounts.findById(account.id).orElseThrow()
+        val disabled = accounts.findById(checkNotNull(account.id)).orElseThrow()
         assertThat(disabled.enabled).isFalse()
         assertThat(disabled.disabledAt).isEqualTo(now)
         assertThat(disabled.socialLogin?.provider).isEqualTo(account.socialLogin?.provider)
         assertThat(disabled.socialLogin?.providerUserId).isEqualTo(account.socialLogin?.providerUserId)
         listOf(active, second, expired).forEach { session ->
-            assertThat(sessions.findById(session.id).orElseThrow().revokedAt).isEqualTo(now)
-            assertThat(authentication.findAuthenticatedAccount(account.id, session.id)).isNull()
+            assertThat(sessions.findById(checkNotNull(session.id)).orElseThrow().revokedAt).isEqualTo(now)
+            assertThat(authentication.findAuthenticatedAccount(checkNotNull(account.id), checkNotNull(session.id))).isNull()
         }
-        assertThat(sessions.findById(revoked.id).orElseThrow().revokedAt).isEqualTo(now.minusSeconds(60))
-        assertThat(authentication.findAuthenticatedAccount(otherAccount.id, otherSession.id)).isNotNull()
-        val versions = sessions.findAllByAccountId(account.id).associate { it.id to it.version }
+        assertThat(sessions.findById(checkNotNull(revoked.id)).orElseThrow().revokedAt).isEqualTo(now.minusSeconds(60))
+        assertThat(authentication.findAuthenticatedAccount(checkNotNull(otherAccount.id), checkNotNull(otherSession.id))).isNotNull()
+        val versions = sessions.findAllByAccountId(checkNotNull(account.id)).associate { checkNotNull(it.id) to it.version }
 
         // when & then: 반복 호출도 기존 폐기 시각과 버전을 바꾸지 않는다.
-        accountLifecycle.deactivateDriverAccount(account.id)
-        assertThat(sessions.findAllByAccountId(account.id).associate { it.id to it.version }).isEqualTo(versions)
-        assertThat(accounts.findById(account.id).orElseThrow().version).isEqualTo(disabled.version)
+        accountLifecycle.deactivateDriverAccount(checkNotNull(account.id))
+        assertThat(sessions.findAllByAccountId(checkNotNull(account.id)).associate { checkNotNull(it.id) to it.version }).isEqualTo(versions)
+        assertThat(accounts.findById(checkNotNull(account.id)).orElseThrow().version).isEqualTo(disabled.version)
     }
 
     @Test
     fun `호출자 트랜잭션의 실패는 계정 비활성화와 모든 세션 폐기를 함께 롤백한다`() {
         // given
         val account = saveDriver()
-        val session = session(account.id)
+        val session = session(checkNotNull(account.id))
 
         // when
         assertThatThrownBy {
             transactions.executeWithoutResult {
-                accountLifecycle.deactivateDriverAccount(account.id)
+                accountLifecycle.deactivateDriverAccount(checkNotNull(account.id))
                 sessions.flush()
                 throw IllegalStateException("test-driver-withdrawal-rollback")
             }
         }.isInstanceOf(IllegalStateException::class.java)
 
         // then
-        assertThat(accounts.findById(account.id).orElseThrow().enabled).isTrue()
-        assertThat(sessions.findById(session.id).orElseThrow().revokedAt).isNull()
-        assertThat(authentication.findAuthenticatedAccount(account.id, session.id)).isNotNull()
+        assertThat(accounts.findById(checkNotNull(account.id)).orElseThrow().enabled).isTrue()
+        assertThat(sessions.findById(checkNotNull(session.id)).orElseThrow().revokedAt).isNull()
+        assertThat(authentication.findAuthenticatedAccount(checkNotNull(account.id), checkNotNull(session.id))).isNotNull()
     }
 
     @Test
@@ -137,16 +137,16 @@ class DriverAccountLifecycleIntegrationTest @Autowired constructor(
         val account = saveDriver()
 
         // when & then
-        assertThatThrownBy { accountLifecycle.lockActiveDriverAccount(account.id) }
+        assertThatThrownBy { accountLifecycle.lockActiveDriverAccount(checkNotNull(account.id)) }
             .isInstanceOf(IllegalTransactionStateException::class.java)
-        val result = transactions.execute { accountLifecycle.lockActiveDriverAccount(account.id) }
-        assertThat(result.accountId).isEqualTo(account.id)
+        val result = transactions.execute { accountLifecycle.lockActiveDriverAccount(checkNotNull(account.id)) }
+        assertThat(result.accountId).isEqualTo(checkNotNull(account.id))
         assertThat(result.userType).isEqualTo(UserType.DRIVER)
         assertThat(result.role).isNull()
 
-        accountLifecycle.deactivateDriverAccount(account.id)
+        accountLifecycle.deactivateDriverAccount(checkNotNull(account.id))
         assertBusinessError(IdentityErrorCode.ACCOUNT_DISABLED) {
-            transactions.execute { accountLifecycle.lockActiveDriverAccount(account.id) }
+            transactions.execute { accountLifecycle.lockActiveDriverAccount(checkNotNull(account.id)) }
         }
     }
 
@@ -157,17 +157,17 @@ class DriverAccountLifecycleIntegrationTest @Autowired constructor(
         val account = transactions.execute {
             accounts.saveAndFlush(Account.administrator(AdminCredential("stage7-admin", "test-password-hash", AdminRole.MASTER), now.minus(Duration.ofDays(20))))
         }
-        ownAccounts.add(account.id)
-        val session = session(account.id)
+        ownAccounts.add(checkNotNull(account.id))
+        val session = session(checkNotNull(account.id))
 
         // when & then
         assertBusinessError(IdentityErrorCode.DRIVER_ACCOUNT_REQUIRED) {
             transactions.execute {
-                if (operation == "lock") accountLifecycle.lockActiveDriverAccount(account.id) else accountLifecycle.deactivateDriverAccount(account.id)
+                if (operation == "lock") accountLifecycle.lockActiveDriverAccount(checkNotNull(account.id)) else accountLifecycle.deactivateDriverAccount(checkNotNull(account.id))
             }
         }
-        assertThat(accounts.findById(account.id).orElseThrow().enabled).isTrue()
-        assertThat(sessions.findById(session.id).orElseThrow().revokedAt).isNull()
+        assertThat(accounts.findById(checkNotNull(account.id)).orElseThrow().enabled).isTrue()
+        assertThat(sessions.findById(checkNotNull(session.id)).orElseThrow().revokedAt).isNull()
     }
 
     @ParameterizedTest
@@ -176,7 +176,7 @@ class DriverAccountLifecycleIntegrationTest @Autowired constructor(
         // when & then
         assertBusinessError(IdentityErrorCode.ACCOUNT_NOT_FOUND) {
             transactions.execute {
-                if (operation == "lock") accountLifecycle.lockActiveDriverAccount("missing") else accountLifecycle.deactivateDriverAccount("missing")
+                if (operation == "lock") accountLifecycle.lockActiveDriverAccount(Long.MAX_VALUE) else accountLifecycle.deactivateDriverAccount(Long.MAX_VALUE)
             }
         }
     }
@@ -186,7 +186,7 @@ class DriverAccountLifecycleIntegrationTest @Autowired constructor(
         // given
         val account = saveDriver()
         val socialLogin = checkNotNull(account.socialLogin)
-        val existing = session(account.id)
+        val existing = session(checkNotNull(account.id))
         val barrier = CountDownLatch(2)
         val executor = Executors.newFixedThreadPool(2)
         try {
@@ -203,16 +203,16 @@ class DriverAccountLifecycleIntegrationTest @Autowired constructor(
             val deactivation = executor.submit {
                 barrier.countDown()
                 check(barrier.await(5, TimeUnit.SECONDS))
-                accountLifecycle.deactivateDriverAccount(account.id)
+                accountLifecycle.deactivateDriverAccount(checkNotNull(account.id))
             }
             val result = loginResult.get(15, TimeUnit.SECONDS)
             deactivation.get(15, TimeUnit.SECONDS)
 
             // then
-            assertThat(accounts.findBySocialLogin(socialLogin)?.id).isEqualTo(account.id)
-            assertThat(accounts.findById(account.id).orElseThrow().enabled).isFalse()
-            assertThat(sessions.findAllByAccountId(account.id)).allMatch { it.revokedAt != null }
-            assertThat(authentication.findAuthenticatedAccount(account.id, existing.id)).isNull()
+            assertThat(accounts.findBySocialLogin(socialLogin)?.id).isEqualTo(checkNotNull(account.id))
+            assertThat(accounts.findById(checkNotNull(account.id)).orElseThrow().enabled).isFalse()
+            assertThat(sessions.findAllByAccountId(checkNotNull(account.id))).allMatch { it.revokedAt != null }
+            assertThat(authentication.findAuthenticatedAccount(checkNotNull(account.id), checkNotNull(existing.id))).isNull()
             if (result is TokenPairResponse) {
                 assertBusinessError(IdentityErrorCode.REFRESH_TOKEN_INVALID) { lifecycle.refresh(result.refreshToken) }
             } else {
@@ -229,11 +229,11 @@ class DriverAccountLifecycleIntegrationTest @Autowired constructor(
         val saved = transactions.execute {
             accounts.saveAndFlush(Account.driver(SocialLogin.kakao(700000001L + ownAccounts.size), now.minus(Duration.ofDays(20))))
         }
-        ownAccounts.add(saved.id)
+        ownAccounts.add(checkNotNull(saved.id))
         return saved
     }
 
-    private fun session(accountId: String, expiresAt: Instant = now.plus(Duration.ofDays(1))): AuthSession = transactions.execute {
+    private fun session(accountId: Long, expiresAt: Instant = now.plus(Duration.ofDays(1))): AuthSession = transactions.execute {
         sessions.saveAndFlush(AuthSession(accountId, refreshTokens.hash(refreshTokens.generate()), now.minus(Duration.ofDays(2)), expiresAt))
     }
 

@@ -37,7 +37,7 @@ http.Response jsonResponse(Object body, [int status = 200]) => http.Response(
 http.Response tokens() => jsonResponse({
   'accessToken': 'service-token',
   'refreshToken': 'refresh-token',
-  'user': {'accountId': 'account-1', 'userType': 'DRIVER', 'role': null},
+  'user': {'accountId': 11, 'userType': 'DRIVER', 'role': null},
 });
 http.Response noRegistration() =>
     jsonResponse({'code': 'DRIVER_NOT_FOUND'}, 404);
@@ -85,7 +85,7 @@ void main() {
             expect(request.headers['Idempotency-Key'], 'same-request');
             final body = jsonDecode(request.body) as Json;
             expect(body.keys, unorderedEquals(['profile', 'business']));
-            expect(body['profile']['specialties'], ['BLOCKAGE']);
+            expect(body['profile']['specialties'], ['BOILER', 'WATERPROOFING']);
             expect(body['business']['openedOn'], '2020-01-15');
             expect(
               body['business']['businessRegistrationNumber'],
@@ -93,7 +93,7 @@ void main() {
             );
             expect(request.body, isNot(contains('businessChecked')));
             final result = {
-              'driverId': 'driver-1',
+              'driverId': 101,
               'accountStatus': 'PENDING_APPROVAL',
               'version': 1,
               'submittedAt': '2026-11-18T00:00:00Z',
@@ -122,7 +122,7 @@ void main() {
         isTrue,
       );
       final result = await backend.call('drivers/register', {
-        'profile': {...profile, 'businessNumber': '123-45-67890'},
+        'profile': {...profile, 'businessNumber': '123-45-67890', 'specialties': ['보일러', '방수']},
         'requestId': 'same-request',
         'consent': true,
       });
@@ -130,7 +130,7 @@ void main() {
       expect(result['state']['account']['profile']['name'], '기사');
       expect(
         (await backend.call('workflow/state'))['state']['account']['driverId'],
-        'driver-1',
+        101,
       );
       expect(checks, 1);
       expect(submissions, 1);

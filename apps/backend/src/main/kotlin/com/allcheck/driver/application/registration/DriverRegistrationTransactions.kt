@@ -32,25 +32,25 @@ class DriverRegistrationTransactions(
     private val clock: Clock = Clock.systemUTC(),
 ) {
     @Transactional
-    fun submit(accountId: String, key: String, request: RegisterDriverCommand, verified: VerifiedBusinessIdentity): DriverCommandResult<DriverRegistrationResult> = idempotency.execute(accountId, "POST:/api/v1/drivers/me/registration", key, request, DriverRegistrationResult::class.java) {
+    fun submit(accountId: Long, key: String, request: RegisterDriverCommand, verified: VerifiedBusinessIdentity): DriverCommandResult<DriverRegistrationResult> = idempotency.execute(accountId, "POST:/api/v1/drivers/me/registration", key, request, DriverRegistrationResult::class.java) {
         identity.lockActiveDriverAccount(accountId)
         if (drivers.existsByAccountId(accountId)) throw BusinessException(DriverErrorCode.DRIVER_ALREADY_REGISTERED)
         val now = clock.instant()
-        val driver = drivers.saveAndFlush(Driver(accountId, request.profile.entity(), request.business.entity(verified), now))
-        history.save(DriverHistory(driver.id, driver.revision, "SUBMITTED", accountId, now, requestSnapshot = mapper.writeValueAsString(request)))
-        events.save(DriverNotificationEvent(driver.id, driver.revision, "REGISTRATION_SUBMITTED", null, now))
+        val driver = drivers.saveAndFlush(Driver(accountId, request.profile.toProfile(), request.business.entity(verified), now))
+        history.save(DriverHistory(checkNotNull(driver.id), driver.revision, "SUBMITTED", accountId, now, requestSnapshot = mapper.writeValueAsString(request)))
+        events.save(DriverNotificationEvent(checkNotNull(driver.id), driver.revision, "REGISTRATION_SUBMITTED", null, now))
         driver.result()
     }
 
     @Transactional
-    fun resubmit(accountId: String, key: String, request: ResubmitDriverCommand, verified: VerifiedBusinessIdentity): DriverCommandResult<DriverRegistrationResult> = idempotency.execute(accountId, "POST:/api/v1/drivers/me/registration/resubmission", key, request, DriverRegistrationResult::class.java) {
+    fun resubmit(accountId: Long, key: String, request: ResubmitDriverCommand, verified: VerifiedBusinessIdentity): DriverCommandResult<DriverRegistrationResult> = idempotency.execute(accountId, "POST:/api/v1/drivers/me/registration/resubmission", key, request, DriverRegistrationResult::class.java) {
         identity.lockActiveDriverAccount(accountId)
         val driver = drivers.findByAccountIdForUpdate(accountId) ?: throw BusinessException(DriverErrorCode.DRIVER_NOT_FOUND)
         driver.checkVersion(request.expectedVersion)
         val now = clock.instant()
-        driver.resubmit(request.registration.profile.entity(), request.registration.business.entity(verified), now)
-        history.save(DriverHistory(driver.id, driver.revision, "SUBMITTED", accountId, now, requestSnapshot = mapper.writeValueAsString(request.registration)))
-        events.save(DriverNotificationEvent(driver.id, driver.revision, "REGISTRATION_SUBMITTED", null, now))
+        driver.resubmit(request.registration.profile.toProfile(), request.registration.business.entity(verified), now)
+        history.save(DriverHistory(checkNotNull(driver.id), driver.revision, "SUBMITTED", accountId, now, requestSnapshot = mapper.writeValueAsString(request.registration)))
+        events.save(DriverNotificationEvent(checkNotNull(driver.id), driver.revision, "REGISTRATION_SUBMITTED", null, now))
         drivers.flush()
         driver.result()
     }

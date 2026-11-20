@@ -46,9 +46,9 @@ class DriverController(
 
     override fun list(accountStatus: DriverAccountStatus?, q: String?, page: Int, size: Int): ResponseEntity<DriverListResponse> = ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(queries.list(accountStatus, q, page, size))
 
-    override fun detail(driverId: String): ResponseEntity<DriverDetailResponse> = ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(queries.detail(driverId))
+    override fun detail(driverId: Long): ResponseEntity<DriverDetailResponse> = ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(queries.detail(driverId))
 
-    override fun decide(principal: AuthPrincipal, driverId: String, key: String, request: DriverApprovalRequest): ResponseEntity<DriverApprovalResult> = command(reviews.decide(principal.accountId, driverId, key, request.toCommand()))
+    override fun decide(principal: AuthPrincipal, driverId: Long, key: String, request: DriverApprovalRequest): ResponseEntity<DriverApprovalResult> = command(reviews.decide(principal.accountId, driverId, key, request.toCommand()))
 
     override fun withdraw(principal: AuthPrincipal, key: String, request: DriverWithdrawalRequest): ResponseEntity<DriverWithdrawalResult> = command(withdrawals.withdraw(principal.accountId, key, request.toCommand()))
 

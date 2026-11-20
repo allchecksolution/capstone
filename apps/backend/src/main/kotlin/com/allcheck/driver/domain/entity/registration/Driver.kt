@@ -2,36 +2,40 @@ package com.allcheck.driver.domain.entity.registration
 
 import com.allcheck.driver.domain.vo.registration.BusinessOperatingStatus
 import com.allcheck.driver.domain.vo.registration.DriverAccountStatus
+import com.allcheck.driver.domain.vo.registration.DriverProfile
 import com.allcheck.driver.exception.DriverErrorCode
 import com.allcheck.global.exception.BusinessException
 import jakarta.persistence.CascadeType
 import jakarta.persistence.Column
+import jakarta.persistence.Embedded
 import jakarta.persistence.Entity
 import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
 import jakarta.persistence.FetchType
+import jakarta.persistence.GeneratedValue
+import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.JoinColumn
 import jakarta.persistence.OneToOne
 import jakarta.persistence.Table
 import jakarta.persistence.Version
 import java.time.Instant
-import java.util.UUID
 
 @Entity
 @Table(name = "drivers")
 class Driver(
-    @Column(name = "account_id", nullable = false, length = 64, unique = true, updatable = false) val accountId: String,
+    @Column(name = "account_id", nullable = false, unique = true, updatable = false) val accountId: Long,
     profile: DriverProfile,
     business: DriverBusiness,
     submittedAt: Instant,
 ) {
     @Id
-    @Column(name = "driver_id", nullable = false, length = 64, updatable = false)
-    val id: String = UUID.randomUUID().toString()
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "driver_id", nullable = false, updatable = false)
+    var id: Long? = null
+        protected set
 
-    @OneToOne(cascade = [CascadeType.ALL], fetch = FetchType.LAZY, orphanRemoval = true)
-    @JoinColumn(name = "profile_id", nullable = false, unique = true)
+    @Embedded
     var profile: DriverProfile = profile
         protected set
 

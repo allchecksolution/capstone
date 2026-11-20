@@ -2,6 +2,8 @@ package com.allcheck.driver.domain.entity.notification
 
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
+import jakarta.persistence.GeneratedValue
+import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.Table
 import jakarta.persistence.UniqueConstraint
@@ -11,14 +13,16 @@ import java.util.UUID
 @Entity
 @Table(name = "driver_push_deliveries", uniqueConstraints = [UniqueConstraint(columnNames = ["event_id", "installation_id"])])
 class DriverPushDelivery(
-    @Column(name = "event_id", nullable = false, length = 64, updatable = false) val eventId: String,
-    @Column(name = "recipient_account_id", nullable = false, length = 64, updatable = false) val recipientAccountId: String,
+    @Column(name = "event_id", nullable = false, updatable = false) val eventId: Long,
+    @Column(name = "recipient_account_id", nullable = false, updatable = false) val recipientAccountId: Long,
     @Column(name = "installation_id", nullable = false, length = 64, updatable = false) val installationId: String,
     @Column(name = "created_at", nullable = false, updatable = false) val createdAt: Instant,
 ) {
     @Id
-    @Column(name = "delivery_id", nullable = false, length = 64, updatable = false)
-    val id: String = UUID.randomUUID().toString()
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "delivery_id", nullable = false, updatable = false)
+    var id: Long? = null
+        protected set
 
     @Column(nullable = false, length = 24)
     var status: String = "PENDING"

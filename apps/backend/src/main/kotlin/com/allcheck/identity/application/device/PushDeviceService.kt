@@ -26,14 +26,14 @@ class PushDeviceService(
     private val digests: RefreshTokenProvider,
     private val clock: Clock = Clock.systemUTC(),
 ) : PushDeviceOperations {
-    override fun activeAdminAccountIds(): List<String> = devices.activeAdminIds()
+    override fun activeAdminAccountIds(): List<Long> = devices.activeAdminIds()
 
-    override fun activeDevices(accountIds: Collection<String>): List<PushTarget> = if (accountIds.isEmpty()) emptyList() else devices.activeForAccounts(accountIds, clock.instant()).map { it.target() }
+    override fun activeDevices(accountIds: Collection<Long>): List<PushTarget> = if (accountIds.isEmpty()) emptyList() else devices.activeForAccounts(accountIds, clock.instant()).map { it.target() }
 
-    override fun currentDevice(installationId: String, accountId: String): PushTarget? = devices.activeForAccounts(listOf(accountId), clock.instant()).firstOrNull { it.installationId == installationId }?.target()
+    override fun currentDevice(installationId: String, accountId: Long): PushTarget? = devices.activeForAccounts(listOf(accountId), clock.instant()).firstOrNull { it.installationId == installationId }?.target()
 
     @Transactional
-    fun register(accountId: String, sessionId: String, installationId: String, platform: String, token: String): Instant {
+    fun register(accountId: Long, sessionId: Long, installationId: String, platform: String, token: String): Instant {
         val account = accounts.findByIdForUpdate(accountId) ?: throw BusinessException(IdentityErrorCode.ACCOUNT_NOT_FOUND)
         val session = sessions.findById(sessionId).orElseThrow { BusinessException(IdentityErrorCode.INVALID_AUTH_SESSION) }
         val now = clock.instant().truncatedTo(ChronoUnit.MICROS)
@@ -50,14 +50,14 @@ class PushDeviceService(
             devices.flush()
         } catch (ex: DataIntegrityViolationException) {
             val constraint = generateSequence<Throwable>(ex) { it.cause }.filterIsInstance<ConstraintViolationException>().firstOrNull()?.constraintName
-            if (constraint in setOf("identity_push_devices_pkey", "uq_identity_push_devices_active_token")) throw BusinessException(IdentityErrorCode.PUSH_DEVICE_CONFLICT)
+            if (constraint in setOf("uq_identity_push_devices_installation", "uq_identity_push_devices_active_token")) throw BusinessException(IdentityErrorCode.PUSH_DEVICE_CONFLICT)
             throw ex
         }
         return device?.updatedAt ?: now
     }
 
     @Transactional
-    fun remove(accountId: String, installationId: String) {
+    fun remove(accountId: Long, installationId: String) {
         accounts.findByIdForUpdate(accountId) ?: throw BusinessException(IdentityErrorCode.ACCOUNT_NOT_FOUND)
         val device = devices.findForUpdate(installationId) ?: return
         if (device.accountId != accountId) throw BusinessException(IdentityErrorCode.PUSH_DEVICE_FORBIDDEN)

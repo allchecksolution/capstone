@@ -2,6 +2,8 @@ package com.allcheck.identity.domain.entity.device
 
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
+import jakarta.persistence.GeneratedValue
+import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.Table
 import jakarta.persistence.Version
@@ -10,20 +12,26 @@ import java.time.Instant
 @Entity
 @Table(name = "identity_push_devices")
 class PushDevice(
-    @Id @Column(name = "installation_id", nullable = false, length = 64, updatable = false) val installationId: String,
-    accountId: String,
-    sessionId: String,
+    @Column(name = "installation_id", nullable = false, length = 64, unique = true, updatable = false) val installationId: String,
+    accountId: Long,
+    sessionId: Long,
     platform: String,
     token: String,
     tokenHash: String,
     @Column(name = "created_at", nullable = false, updatable = false) val createdAt: Instant,
 ) {
-    @Column(name = "account_id", nullable = false, length = 64)
-    var accountId: String = accountId
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "device_id", nullable = false, updatable = false)
+    var id: Long? = null
         protected set
 
-    @Column(name = "session_id", nullable = false, length = 64)
-    var sessionId: String = sessionId
+    @Column(name = "account_id", nullable = false)
+    var accountId: Long = accountId
+        protected set
+
+    @Column(name = "session_id", nullable = false)
+    var sessionId: Long = sessionId
         protected set
 
     @Column(nullable = false, length = 10)
@@ -51,7 +59,7 @@ class PushDevice(
     var version: Long? = null
         protected set
 
-    fun bind(accountId: String, sessionId: String, platform: String, token: String, hash: String, now: Instant) {
+    fun bind(accountId: Long, sessionId: Long, platform: String, token: String, hash: String, now: Instant) {
         if (revokedAt == null && this.accountId == accountId && this.sessionId == sessionId && this.platform == platform && this.token == token && tokenHash == hash) return
         this.accountId = accountId
         this.sessionId = sessionId

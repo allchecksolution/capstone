@@ -19,9 +19,10 @@ class AdminAccountProvisioningTransactions(
     @Transactional
     fun create(loginId: String, passwordHash: String, role: AdminRole): ProvisionedAdministrator {
         val account = Account.administrator(AdminCredential(loginId, passwordHash, role), clock.instant())
-        if (accounts.insertAdministratorIfAbsent(account.id, loginId, passwordHash, role.name, account.createdAt) == 0) {
+        if (accounts.insertAdministratorIfAbsent(loginId, passwordHash, role.name, account.createdAt) == 0) {
             throw BusinessException(IdentityErrorCode.ADMIN_LOGIN_ID_ALREADY_EXISTS)
         }
-        return ProvisionedAdministrator(account.id, loginId, role)
+        val created = checkNotNull(accounts.findByAdminCredentialLoginId(loginId))
+        return ProvisionedAdministrator(checkNotNull(created.id), loginId, role)
     }
 }

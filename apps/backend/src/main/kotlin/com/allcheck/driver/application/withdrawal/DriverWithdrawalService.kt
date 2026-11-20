@@ -26,17 +26,17 @@ class DriverWithdrawalService(
     private val clock: Clock = Clock.systemUTC(),
 ) {
     @Transactional
-    fun withdraw(accountId: String, key: String, request: WithdrawDriverCommand): DriverCommandResult<DriverWithdrawalResult> = idempotency.execute(accountId, "POST:/api/v1/drivers/me/withdrawal", key, request, DriverWithdrawalResult::class.java) {
+    fun withdraw(accountId: Long, key: String, request: WithdrawDriverCommand): DriverCommandResult<DriverWithdrawalResult> = idempotency.execute(accountId, "POST:/api/v1/drivers/me/withdrawal", key, request, DriverWithdrawalResult::class.java) {
         identity.lockActiveDriverAccount(accountId)
         val driver = drivers.findByAccountIdForUpdate(accountId) ?: throw BusinessException(DriverErrorCode.DRIVER_NOT_FOUND)
         driver.checkVersion(request.expectedVersion)
         driver.requireActive()
-        if (workload.hasUnfinishedWork(driver.id)) throw BusinessException(DriverErrorCode.WITHDRAWAL_BLOCKED_ACTIVE_WORK)
+        if (workload.hasUnfinishedWork(checkNotNull(driver.id))) throw BusinessException(DriverErrorCode.WITHDRAWAL_BLOCKED_ACTIVE_WORK)
         val now = clock.instant()
         driver.withdraw(now)
         identity.deactivateDriverAccount(accountId)
-        history.save(DriverHistory(driver.id, driver.revision, "WITHDRAWN", accountId, now))
+        history.save(DriverHistory(checkNotNull(driver.id), driver.revision, "WITHDRAWN", accountId, now))
         drivers.flush()
-        DriverWithdrawalResult(driver.id, driver.accountStatus, now)
+        DriverWithdrawalResult(checkNotNull(driver.id), driver.accountStatus, now)
     }
 }

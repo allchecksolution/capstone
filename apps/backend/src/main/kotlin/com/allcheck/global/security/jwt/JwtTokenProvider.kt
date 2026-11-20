@@ -38,13 +38,13 @@ class JwtTokenProvider(
         .clock { Date.from(clock.instant()) }
         .build()
 
-    fun createAccessToken(accountId: String, sessionId: String): String {
-        require(accountId.isNotBlank()) { "JWT account ID must not be blank." }
-        require(sessionId.isNotBlank()) { "JWT session ID must not be blank." }
+    fun createAccessToken(accountId: Long, sessionId: Long): String {
+        require(accountId > 0) { "JWT account ID must not be blank." }
+        require(sessionId > 0) { "JWT session ID must not be blank." }
         val issuedAt = clock.instant().truncatedTo(ChronoUnit.SECONDS)
         return Jwts.builder()
-            .subject(accountId)
-            .claim("sid", sessionId)
+            .subject(accountId.toString())
+            .claim("sid", sessionId.toString())
             .issuer(issuer)
             .audience().add(audience).and()
             .claim("token_use", "access")

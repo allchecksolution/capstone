@@ -21,7 +21,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.EnumSource
 import org.junit.jupiter.params.provider.ValueSource
-import org.mockito.ArgumentMatchers.anyString
+import org.mockito.ArgumentMatchers.anyLong
 import org.mockito.Mockito
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
@@ -84,7 +84,7 @@ class SessionLifecycleIntegrationTest @Autowired constructor(
 
     private val transactions = TransactionTemplate(transactionManager)
     private val now = clock.instant()
-    private val ownAccounts = mutableListOf<String>()
+    private val ownAccounts = mutableListOf<Long>()
     private val refreshPath = "/api/v1/auth/tokens/refresh"
     private val logoutPath = "/api/v1/auth/sessions/logout"
     private val mePath = "/api/v1/auth/accounts/me"
@@ -94,7 +94,7 @@ class SessionLifecycleIntegrationTest @Autowired constructor(
         transactions.executeWithoutResult {
             ownAccounts.forEach { accountId ->
                 jdbc.update("delete from request_limit_buckets where bucket_id = ?", "token-refresh:$accountId")
-                sessions.deleteAllByIdInBatch(sessions.findAllByAccountId(accountId).map { it.id })
+                sessions.deleteAllByIdInBatch(sessions.findAllByAccountId(accountId).map { checkNotNull(it.id) })
                 accounts.deleteById(accountId)
             }
         }
@@ -143,7 +143,7 @@ class SessionLifecycleIntegrationTest @Autowired constructor(
     fun `MASTER와 SUB도 동일한 계정별 갱신 한도를 적용한다`(role: AdminRole) {
         // given
         val account = saveAccount(Account.administrator(AdminCredential("rate-admin", "test-password-hash", role), now.minus(Duration.ofDays(20))))
-        val fixture = fixture(accountId = account.id)
+        val fixture = fixture(accountId = checkNotNull(account.id))
         var token = fixture.refreshToken
         repeat(30) {
             val response = mockMvc.perform(post(refreshPath).contentType(MediaType.APPLICATION_JSON).content(body(token)))
@@ -188,7 +188,7 @@ class SessionLifecycleIntegrationTest @Autowired constructor(
         assertThat(stored.refreshTokenHash.value).isNotEqualTo(pair.refreshToken)
         assertThat(sessions.findByRefreshTokenHash(refreshTokens.hash(fixture.refreshToken))).isNull()
         assertThat(sessions.findAllByAccountId(fixture.accountId)).hasSize(1)
-        assertThat(accessTokens.parseClaims(pair.accessToken).get("sid", String::class.java)).isEqualTo(fixture.sessionId)
+        assertThat(accessTokens.parseClaims(pair.accessToken).get("sid", String::class.java)).isEqualTo(fixture.sessionId.toString())
         expectAccessible(pair.accessToken)
         expectAccessible(fixture.accessToken)
     }
@@ -198,7 +198,7 @@ class SessionLifecycleIntegrationTest @Autowired constructor(
     fun `관리자 갱신은 현재 DB의 사용자 유형과 역할을 보존한다`(role: AdminRole) {
         // given
         val account = saveAccount(Account.administrator(AdminCredential("stage6-admin", "test-password-hash", role), now.minus(Duration.ofDays(20))))
-        val fixture = fixture(accountId = account.id)
+        val fixture = fixture(accountId = checkNotNull(account.id))
 
         // when & then
         mockMvc.perform(post(refreshPath).contentType(MediaType.APPLICATION_JSON).content(body(fixture.refreshToken)))
@@ -272,7 +272,7 @@ class SessionLifecycleIntegrationTest @Autowired constructor(
         val fixture = fixture()
         val before = sessions.findById(fixture.sessionId).orElseThrow()
         Mockito.doThrow(IllegalStateException("test-signing-failure"))
-            .`when`(accessTokens).createAccessToken(anyString(), anyString())
+            .`when`(accessTokens).createAccessToken(anyLong(), anyLong())
 
         // when
         mockMvc.perform(post(refreshPath).contentType(MediaType.APPLICATION_JSON).content(body(fixture.refreshToken)))
@@ -554,12 +554,12 @@ class SessionLifecycleIntegrationTest @Autowired constructor(
 
     private fun saveAccount(account: Account): Account {
         val saved = transactions.execute { accounts.saveAndFlush(account) }
-        ownAccounts.add(saved.id)
+        ownAccounts.add(checkNotNull(saved.id))
         return saved
     }
 
     private fun fixture(
-        accountId: String = saveAccount(Account.driver(SocialLogin.kakao(600000001L + ownAccounts.size), now.minus(Duration.ofDays(20)))).id,
+        accountId: Long = checkNotNull(saveAccount(Account.driver(SocialLogin.kakao(600000001L + ownAccounts.size), now.minus(Duration.ofDays(20)))).id),
         createdAt: Instant = now.minus(Duration.ofDays(1)),
         expiresAt: Instant = createdAt.plus(Duration.ofDays(14)),
     ): SessionFixture {
@@ -567,7 +567,7 @@ class SessionLifecycleIntegrationTest @Autowired constructor(
         val session = transactions.execute {
             sessions.saveAndFlush(AuthSession(accountId, refreshTokens.hash(refreshToken), createdAt, expiresAt))
         }
-        return SessionFixture(accountId, session.id, refreshToken, accessTokens.createAccessToken(accountId, session.id), expiresAt)
+        return SessionFixture(accountId, checkNotNull(session.id), refreshToken, accessTokens.createAccessToken(accountId, checkNotNull(session.id)), expiresAt)
     }
 
     private fun unusableFixture(scenario: String): SessionFixture {
@@ -618,8 +618,8 @@ class SessionLifecycleIntegrationTest @Autowired constructor(
     }
 
     private class SessionFixture(
-        val accountId: String,
-        val sessionId: String,
+        val accountId: Long,
+        val sessionId: Long,
         val refreshToken: String,
         val accessToken: String,
         val expiresAt: Instant,

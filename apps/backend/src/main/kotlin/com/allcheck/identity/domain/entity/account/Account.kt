@@ -8,12 +8,13 @@ import jakarta.persistence.Embedded
 import jakarta.persistence.Entity
 import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
+import jakarta.persistence.GeneratedValue
+import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.Table
 import jakarta.persistence.UniqueConstraint
 import jakarta.persistence.Version
 import java.time.Instant
-import java.util.UUID
 
 @Entity
 @Table(
@@ -35,8 +36,10 @@ class Account private constructor(
     val createdAt: Instant,
 ) {
     @Id
-    @Column(name = "account_id", nullable = false, length = 64, updatable = false)
-    val id: String = UUID.randomUUID().toString()
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "account_id", nullable = false, updatable = false)
+    var id: Long? = null
+        protected set
 
     @Column(name = "enabled", nullable = false)
     var enabled: Boolean = true

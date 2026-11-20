@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.EnumSource
 import org.junit.jupiter.params.provider.ValueSource
+import org.mockito.ArgumentMatchers.anyLong
 import org.mockito.ArgumentMatchers.anyString
 import org.mockito.Mockito
 import org.springframework.beans.factory.annotation.Autowired
@@ -75,7 +76,7 @@ class AdminLoginIntegrationTest @Autowired constructor(
     @MockitoSpyBean private lateinit var passwords: AdminPasswordHasher
 
     private val tx = TransactionTemplate(transactionManager)
-    private val ownAccounts = mutableListOf<String>()
+    private val ownAccounts = mutableListOf<Long>()
     private val endpoint = "/api/v1/auth/sessions/admin"
     private val password = "test-admin-password-!"
 
@@ -83,7 +84,7 @@ class AdminLoginIntegrationTest @Autowired constructor(
     fun removeOnlyOwnFixtures() {
         tx.executeWithoutResult {
             ownAccounts.forEach { id ->
-                sessions.deleteAllByIdInBatch(sessions.findAllByAccountId(id).map { it.id })
+                sessions.deleteAllByIdInBatch(sessions.findAllByAccountId(id).map { checkNotNull(it.id) })
                 accounts.deleteById(id)
             }
         }
@@ -114,15 +115,15 @@ class AdminLoginIntegrationTest @Autowired constructor(
         val response = mapper.readValue(result.contentAsString, TokenPairResponse::class.java)
 
         // then
-        val stored = sessions.findAllByAccountId(admin.id).single()
-        assertThat(response.user.accountId).isEqualTo(admin.id)
+        val stored = sessions.findAllByAccountId(checkNotNull(admin.id)).single()
+        assertThat(response.user.accountId).isEqualTo(checkNotNull(admin.id))
         assertThat(response.tokenType).isEqualTo("Bearer")
         assertThat(response.expiresIn).isEqualTo(900)
         assertThat(response.refreshExpiresIn).isEqualTo(1209600)
         assertThat(stored.refreshTokenHash).isEqualTo(refreshTokens.hash(response.refreshToken))
         assertThat(stored.refreshTokenHash.value).isNotEqualTo(response.refreshToken)
         assertThat(Duration.between(stored.createdAt, stored.expiresAt)).isEqualTo(Duration.ofDays(14))
-        assertThat(tokens.parseClaims(response.accessToken).subject).isEqualTo(admin.id)
+        assertThat(tokens.parseClaims(response.accessToken).subject).isEqualTo(checkNotNull(admin.id).toString())
         mvc.perform(get("/api/v1/auth/accounts/me").header(HttpHeaders.AUTHORIZATION, "Bearer ${response.accessToken}"))
             .andExpect(status().isOk).andExpect(jsonPath("$.role").value(role.name))
     }
@@ -139,7 +140,7 @@ class AdminLoginIntegrationTest @Autowired constructor(
         // then
         assertThat(second.user.accountId).isEqualTo(first.user.accountId)
         assertThat(second.refreshToken).isNotEqualTo(first.refreshToken)
-        assertThat(sessions.findAllByAccountId(admin.id)).hasSize(2).allMatch { it.isActiveAt(Instant.now()) }
+        assertThat(sessions.findAllByAccountId(checkNotNull(admin.id))).hasSize(2).allMatch { it.isActiveAt(Instant.now()) }
     }
 
     @ParameterizedTest
@@ -147,7 +148,7 @@ class AdminLoginIntegrationTest @Autowired constructor(
     fun `인증 실패 원인을 구분하지 않고 계정과 세션을 변경하지 않는다`(scenario: String) {
         // given
         val admin = admin(hash = if (scenario == "unsupported-hash") "{noop}$password" else passwords.encode(password))
-        if (scenario == "disabled-wrong-password") tx.executeWithoutResult { accounts.findByIdForUpdate(admin.id)!!.disable(Instant.now()) }
+        if (scenario == "disabled-wrong-password") tx.executeWithoutResult { accounts.findByIdForUpdate(checkNotNull(admin.id))!!.disable(Instant.now()) }
         val id = when (scenario) {
             "unknown-id" -> "missing-${UUID.randomUUID()}"
             "case-changed-id" -> admin.adminCredential!!.loginId.uppercase()
@@ -159,8 +160,8 @@ class AdminLoginIntegrationTest @Autowired constructor(
         mvc.perform(post(endpoint).contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(mapOf("loginId" to id, "password" to supplied))))
             .andExpect(status().isUnauthorized).andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"))
             .andExpect(jsonPath("$.message").value("아이디 또는 비밀번호를 확인해 주세요."))
-        assertThat(sessions.findAllByAccountId(admin.id)).isEmpty()
-        assertThat(accounts.findById(admin.id).orElseThrow().userType).isEqualTo(UserType.ADMIN)
+        assertThat(sessions.findAllByAccountId(checkNotNull(admin.id))).isEmpty()
+        assertThat(accounts.findById(checkNotNull(admin.id)).orElseThrow().userType).isEqualTo(UserType.ADMIN)
         if (scenario == "unknown-id") assertThat(accounts.findByAdminCredentialLoginId(id)).isNull()
     }
 
@@ -168,13 +169,13 @@ class AdminLoginIntegrationTest @Autowired constructor(
     fun `비활성 계정의 올바른 자격 증명은 403이며 계정을 재활성화하지 않는다`() {
         // given
         val admin = admin()
-        tx.executeWithoutResult { accounts.findByIdForUpdate(admin.id)!!.disable(Instant.now()) }
+        tx.executeWithoutResult { accounts.findByIdForUpdate(checkNotNull(admin.id))!!.disable(Instant.now()) }
 
         // when & then
         mvc.perform(post(endpoint).contentType(MediaType.APPLICATION_JSON).content(body(admin)))
             .andExpect(status().isForbidden).andExpect(jsonPath("$.code").value("ACCOUNT_DISABLED"))
-        assertThat(accounts.findById(admin.id).orElseThrow().enabled).isFalse()
-        assertThat(sessions.findAllByAccountId(admin.id)).isEmpty()
+        assertThat(accounts.findById(checkNotNull(admin.id)).orElseThrow().enabled).isFalse()
+        assertThat(sessions.findAllByAccountId(checkNotNull(admin.id))).isEmpty()
     }
 
     @ParameterizedTest
@@ -209,20 +210,20 @@ class AdminLoginIntegrationTest @Autowired constructor(
         val response = tx.execute { login.login(admin.adminCredential!!.loginId, password) }
 
         // then
-        assertThat(response.user.accountId).isEqualTo(admin.id)
+        assertThat(response.user.accountId).isEqualTo(checkNotNull(admin.id))
     }
 
     @Test
     fun `서명 실패는 새 세션을 롤백하고 기존 사전 계정은 유지한다`() {
         // given
         val admin = admin()
-        Mockito.doThrow(IllegalStateException("test-signing-failure")).`when`(tokens).createAccessToken(anyString(), anyString())
+        Mockito.doThrow(IllegalStateException("test-signing-failure")).`when`(tokens).createAccessToken(anyLong(), anyLong())
 
         // when & then
         mvc.perform(post(endpoint).contentType(MediaType.APPLICATION_JSON).content(body(admin)))
             .andExpect(status().isInternalServerError).andExpect(jsonPath("$.code").value("INTERNAL_SERVER_ERROR"))
-        assertThat(accounts.existsById(admin.id)).isTrue()
-        assertThat(sessions.findAllByAccountId(admin.id)).isEmpty()
+        assertThat(accounts.existsById(checkNotNull(admin.id))).isTrue()
+        assertThat(sessions.findAllByAccountId(checkNotNull(admin.id))).isEmpty()
     }
 
     @Test
@@ -230,13 +231,13 @@ class AdminLoginIntegrationTest @Autowired constructor(
         // given
         val admin = admin()
         val candidate = checkNotNull(adminSessions.candidate(admin.adminCredential!!.loginId))
-        jdbc.update("update identity_accounts set password_hash = ?, version = version + 1 where account_id = ?", passwords.encode("replacement-password"), admin.id)
+        jdbc.update("update identity_accounts set password_hash = ?, version = version + 1 where account_id = ?", passwords.encode("replacement-password"), checkNotNull(admin.id))
 
         // when & then
         assertThatThrownBy { adminSessions.login(candidate) }.isInstanceOfSatisfying(BusinessException::class.java) {
             assertThat(it.errorCode).isEqualTo(IdentityErrorCode.INVALID_CREDENTIALS)
         }
-        assertThat(sessions.findAllByAccountId(admin.id)).isEmpty()
+        assertThat(sessions.findAllByAccountId(checkNotNull(admin.id))).isEmpty()
     }
 
     @Test
@@ -244,7 +245,7 @@ class AdminLoginIntegrationTest @Autowired constructor(
         // given
         val admin = admin()
         val candidate = checkNotNull(adminSessions.candidate(admin.adminCredential!!.loginId))
-        jdbc.update("update identity_accounts set admin_role = 'SUB', version = version + 1 where account_id = ?", admin.id)
+        jdbc.update("update identity_accounts set admin_role = 'SUB', version = version + 1 where account_id = ?", checkNotNull(admin.id))
 
         // when & then
         assertThatThrownBy {
@@ -253,7 +254,7 @@ class AdminLoginIntegrationTest @Autowired constructor(
                 throw IllegalStateException("test-rollback")
             }
         }.isInstanceOf(IllegalStateException::class.java)
-        assertThat(sessions.findAllByAccountId(admin.id)).isEmpty()
+        assertThat(sessions.findAllByAccountId(checkNotNull(admin.id))).isEmpty()
     }
 
     @Test
@@ -265,9 +266,9 @@ class AdminLoginIntegrationTest @Autowired constructor(
         val responses = concurrently({ login.login(admin.adminCredential!!.loginId, password) }, { login.login(admin.adminCredential!!.loginId, password) })
 
         // then
-        assertThat(responses.map { (it as TokenPairResponse).user.accountId }).containsOnly(admin.id)
+        assertThat(responses.map { (it as TokenPairResponse).user.accountId }).containsOnly(checkNotNull(admin.id))
         assertThat(responses.map { (it as TokenPairResponse).refreshToken }).doesNotHaveDuplicates()
-        assertThat(sessions.findAllByAccountId(admin.id)).hasSize(2).allMatch { it.revokedAt == null }
+        assertThat(sessions.findAllByAccountId(checkNotNull(admin.id))).hasSize(2).allMatch { it.revokedAt == null }
     }
 
     @Test
@@ -286,15 +287,15 @@ class AdminLoginIntegrationTest @Autowired constructor(
             },
             {
                 tx.executeWithoutResult {
-                    accounts.findByIdForUpdate(admin.id)!!.disable(Instant.now())
-                    sessions.findAllByAccountIdForUpdate(admin.id).forEach { it.revoke(Instant.now()) }
+                    accounts.findByIdForUpdate(checkNotNull(admin.id))!!.disable(Instant.now())
+                    sessions.findAllByAccountIdForUpdate(checkNotNull(admin.id)).forEach { it.revoke(Instant.now()) }
                 }
             },
         )
 
         // then
-        assertThat(accounts.findById(admin.id).orElseThrow().enabled).isFalse()
-        assertThat(sessions.findAllByAccountId(admin.id)).allMatch { it.revokedAt != null }
+        assertThat(accounts.findById(checkNotNull(admin.id)).orElseThrow().enabled).isFalse()
+        assertThat(sessions.findAllByAccountId(checkNotNull(admin.id))).allMatch { it.revokedAt != null }
     }
 
     @Test
@@ -302,7 +303,7 @@ class AdminLoginIntegrationTest @Autowired constructor(
         // given
         val admin = admin()
         val first = login.login(admin.adminCredential!!.loginId, password)
-        val original = sessions.findAllByAccountId(admin.id).single()
+        val original = sessions.findAllByAccountId(checkNotNull(admin.id)).single()
 
         // when
         val refreshed = mvc.perform(
@@ -311,7 +312,7 @@ class AdminLoginIntegrationTest @Autowired constructor(
         )
             .andExpect(status().isOk).andReturn().response
         val replacement = mapper.readValue(refreshed.contentAsString, TokenPairResponse::class.java)
-        assertThat(sessions.findAllByAccountId(admin.id).single().expiresAt).isEqualTo(original.expiresAt)
+        assertThat(sessions.findAllByAccountId(checkNotNull(admin.id)).single().expiresAt).isEqualTo(original.expiresAt)
         assertThat(replacement.user.role).isEqualTo(AdminRole.MASTER)
         mvc.perform(
             post("/api/v1/auth/sessions/logout").contentType(MediaType.APPLICATION_JSON)
@@ -337,7 +338,7 @@ class AdminLoginIntegrationTest @Autowired constructor(
     }
 
     private fun admin(role: AdminRole = AdminRole.MASTER, hash: String = passwords.encode(password)): Account = tx.execute {
-        accounts.saveAndFlush(Account.administrator(AdminCredential("admin-${UUID.randomUUID()}", hash, role), Instant.now())).also { ownAccounts.add(it.id) }
+        accounts.saveAndFlush(Account.administrator(AdminCredential("admin-${UUID.randomUUID()}", hash, role), Instant.now())).also { ownAccounts.add(checkNotNull(it.id)) }
     }
 
     private fun body(admin: Account): String = mapper.writeValueAsString(mapOf("loginId" to admin.adminCredential!!.loginId, "password" to password))

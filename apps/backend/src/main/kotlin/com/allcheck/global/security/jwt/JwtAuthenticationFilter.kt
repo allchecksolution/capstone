@@ -49,8 +49,11 @@ class JwtAuthenticationFilter(
         } catch (ex: JwtException) {
             throw TokenAuthenticationException(SecurityErrorCode.INVALID_TOKEN, ex)
         }
-        val sessionId = claims.get("sid", String::class.java)
-        val account = identity.findAuthenticatedAccount(claims.subject, sessionId)
+        val accountId = claims.subject.toLongOrNull()?.takeIf { it > 0 }
+            ?: throw TokenAuthenticationException(SecurityErrorCode.INVALID_TOKEN)
+        val sessionId = claims.get("sid", String::class.java).toLongOrNull()?.takeIf { it > 0 }
+            ?: throw TokenAuthenticationException(SecurityErrorCode.INVALID_TOKEN)
+        val account = identity.findAuthenticatedAccount(accountId, sessionId)
             ?: throw TokenAuthenticationException(SecurityErrorCode.INVALID_TOKEN)
         val principal = AuthPrincipal(account.accountId, sessionId, account.userType, account.role)
         // MASTER/SUB는 동일한 ADMIN 권한을 가진다. 역할 값은 principal에 보존한다.

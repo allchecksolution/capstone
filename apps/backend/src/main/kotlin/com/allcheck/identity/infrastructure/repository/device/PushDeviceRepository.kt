@@ -9,13 +9,13 @@ import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import java.time.Instant
 
-interface PushDeviceRepository : JpaRepository<PushDevice, String> {
+interface PushDeviceRepository : JpaRepository<PushDevice, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select device from PushDevice device where device.installationId = :id")
     fun findForUpdate(@Param("id") id: String): PushDevice?
 
     @Query("select account.id from Account account where account.enabled = true and account.userType = com.allcheck.identity.UserType.ADMIN")
-    fun activeAdminIds(): List<String>
+    fun activeAdminIds(): List<Long>
 
     @Query(
         """
@@ -25,13 +25,13 @@ interface PushDeviceRepository : JpaRepository<PushDevice, String> {
           and session.revokedAt is null and session.createdAt <= :now and session.expiresAt > :now
     """,
     )
-    fun activeForAccounts(@Param("accountIds") accountIds: Collection<String>, @Param("now") now: Instant): List<PushDevice>
+    fun activeForAccounts(@Param("accountIds") accountIds: Collection<Long>, @Param("now") now: Instant): List<PushDevice>
 
     @Modifying
     @Query("update PushDevice device set device.token = null, device.tokenHash = null, device.revokedAt = :now, device.updatedAt = :now, device.version = device.version + 1 where device.sessionId = :sessionId and device.revokedAt is null")
-    fun revokeSession(@Param("sessionId") sessionId: String, @Param("now") now: Instant): Int
+    fun revokeSession(@Param("sessionId") sessionId: Long, @Param("now") now: Instant): Int
 
     @Modifying
     @Query("update PushDevice device set device.token = null, device.tokenHash = null, device.revokedAt = :now, device.updatedAt = :now, device.version = device.version + 1 where device.accountId = :accountId and device.revokedAt is null")
-    fun revokeAccount(@Param("accountId") accountId: String, @Param("now") now: Instant): Int
+    fun revokeAccount(@Param("accountId") accountId: Long, @Param("now") now: Instant): Int
 }

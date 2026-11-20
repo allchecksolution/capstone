@@ -126,7 +126,7 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
 
     @MockitoBean private lateinit var fcm: DriverPushSender
     private val tx = TransactionTemplate(transactionManager)
-    private val ownAccounts = mutableListOf<String>()
+    private val ownAccounts = mutableListOf<Long>()
     private val registrationPath = "/api/v1/drivers/me/registration"
 
     @AfterAll
@@ -146,15 +146,13 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
     fun cleanOnlyOwnFixtures() {
         tx.executeWithoutResult {
             ownAccounts.mapNotNull { drivers.findByAccountId(it) }.forEach { driver ->
-                val profileId = driver.profile.id
-                val businessId = driver.business.id
-                jdbc.update("delete from work_orders where driver_id = ?", driver.id)
-                jdbc.update("delete from driver_push_deliveries where event_id in (select event_id from driver_notification_events where driver_id = ?)", driver.id)
-                jdbc.update("delete from driver_notification_events where driver_id = ?", driver.id)
-                jdbc.update("delete from driver_registration_history where driver_id = ?", driver.id)
-                jdbc.update("delete from drivers where driver_id = ?", driver.id)
-                listOf("driver_profile_specialties", "driver_profile_regions", "driver_profile_equipment").forEach { table -> jdbc.update("delete from $table where profile_id = ?", profileId) }
-                jdbc.update("delete from driver_profiles where profile_id = ?", profileId)
+                val businessId = checkNotNull(driver.business.id)
+                jdbc.update("delete from work_orders where driver_id = ?", checkNotNull(driver.id))
+                jdbc.update("delete from driver_push_deliveries where event_id in (select event_id from driver_notification_events where driver_id = ?)", checkNotNull(driver.id))
+                jdbc.update("delete from driver_notification_events where driver_id = ?", checkNotNull(driver.id))
+                jdbc.update("delete from driver_registration_history where driver_id = ?", checkNotNull(driver.id))
+                listOf("driver_profile_specialties", "driver_profile_regions", "driver_profile_equipment").forEach { table -> jdbc.update("delete from $table where driver_id = ?", checkNotNull(driver.id)) }
+                jdbc.update("delete from drivers where driver_id = ?", checkNotNull(driver.id))
                 jdbc.update("delete from driver_businesses where business_id = ?", businessId)
             }
             ownAccounts.forEach { accountId ->
@@ -291,11 +289,14 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
         val admin = admin()
         val registered = submit(actor, request())
         decide(admin, registered.driverId, DriverApprovalRequest(1, ApprovalDecision.REJECT, "서류 확인 필요"))
+        val revised = request("수정기사").let {
+            it.copy(profile = it.profile.copy(specialties = listOf(WorkType.BOILER, WorkType.WATERPROOFING), activityRegions = listOf("부산"), equipment = emptyList()))
+        }
 
         // when
         mvc.perform(
             post("$registrationPath/resubmission").header(HttpHeaders.AUTHORIZATION, actor.header).header("Idempotency-Key", "resubmit")
-                .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(DriverResubmissionRequest(2, request("수정기사")))),
+                .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(DriverResubmissionRequest(2, revised))),
         )
             .andExpect(status().isOk).andExpect(jsonPath("$.driverId").value(registered.driverId)).andExpect(jsonPath("$.version").value(3))
 
@@ -303,6 +304,10 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
         mvc.perform(get("/api/v1/drivers/${registered.driverId}").header(HttpHeaders.AUTHORIZATION, admin.header))
             .andExpect(status().isOk).andExpect(jsonPath("$.rejectionHistory[0].reason").value("서류 확인 필요"))
             .andExpect(jsonPath("$.profile.workerName").value("수정기사"))
+            .andExpect(jsonPath("$.profile.specialties[0]").value("BOILER"))
+            .andExpect(jsonPath("$.profile.specialties[1]").value("WATERPROOFING"))
+            .andExpect(jsonPath("$.profile.activityRegions[0]").value("부산"))
+            .andExpect(jsonPath("$.profile.equipment").isEmpty)
         assertThat(jdbc.queryForObject("select count(*) from driver_registration_history where driver_id = ? and event_type = 'SUBMITTED'", Long::class.java, registered.driverId)).isEqualTo(2)
     }
 
@@ -330,7 +335,7 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
         val admin = admin()
         val registered = submit(actor, request())
         decide(admin, registered.driverId, DriverApprovalRequest(1, ApprovalDecision.APPROVE))
-        tx.execute { works.saveAndFlush(WorkOrder("request-${UUID.randomUUID()}", registered.driverId, workStatus, Instant.now())) }
+        tx.execute { works.saveAndFlush(WorkOrder(nextRequest.incrementAndGet(), registered.driverId, workStatus, Instant.now())) }
         val terminal = workStatus in listOf(WorkStatus.WORK_DONE, WorkStatus.CANCELLED)
 
         // when & then
@@ -463,7 +468,7 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
         // then
         assertThat(results).containsExactlyInAnyOrder(201, 409)
         val driver = checkNotNull(drivers.findByAccountId(actor.accountId))
-        assertThat(jdbc.queryForObject("select count(*) from driver_registration_history where driver_id = ?", Long::class.java, driver.id)).isEqualTo(1)
+        assertThat(jdbc.queryForObject("select count(*) from driver_registration_history where driver_id = ?", Long::class.java, checkNotNull(driver.id))).isEqualTo(1)
     }
 
     @Test
@@ -478,7 +483,7 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
         val results = concurrently(
             {
                 try {
-                    workOperations.recordAssignment("request-${UUID.randomUUID()}", registered.driverId)
+                    workOperations.recordAssignment(nextRequest.incrementAndGet(), registered.driverId)
                 } catch (ex: BusinessException) {
                     ex.errorCode
                 }
@@ -693,7 +698,7 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
         registerDevice(admin, "install-recipient-admin", "recipient-admin-token")
         val registered = submit(actor, request())
         enableFcm(DriverPushResult(messageId = "accepted"))
-        val sent = mutableListOf<Pair<String, String>>()
+        val sent = mutableListOf<Pair<Long, String>>()
         Mockito.`when`(fcm.send(anyTarget(), anyDriverPushData(), anyBeforeSend())).thenAnswer {
             check(!TransactionSynchronizationManager.isActualTransactionActive())
             if (!it.getArgument<() -> Boolean>(2).invoke()) return@thenAnswer null
@@ -943,8 +948,8 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
         }
     }
 
-    private fun anyTarget(): PushTarget = any(PushTarget::class.java) ?: PushTarget("unused", "unused", "unused", "unused")
-    private fun anyDriverPushData(): DriverPushData = any(DriverPushData::class.java) ?: DriverPushData("unused", "unused", "unused", 1)
+    private fun anyTarget(): PushTarget = any(PushTarget::class.java) ?: PushTarget(1L, "unused", "unused", "unused")
+    private fun anyDriverPushData(): DriverPushData = any(DriverPushData::class.java) ?: DriverPushData(1L, "unused", 1L, 1)
     private fun anyBeforeSend(): () -> Boolean = any<() -> Boolean>() ?: { true }
 
     private fun submitStatus(actor: Actor, key: String): Int = mvc.perform(
@@ -979,7 +984,7 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
         return mapper.readValue(response.contentAsString, DriverRegistrationResult::class.java)
     }
 
-    private fun decide(actor: Actor, driverId: String, request: DriverApprovalRequest) {
+    private fun decide(actor: Actor, driverId: Long, request: DriverApprovalRequest) {
         mvc.perform(
             post("/api/v1/drivers/$driverId/approval").header(HttpHeaders.AUTHORIZATION, actor.header).header("Idempotency-Key", "decision")
                 .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(request)),
@@ -995,9 +1000,9 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
     private fun admin(role: AdminRole = AdminRole.MASTER): Actor = tx.execute {
         val now = Instant.now()
         val account = accounts.saveAndFlush(Account.administrator(AdminCredential("driver-admin-${UUID.randomUUID()}", "test-password-hash", role), now))
-        ownAccounts.add(account.id)
-        val session = sessions.saveAndFlush(AuthSession(account.id, refreshTokens.hash(refreshTokens.generate()), now, now.plusSeconds(3600)))
-        Actor(account.id, "Bearer ${tokens.createAccessToken(account.id, session.id)}")
+        ownAccounts.add(checkNotNull(account.id))
+        val session = sessions.saveAndFlush(AuthSession(checkNotNull(account.id), refreshTokens.hash(refreshTokens.generate()), now, now.plusSeconds(3600)))
+        Actor(checkNotNull(account.id), "Bearer ${tokens.createAccessToken(checkNotNull(account.id), checkNotNull(session.id))}")
     }
 
     private fun request(workerName: String = "홍길동"): DriverRegistrationRequest = DriverRegistrationRequest(
@@ -1005,11 +1010,12 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
         BusinessInfoRequest("길동설비", "1234567890", LocalDate.of(2020, 1, 15), "서비스업", "배관", "홍길동", "0212345678", "서울시"),
     )
 
-    private data class Actor(val accountId: String, val header: String, val refreshToken: String = "unused")
+    private data class Actor(val accountId: Long, val header: String, val refreshToken: String = "unused")
 
     private fun anyIdentity(): BusinessIdentity = any(BusinessIdentity::class.java) ?: BusinessIdentity("1234567890", LocalDate.of(2020, 1, 15), "테스트대표")
     companion object {
         private val nextUser = AtomicLong(810000000)
+        private val nextRequest = AtomicLong(1)
         private val database = PostgresTestSchema("driver_registration")
 
         @JvmStatic

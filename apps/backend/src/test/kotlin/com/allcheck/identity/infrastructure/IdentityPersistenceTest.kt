@@ -26,7 +26,6 @@ import org.springframework.transaction.support.TransactionTemplate
 import java.sql.Timestamp
 import java.time.Duration
 import java.time.Instant
-import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -54,6 +53,43 @@ class IdentityPersistenceTest @Autowired constructor(
     private val transactions = TransactionTemplate(transactionManager)
 
     @Test
+    fun `계정과 세션의 식별자는 저장할 때 DB가 양수 BIGINT로 생성한다`() {
+        // given
+        val account = Account.driver(SocialLogin.kakao(123456790), createdAt)
+        assertThat(account.id).isNull()
+
+        // when
+        accounts.saveAndFlush(account)
+        val session = AuthSession(checkNotNull(account.id), initialHash, createdAt, expiresAt)
+        assertThat(session.id).isNull()
+        sessions.saveAndFlush(session)
+
+        // then
+        assertThat(checkNotNull(account.id)).isPositive()
+        assertThat(checkNotNull(session.id)).isPositive()
+        val generatedKeys = mapOf(
+            "identity_accounts" to "account_id",
+            "identity_auth_sessions" to "session_id",
+            "identity_push_devices" to "device_id",
+            "drivers" to "driver_id",
+            "driver_businesses" to "business_id",
+            "driver_registration_history" to "history_id",
+            "driver_idempotency_records" to "record_id",
+            "driver_notification_events" to "event_id",
+            "driver_push_deliveries" to "delivery_id",
+            "work_orders" to "work_id",
+        )
+        generatedKeys.forEach { (table, column) ->
+            val metadata = jdbc.queryForMap(
+                "select data_type, is_identity from information_schema.columns where table_schema = current_schema() and table_name = ? and column_name = ?",
+                table,
+                column,
+            )
+            assertThat(metadata).containsEntry("data_type", "bigint").containsEntry("is_identity", "YES")
+        }
+    }
+
+    @Test
     fun `Flyway 스키마에서 관리자와 카카오 계정의 자격 증명 및 비활성 상태를 복원한다`() {
         // given
         val driver = accounts.save(Account.driver(SocialLogin.kakao(123456789), createdAt))
@@ -68,12 +104,12 @@ class IdentityPersistenceTest @Autowired constructor(
         val storedAdmin = accounts.findByAdminCredentialLoginId("admin01")
 
         // then
-        assertThat(storedDriver?.id).isEqualTo(driver.id)
+        assertThat(storedDriver?.id).isEqualTo(checkNotNull(driver.id))
         assertThat(storedDriver?.userType).isEqualTo(UserType.DRIVER)
         assertThat(storedDriver?.enabled).isFalse()
         assertThat(storedDriver?.disabledAt).isEqualTo(createdAt.plusSeconds(60))
         assertThat(storedDriver?.adminCredential).isNull()
-        assertThat(storedAdmin?.id).isEqualTo(admin.id)
+        assertThat(storedAdmin?.id).isEqualTo(checkNotNull(admin.id))
         assertThat(storedAdmin?.adminCredential?.role).isEqualTo(AdminRole.SUB)
         assertThat(storedAdmin?.adminCredential?.passwordHash).isEqualTo(credential.passwordHash)
         assertThat(storedAdmin?.socialLogin).isNull()
@@ -109,10 +145,9 @@ class IdentityPersistenceTest @Autowired constructor(
             jdbc.update(
                 """
                 INSERT INTO identity_accounts
-                    (account_id, user_type, social_provider, social_user_id, login_id, created_at)
-                VALUES (?, 'DRIVER', 'KAKAO', '123456789', 'unexpected-admin', ?)
+                    (user_type, social_provider, social_user_id, login_id, created_at)
+                VALUES ('DRIVER', 'KAKAO', '123456789', 'unexpected-admin', ?)
                 """.trimIndent(),
-                UUID.randomUUID().toString(),
                 Timestamp.from(createdAt),
             )
         }.isInstanceOf(DataIntegrityViolationException::class.java)
@@ -122,8 +157,8 @@ class IdentityPersistenceTest @Autowired constructor(
     fun `여러 기기 세션을 저장하고 갱신과 폐기 상태를 복원한다`() {
         // given
         val account = accounts.saveAndFlush(Account.driver(SocialLogin.kakao(123456789), createdAt))
-        val first = sessions.save(AuthSession(account.id, initialHash, createdAt, expiresAt))
-        val other = sessions.save(AuthSession(account.id, RefreshTokenHash("b".repeat(64)), createdAt, expiresAt))
+        val first = sessions.save(AuthSession(checkNotNull(account.id), initialHash, createdAt, expiresAt))
+        val other = sessions.save(AuthSession(checkNotNull(account.id), RefreshTokenHash("b".repeat(64)), createdAt, expiresAt))
         val replacement = RefreshTokenHash("c".repeat(64))
         first.rotateRefreshToken(initialHash, replacement, createdAt.plusSeconds(900))
         other.revoke(createdAt.plusSeconds(60))
@@ -132,12 +167,12 @@ class IdentityPersistenceTest @Autowired constructor(
 
         // when
         val stored = sessions.findByRefreshTokenHash(replacement)
-        val storedOther = sessions.findById(other.id).orElseThrow()
+        val storedOther = sessions.findById(checkNotNull(other.id)).orElseThrow()
 
         // then
-        assertThat(sessions.findAllByAccountId(account.id)).hasSize(2)
+        assertThat(sessions.findAllByAccountId(checkNotNull(account.id))).hasSize(2)
         assertThat(sessions.findByRefreshTokenHash(initialHash)).isNull()
-        assertThat(stored?.id).isEqualTo(first.id)
+        assertThat(stored?.id).isEqualTo(checkNotNull(first.id))
         assertThat(stored?.lastRefreshedAt).isEqualTo(createdAt.plusSeconds(900))
         assertThat(stored?.expiresAt).isEqualTo(expiresAt)
         assertThat(storedOther.isActiveAt(createdAt.plusSeconds(900))).isFalse()
@@ -147,11 +182,11 @@ class IdentityPersistenceTest @Autowired constructor(
     fun `다른 세션에 동일한 Refresh Token 해시를 저장할 수 없다`() {
         // given
         val account = accounts.saveAndFlush(Account.driver(SocialLogin.kakao(123456789), createdAt))
-        sessions.saveAndFlush(AuthSession(account.id, initialHash, createdAt, expiresAt))
+        sessions.saveAndFlush(AuthSession(checkNotNull(account.id), initialHash, createdAt, expiresAt))
 
         // when & then
         assertThatThrownBy {
-            sessions.saveAndFlush(AuthSession(account.id, initialHash, createdAt, expiresAt))
+            sessions.saveAndFlush(AuthSession(checkNotNull(account.id), initialHash, createdAt, expiresAt))
         }.isInstanceOf(DataIntegrityViolationException::class.java)
     }
 
@@ -159,7 +194,7 @@ class IdentityPersistenceTest @Autowired constructor(
     fun `존재하지 않는 인증 계정의 세션은 저장할 수 없다`() {
         // when & then
         assertThatThrownBy {
-            sessions.saveAndFlush(AuthSession("missing-account", initialHash, createdAt, expiresAt))
+            sessions.saveAndFlush(AuthSession(Long.MAX_VALUE, initialHash, createdAt, expiresAt))
         }.isInstanceOf(DataIntegrityViolationException::class.java)
     }
 
@@ -171,7 +206,7 @@ class IdentityPersistenceTest @Autowired constructor(
             accounts.saveAndFlush(Account.driver(SocialLogin.kakao(987654321), createdAt))
         }
         val session = transactions.execute {
-            sessions.saveAndFlush(AuthSession(account.id, initialHash, createdAt, expiresAt))
+            sessions.saveAndFlush(AuthSession(checkNotNull(account.id), initialHash, createdAt, expiresAt))
         }
         val readBarrier = CountDownLatch(2)
         val executor = Executors.newFixedThreadPool(2)
@@ -183,7 +218,7 @@ class IdentityPersistenceTest @Autowired constructor(
                 executor.submit<Boolean> {
                     try {
                         transactions.execute {
-                            val current = sessions.findById(session.id).orElseThrow()
+                            val current = sessions.findById(checkNotNull(session.id)).orElseThrow()
                             readBarrier.countDown()
                             check(readBarrier.await(5, TimeUnit.SECONDS)) { "Concurrent readers did not reach the barrier." }
                             check(current.rotateRefreshToken(initialHash, replacement, createdAt.plusSeconds(900)))
@@ -195,7 +230,7 @@ class IdentityPersistenceTest @Autowired constructor(
                     }
                 }
             }.map { it.get(15, TimeUnit.SECONDS) }
-            val stored = transactions.execute { sessions.findById(session.id).orElseThrow() }
+            val stored = transactions.execute { sessions.findById(checkNotNull(session.id)).orElseThrow() }
                 ?: error("Session fixture was not found.")
 
             // then
@@ -207,8 +242,8 @@ class IdentityPersistenceTest @Autowired constructor(
             executor.shutdownNow()
             check(executor.awaitTermination(10, TimeUnit.SECONDS)) { "Concurrent workers did not stop." }
             transactions.executeWithoutResult {
-                sessions.deleteAllByIdInBatch(listOf(session.id))
-                accounts.deleteById(account.id)
+                sessions.deleteAllByIdInBatch(listOf(checkNotNull(session.id)))
+                accounts.deleteById(checkNotNull(account.id))
             }
         }
     }

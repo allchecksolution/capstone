@@ -28,7 +28,7 @@ class AdminProvisioningCliTest {
     private var action: (String, String, AdminRole) -> ProvisionedAdministrator = { id, password, role ->
         calls++
         capturedPassword = password
-        ProvisionedAdministrator("created-account", id, role)
+        ProvisionedAdministrator(42L, id, role)
     }
 
     private fun cli(console: () -> CharArray? = { null }): AdminProvisioningCli = AdminProvisioningCli(
