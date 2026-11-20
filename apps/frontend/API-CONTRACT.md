@@ -1,5 +1,7 @@
 # 관리자 앱, 기사앱
 
+> 기존 프론트엔드 연결 초안입니다. 현재 main의 실제 Controller·DTO에 맞춘 연결과 제한 사항은 [BACKEND-INTEGRATION.md](BACKEND-INTEGRATION.md)를 따릅니다. 아래 operation URL과 전체 state 응답을 서버가 구현했다고 가정하지 않습니다.
+
 ## 서버 어댑터
 
 `shared/lib/src/backend.dart`의 `FrontendBackend.call(operation, data)`가 유일한 HTTP 연결 지점입니다. 기본 어댑터는 `API_BASE_URL` 뒤에 아래 operation을 붙여 JSON POST를 보냅니다. 아래는 연결을 위한 프론트 계약이며 서버에 이 API들이 이미 있다는 의미가 아닙니다. 기존 REST 규격을 사용하려면 이 인터페이스를 구현해 `launchAllcheck(backend: ...)`로 주입하세요.
