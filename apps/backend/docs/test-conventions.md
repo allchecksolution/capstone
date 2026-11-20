@@ -156,3 +156,11 @@ its own PostgreSQL schema to verify atomic expansion, per-device ownership and t
 retries without AI reruns, unknown-outcome recovery, old-worker rejection, and independent concurrent claims.
 All full-context schemas explicitly disable production integrations/workers even if the development shell enables
 them. Tests inject only fake device bindings and loopback FCM transport; no actual notification is sent.
+
+`DriverPushSenderTest` verifies identifier-only data, preservation of the existing generic notification,
+provider result/error translation, and cancellation using the shared HTTP transport against loopback FCM.
+Driver integration tests cover logout, token rotation, and lease expiry at the final send checkpoint,
+plus rejection of stale claims. `DriverPushConfigTest` verifies the common FCM activation flag and that
+delivery leases exceed the shared HTTP timeout. Driver and reception retain separate delivery policies.
+`DriverRegistrationIntegrationTest` owns an isolated UUID-named schema through `PostgresTestSchema`,
+so its global queue polling cannot consume another test context's deliveries or device bindings.

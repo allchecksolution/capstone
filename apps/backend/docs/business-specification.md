@@ -27,7 +27,7 @@ ALLCHECK consists of five bounded contexts and one integrated query module. The 
 
 | Type | Domain / Package | Owned Responsibilities and Data | Related Requirements |
 |---|---|---|---|
-| BC | Identity and Access Management — `identity` | Administrator accounts, credentials, roles, and MFA; driver Kakao authentication identifiers and account links; authentication sessions and tokens; administrator push-device registrations | [FR-01], [FR-13] authentication / [UC-01], [UC-08] authentication |
+| BC | Identity and Access Management — `identity` | Administrator accounts, credentials, and roles; driver Kakao authentication identifiers and account links; authentication sessions and tokens; administrator and driver push-device registrations | [FR-01], [FR-13] authentication / [UC-01], [UC-08] authentication |
 | BC | Consultation Intake — `reception` | Consultation cases; recordings, STT and AI analysis results and processing statuses; manual entry; administrator review and finalized intake information | [FR-02], [FR-03], [FR-04] / [UC-02] |
 | BC | Driver Management — `driver` | Driver personal and business information and verification results; registration applications and review history; approval, rejection, reapplication, and withdrawal; specialties, service areas, equipment, preferences, standby/rest status, and latest location | [FR-06], [FR-10], [FR-13] membership management, [FR-14] / [UC-06], [UC-08] membership management, [UC-09], [UC-14], [UC-15] |
 | BC | Service Request Fulfillment — `operations` | Customer service requests; dispatch candidate selection, offers, responses, and delivery results; work ownership, cancellation, redispatch, and administrator follow-up decisions; work progress and revisits; original reports and revision history | [FR-05], [FR-07], [FR-08], [FR-09], [FR-11], [FR-12], [FR-16] history retention / [UC-03], [UC-05], [UC-07], [UC-10], [UC-11], [UC-12], [UC-13] |
@@ -63,6 +63,7 @@ The following is the initial design of the key Aggregates.
 | BC / Nested Module | Aggregate Root | Owned Models and Boundaries |
 |---|---|---|
 | `identity` | `Account` | Administrator authentication accounts and driver authentication identities and external login links. Driver membership information and registration reviews belong to `driver`. |
+| `identity` | `AuthSession` | One independent login session, its current Refresh Token hash, absolute expiry, refresh time, and revocation. References `Account` by ID; sessions are not an Account-owned collection. |
 | `reception` | `Reception` | Manages consultation materials and analysis results separately from intake information finalized by administrators. |
 | `driver` | `Driver` | Manages driver membership information, business registration verification, application and review history, service eligibility, and dispatch preferences. |
 | `driver` | `DriverLocation` | Manages each driver's latest location and update timestamp separately from profile and review information. |
@@ -73,13 +74,83 @@ The following is the initial design of the key Aggregates.
 | `chat` | `Conversation` | Manages each driver's ongoing conversation relationship independently of individual service requests. |
 | `chat` | `ChatMessage` | Manages message content, senders, transmission identifiers, and processing results separately from the conversation. |
 
+### Identity Persistence
+
+`Account` owns either an embedded Kakao `SocialLogin` or an embedded `AdminCredential` including the administrator role. Store them in `identity_accounts`, with a database check ensuring the credential shape matches `userType`. Keep the social-provider/member-number pair and administrator login ID unique. Account deactivation retains its credentials and uniqueness constraints, preventing a withdrawn identity from being recreated as a new account.
+
+`AuthSession` is stored in `identity_auth_sessions` with an account-ID foreign key, a unique SHA-256 Refresh Token digest, and an account-ID index. Both aggregates use optimistic versions. A stale session update must not overwrite a committed rotation or revocation; application services translate conflicts according to the refresh API contract. Neither aggregate stores a raw Refresh Token or a Kakao token. Authentication state and session state must be coordinated by application-service transactions; disabling an Account object alone does not persist session revocations.
+
+Kakao login verifies the provider token outside database transactions. Account resolution and session issuance then commit together. An `INSERT ... ON CONFLICT (social_provider, social_user_id) DO NOTHING` prevents duplicate authentication accounts without aborting the transaction on a concurrent first login. Lock and read the resolved Account before checking its current enabled state and creating a session; the conflict path never updates or reactivates an existing Account. JWT issuance failure rolls back both the new Account and session. Each successful login creates its own session without creating a Driver registration application.
+
+Resolve the Kakao identity only from the provider's verified member number, a valid unexpired token,
+and the configured application ID. Do not authenticate using a client-supplied member number or email.
+Distinguish invalid or wrong-application credentials from provider unavailability; neither failure changes
+existing accounts or sessions. Authentication account IDs, Kakao member numbers, and Driver IDs have
+different meanings. Authentication responses describe the account; membership state is queried from driver.
+
+### Administrator Login
+
+Administrator login validates the password outside write transactions, then locks and rereads the Account before issuing a session. A changed credential invalidates the verification snapshot; the current role and enabled state govern issuance. Administrator and Kakao logins share session issuance and the same session lifecycle policy. Current password encoding is salted PBKDF2-HMAC-SHA256 with 600,000 iterations. The user approved operator-only CLI provisioning on 2026-11-18: create a new account with an explicit MASTER/SUB role and reject duplicate login IDs without updating or reactivating existing accounts. Provisioning does not issue sessions or expose a public signup API. The user removed the Kakao-hosted authentication-failure lockout from requirements. Administrator login also has no failure-count account lockout.
+
+Treat login IDs and passwords as supplied, without case folding, trimming, or truncation. Unknown login
+IDs, incorrect passwords, and unsupported stored credential formats produce the same authentication failure;
+do not reveal which credential failed or replace existing credentials. Initial provisioning does not authorize
+password resets, role changes, reactivation, or deletion; their policies remain unresolved.
+
+### API Request Limits
+
+The user approved per-account API request limits on 2026-11-18: up to 30 refresh requests per 60 seconds for administrators and drivers across all sessions, and up to five driver registration/resubmission requests combined per 60 seconds. Count identifiable, authorized, input-valid requests before business execution, including subsequent business failures and successful idempotent replays. Refresh first verifies an active session and enabled account, then revalidates them under the existing transaction locks before rotation. Unknown or unusable refresh tokens keep the existing authentication error contract.
+
+Each bucket starts at its first counted request. Its expiry automatically releases the limit; blocked retries never extend it. Return 429 with the shared TOO_MANY_REQUESTS code and a positive Retry-After delay without revoking tokens or sessions. Use atomic database counters and database time across instances, committed independently of business rollback. Do not extend these limits to login, logout, read, review, withdrawal, or push APIs.
+
+Refresh and registration limits use independent buckets, and no bucket combines different accounts.
+Registration and resubmission share one bucket and are checked before NTS verification or business writes.
+Refresh identifies the account from the presented active Refresh Token; invalid or unusable tokens do not
+create an account bucket. Revalidation failures after counting remain counted. A limit response neither
+logs the user out nor blocks otherwise permitted reads or logout; the existing valid token may be used
+again after expiry of the limit window. Do not bypass the limits when counter storage is unavailable.
+
+### Driver Registration Persistence
+
+Generated Account, AuthSession, PushDevice, Driver, business/history/receipt/notification/delivery and WorkOrder keys use `Long` / `BIGINT` IDENTITY. Public account/driver identifiers are positive JSON integers; JWT account/session claims and FCM identifier data retain their required string representation. Installation IDs, provider member numbers, idempotency keys, hashes and delivery claims remain distinct business/technical identifiers. The user confirmed V12-V17 are unapplied; these branch migrations are updated together, preserving main V1-V11 unchanged.
+
+`Driver` embeds its personal profile as an immutable value object and owns a separate business-information record. Profile scalar fields are stored in `drivers`; specialties, regions and equipment collections reference `driver_id`, with no independent profile identity. Personal settlement accounts and tax-invoice email belong to the profile, not the business. Each authentication account has at most one Driver. Keep full submitted snapshots and review actors, reasons, timestamps, and application revisions in append-only history; resubmission retains the same Driver and Account IDs.
+
+Registration changes, review history, idempotency results, and notification publication intent commit together. Verify business information outside write transactions. The user confirmed on 2026-11-18 that registration and resubmission require a matching NTS business number, opening date, and representative name with CONTINUING operating status. Suspended and closed businesses cannot apply. Administrator name/business-name search uses partial matching.
+
+An input-stage business check does not create an application or grant approval. Changing any verified
+business identifier invalidates that preliminary result, and final registration/resubmission always verifies
+the submitted three-field identity again rather than trusting a client verification flag. NTS matching checks
+the supplied business information, not that the applicant personally is its representative. Distinguish an
+explicit mismatch or suspended/closed business from an unavailable or unconfigured verification service;
+neither outcome creates a registration. Optional business-name fields do not replace the three-field match.
+
+Successful idempotent replays reuse the stored result without repeating NTS verification; failed mutations
+do not become completed idempotency results. Idempotency-result retention/deletion periods remain unresolved. Administrator
+search is case-insensitive partial matching of worker or business names, with wildcard characters treated
+literally. Mask settlement-account numbers to the last four characters in administrator views.
+
+`operations.work` owns actual work records and implements the driver-owned `DriverWorkload` query contract. Assignment and withdrawal lock the authentication Account before the Driver. Database constraints allow at most one unfinished work per driver and request. Withdrawal checks real work before atomically changing membership, disabling authentication, and revoking all sessions and device bindings. Do not substitute an empty workload stub.
+
+`identity` owns session-bound push installations for both apps. Logout removes only the current session's bindings; deactivation removes all account bindings. Driver registration events target active administrator devices, and approval/rejection events target the applicant's devices. Persist per-device delivery claims and recover abandoned claims through database leases. Revalidate current registration revision, status, account/session access, and device ownership before sending. FCM provider acceptance is not proof of device receipt. Payloads contain identifiers, with original information obtained through authorized queries. Driver's explicit-failure retry policy remains undecided.
+
+Reception and driver share the global FCM HTTP v1 connection and transport. Driver retains its existing
+generic notification title/body alongside event/driver identifiers; reception remains data-only.
+After OAuth preparation, driver rechecks the delivery claim, lease, current registration and device-token
+binding before HTTP transmission. Cancellation records SKIPPED when the claim is still current; stale
+workers cannot overwrite another claim. Explicit provider failures remain terminal FAILED for driver;
+the transport integration does not introduce a new automatic retry policy. A driver delivery lease must
+exceed the shared FCM request timeout.
+
 ## Project Integration and Migration Policies
 
 | Area | Project policy |
 |---|---|
 | Internal AI authentication | Backend→AI uses `X-Internal-Api-Key` separately from user JWTs. Missing/invalid keys return 401; an authenticated service without permission receives 403. Secrets are managed through Infisical. |
+| Kakao authentication | Validate the SDK Access Token against Kakao and the configured numeric application ID before resolving an Account. The client returns only a verified SocialLogin and performs no database changes. Invalid credentials and provider unavailability remain distinct outcomes. |
 | Sensitive business data | Do not log internal keys, presigned URLs/signatures, FCM tokens, recording contents, or STT originals. Push carries resource identifiers; original contents require an authorized query. |
 | Migration versions | Begin at `V1` and allocate the next unused positive integer (`V2`, `V3`, ...). Do not use timestamp/date versions or renumber an applied migration. |
+| Main and identity/driver migration integration | Preserve main's V1-V11 unchanged. The identity/driver branch's unapplied V2-V7 are allocated V12-V17 in the same dependency order: accounts/sessions, driver registration, work orders, push devices, driver deliveries, and request limits. This renumbering is valid only because these branch migrations have not been applied; it is not a procedure for upgrading an already-applied branch history. |
 | Internal and external reception IDs | Generated primary keys and their internal references use Long/BIGINT with IDENTITY by default, following Persistence Conventions. At API/AI boundaries, format the numeric IDs as rec_{id}, file_rec_{id}, anl_{id}, and file_stt_{id}. AI treats these strings as opaque and returns them unchanged. Keep authenticated administrator resolution separate from external ID parsing; a parsed ID does not establish ownership. |
 | Existing string-key schema | V7 changes the unused V1-V6 key columns and their foreign-key references together, and adds a numeric device PK while preserving installation_id as a unique business identifier. It locks and checks all affected tables before changing types. If any existing rows are found, stop without deleting or inventing an ID mapping; a populated environment needs a separately reviewed migration. V1-V6 remain unchanged. |
 
@@ -192,7 +263,18 @@ When the driver changes, end the existing work as `CANCELLED` and create new wor
 | `REJECTED` | Registration rejected | `PENDING_APPROVAL` upon resubmission after business registration verification |
 | `WITHDRAWN` | Account withdrawn | Terminal state |
 
-Register an initial application that passes business registration verification as `PENDING_APPROVAL`. Account-specific access scopes follow [BR-02](#br-02).
+Register an initial application that passes business registration verification as `PENDING_APPROVAL`. Registration and resubmission accept only continuing businesses. Account-specific access scopes follow [BR-02](#br-02).
+
+Rejection requires a nonblank reason. Resubmission retains the same Driver and Account IDs, advances
+the application revision, and preserves earlier submitted snapshots and review actors/reasons/times.
+Review and membership changes must reject a stale version instead of overwriting a newer decision.
+Approval alone does not set availability to READY or create a work assignment.
+
+Withdrawal requires an active membership, explicit confirmation, and no unfinished work, including revisit
+or report-submission waiting. Commit WITHDRAWN, authentication-account deactivation, and revocation of all
+sessions/device bindings together. Preserve the Kakao link and registration/review/work history. Assignment
+and withdrawal cannot both succeed against incompatible membership/workload state. A withdrawn account
+cannot regain access by logging in again or creating a replacement authentication identity.
 
 ### Driver Availability and Workload
 
@@ -223,6 +305,36 @@ Calculate location usability at query or candidate-selection time. Use only `VAL
 
 Authentication and authorization mechanisms follow [Security Conventions](security-conventions.md). Apply BR-01 account and work state conditions to the operation-specific access scopes below.
 
+### Administrator Authentication
+
+Administrators authenticate using pre-provisioned IDs and passwords. Do not provide public administrator registration, MFA, or TOTP enrollment/verification. Successful ID/password authentication issues application credentials; operation-specific authorization remains required. The user confirmed that `MASTER` and `SUB` have identical business permissions. Preserve their role values for classification, and apply the same resource-access, business-state, and history-preservation rules to both. Neither role alone grants operating-system access to the provisioning CLI.
+
+### Authentication Sessions
+
+The following initial policies were confirmed on 2026-11-16. This section owns session behavior;
+implemented paths and payloads are defined by the generated OpenAPI, with the initial API design retained
+as a reference in [openapi.yaml](../../../docs/api/openapi.yaml).
+
+| Concern | Policy |
+|---|---|
+| Access Token | JWT; default lifetime 15 minutes, configurable |
+| Refresh Token | Cryptographically random; persist only its hash |
+| Session lifetime | Default 14 days from login; refresh never extends the session's absolute expiry |
+| Multiple devices | Allow independent sessions; a new login does not revoke existing sessions |
+| Refresh | Issue a new Access/Refresh Token pair and invalidate the consumed Refresh Token atomically |
+| Access Tokens after refresh | Previously issued Access Tokens retain their own expiry while the session stays active |
+| Concurrent refresh and token replay | Only one refresh using the same token succeeds; reject other uses with 401. Replay alone does not revoke the replacement token or other sessions |
+| Logout | Revoke only the session identified by the presented valid Refresh Token; immediately reject that session's previously issued Access Tokens |
+| Logout with an invalid, expired, or revoked token | Return 204 without affecting other sessions |
+| Account deactivation and driver withdrawal | Revoke all account sessions and prevent both existing Access Token use and refresh |
+
+Refresh rotation and token issuance either commit together or preserve the previously valid Refresh Token.
+If logout commits first in a refresh/logout race, refresh is rejected. If rotation commits first, logout with
+the consumed token has no effect on the replacement token or other sessions. Login, refresh, and logout
+validate their presented body credentials independently of an expired Access Token attached to the request.
+
+Authenticate every protected request against the current account and session state stored on the server. Do not rely solely on token claims or process-local memory. Identity owns authentication state; driver owns membership state. Driver withdrawal disables authentication and revokes all sessions through identity's public module API. Identity does not depend on driver internals; the app queries driver registration state separately after login. An authenticated identity does not itself grant access to driver business features.
+
 ### Driver Account Access
 
 | Account State | Permitted Access |
@@ -231,6 +343,15 @@ Authentication and authorization mechanisms follow [Security Conventions](securi
 | `REJECTED` | Own rejection reason, reapplication, and logout. Restrict normal service access until activation. |
 | `ACTIVATED` | Normal service use within the operation-specific access scopes and state conditions below |
 | `WITHDRAWN` | No login or normal service access |
+
+### Push Device Ownership
+
+Administrator and driver installations bind to the authenticated account and its current session, including
+pending/rejected applicants. An active installation cannot be taken over or removed by another account;
+its prior owner must release the binding before transfer. A registration token has only one active binding.
+Resolve current account/session/device access for each send, and conditionally invalidate only the rejected
+token binding so a delayed provider failure cannot revoke a replacement token. Revocation removes the
+stored token; logout affects only bindings of that session, while withdrawal/deactivation affects all bindings.
 
 ### Operation-Specific Access
 
@@ -245,7 +366,7 @@ Authentication and authorization mechanisms follow [Security Conventions](securi
 | Handover records | The new driver may read previous work records linked to the same service request. Do not grant permission to modify previous work or reports. |
 | Recordings and work photos | Consultation recording access is limited to the administrator owning the reception. Work photos follow the related service request/work access permissions. When attaching files, verify upload ownership and the corresponding intake/work linkage. |
 | STT originals and analysis attempts | Only the administrator owning the related reception may read its original transcript and analysis records. AI services do not obtain application-user access or direct Backend database access. |
-| Administrator push devices | Administrators may register and remove only their own installation bindings. Analysis notifications target the original recording uploader's currently registered devices, with current resource access revalidated before sending. |
+| Push devices | Administrators and drivers, including pending/rejected applicants, may register and remove only their own installation bindings. Analysis notifications target the original recording uploader's currently registered devices. Driver registration notifications target administrators, and review notifications target the applicant. Revalidate current resource access before sending. |
 
 Administrator access to retained records after driver withdrawal, and personal data retention and deletion, follow [UC-15](../../../docs/requirements/use-cases/uc-15-driver-account-withdrawal.md).
 

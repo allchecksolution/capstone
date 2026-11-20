@@ -3,12 +3,15 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+part 'driver_backend.dart';
+
 typedef ApiData = Map<String, dynamic>;
 
 class ServiceFailure implements Exception {
-  const ServiceFailure(this.status, this.message);
+  const ServiceFailure(this.status, this.message, {this.code});
   final int status;
   final String message;
+  final String? code;
   @override String toString() => message;
 }
 
@@ -20,7 +23,7 @@ abstract interface class FrontendBackend {
 }
 
 class HttpFrontendBackend implements FrontendBackend {
-  HttpFrontendBackend(this.baseUrl, {http.Client? client}) : _client = client ?? http.Client() {
+  HttpFrontendBackend(this.baseUrl, {http.Client? client, this.restAuth=false}) : _client = client ?? http.Client() {
     final uri = Uri.parse(baseUrl);
     if (uri.host.isEmpty || uri.userInfo.isNotEmpty || uri.hasQuery || uri.hasFragment ||
         (uri.scheme != 'https' && !(kDebugMode && uri.scheme == 'http' &&
@@ -29,6 +32,7 @@ class HttpFrontendBackend implements FrontendBackend {
     }
   }
   final String baseUrl;
+  final bool restAuth;
   final http.Client _client;
   String? _accessToken;
   String? _refreshToken;
@@ -40,7 +44,7 @@ class HttpFrontendBackend implements FrontendBackend {
   void close() { clearSession(); _client.close(); }
 
   @override Future<ApiData> call(String operation, [ApiData data = const {}]) => _request(operation,data);
-  Future<ApiData> _request(String operation, ApiData data, {bool allowRefresh=true}) async {
+  Future<ApiData> _request(String operation, ApiData data, {bool allowRefresh=true, String? path, String method='POST', Map<String,String> headers=const {}}) async {
     if (!RegExp(r'^[a-z][a-z0-9-]*(/[a-z][a-z0-9-]*)*$').hasMatch(operation)) {
       throw ArgumentError('Invalid API operation');
     }
@@ -48,11 +52,12 @@ class HttpFrontendBackend implements FrontendBackend {
     try {
       // An explicit operation API avoids sending writable client state or
       // trusting locally calculated approval/dispatch results on the server.
-      final request = http.Request('POST', Uri.parse('${baseUrl.replaceFirst(RegExp(r'/+$'), '')}/$operation'))
+      final target=path??(restAuth?switch(operation){'auth/kakao'=>'auth/sessions/kakao','auth/refresh'=>'auth/tokens/refresh','auth/logout'=>'auth/sessions/logout',_=>operation}:operation);
+      final request = http.Request(method, Uri.parse('${baseUrl.replaceFirst(RegExp(r'/+$'), '')}/$target'))
         ..followRedirects = false
-        ..headers.addAll({'Content-Type': 'application/json',
-          if (_accessToken != null) 'Authorization': 'Bearer $_accessToken'})
-        ..body = jsonEncode(data);
+        ..headers.addAll({'Content-Type': 'application/json',...headers,
+          if (_accessToken != null) 'Authorization': 'Bearer $_accessToken'});
+      if(method!='GET')request.body=jsonEncode(data);
       final response = await http.Response.fromStream(await _client.send(request)
         .timeout(const Duration(seconds: 15))).timeout(const Duration(seconds: 15));
       if (generation != _generation) throw const ServiceFailure(499, '요청이 취소되었습니다.');
@@ -62,17 +67,24 @@ class HttpFrontendBackend implements FrontendBackend {
             _refreshing??=_request('auth/refresh',{'refreshToken':_refreshToken},allowRefresh:false);
             await _refreshing;
           }finally{_refreshing=null;}
-          return await _request(operation,data,allowRefresh:false);
+          return await _request(operation,data,allowRefresh:false,path:path,method:method,headers:headers);
         }
         if (response.statusCode == 401) clearSession();
-        throw ServiceFailure(response.statusCode, switch(response.statusCode) {
+        String? code;
+        try{final error=jsonDecode(utf8.decode(response.bodyBytes));if(error is Map&&error['code'] is String)code=error['code'] as String;}catch(_){}
+        final businessMessage=switch(code){
+          'BUSINESS_INFO_INVALID'=>'사업자등록번호·개업일자·대표자명을 확인해 주세요. 계속사업자만 신청할 수 있습니다.',
+          'BUSINESS_VERIFICATION_UNAVAILABLE'=>'사업자 확인 서비스를 이용할 수 없습니다. 잠시 후 다시 시도해 주세요.',
+          _=>null,
+        };
+        throw ServiceFailure(response.statusCode, businessMessage??switch(response.statusCode) {
           401 => '인증이 만료되었습니다. 다시 로그인해 주세요.',
           403 => '이 작업에 접근할 권한이 없습니다.',
           404 || 410 => '요청이 삭제되었거나 만료되었습니다.',
           409 => '다른 사용자가 먼저 처리했습니다. 최신 상태를 확인해 주세요.',
           429 => '요청이 많습니다. 잠시 후 다시 시도해 주세요.',
           _ => '요청을 처리하지 못했습니다. 다시 시도해 주세요.',
-        });
+        },code:code);
       }
       if (response.body.isEmpty) return {};
       final decoded = jsonDecode(utf8.decode(response.bodyBytes));

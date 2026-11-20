@@ -421,7 +421,7 @@ for name in ["ReportData", "SubmitReport"]:
 device = backend["paths"]["/push-devices/{installationId}"]
 record("device upsert and delete", set(device) == {"put", "delete"})
 for operation in device.values():
-    record("device administrator authorization", operation["x-roles"] == ["ADMIN"])
+    record("device administrator and driver authorization", operation["x-roles"] == ["ADMIN", "DRIVER"])
     record("device setters no idempotency key", not any(
         parameter.get("$ref", "").endswith("/IdempotencyKey") for parameter in operation.get("parameters", [])))
 case(backend, "PushDeviceRegistration", {"platform": "ANDROID", "pushToken": "example-token"})
