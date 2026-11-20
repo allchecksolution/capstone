@@ -56,12 +56,18 @@ class GlobalExceptionHandler : ResponseEntityExceptionHandler() {
         val errorCode = exception.errorCode
         log.info("Business exception: code={}", errorCode.name)
 
-        val response = ResponseEntity.status(errorCode.status)
-        if (exception is RequestLimitExceededException) {
-            response.header(HttpHeaders.RETRY_AFTER, exception.retryAfterSeconds.toString())
-                .header(HttpHeaders.CACHE_CONTROL, "no-store")
-        }
-        return response
+        return ResponseEntity.status(errorCode.status)
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(ErrorResponse.from(errorCode))
+    }
+
+    @ExceptionHandler(RequestLimitExceededException::class)
+    fun handleRequestLimitExceeded(exception: RequestLimitExceededException): ResponseEntity<ErrorResponse> {
+        val errorCode = exception.errorCode
+        log.info("Request limit exceeded: code={}", errorCode.name)
+        return ResponseEntity.status(errorCode.status)
+            .header(HttpHeaders.RETRY_AFTER, exception.retryAfterSeconds.toString())
+            .header(HttpHeaders.CACHE_CONTROL, "no-store")
             .contentType(MediaType.APPLICATION_JSON)
             .body(ErrorResponse.from(errorCode))
     }
