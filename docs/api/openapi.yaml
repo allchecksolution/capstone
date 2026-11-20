@@ -3998,7 +3998,7 @@ paths:
     get:
       operationId: getMyAvailability
       summary: 내 작업 가능 상태 조회
-      description: 기사가 현재 대기(READY)인지 휴식(UNAVAILABLE)인지 확인한다(UC-09 기본 흐름 1). 계정이 ACTIVATED가 아니면 저장된 값과 무관하게 신규 배차 대상이 아니다.
+      description: 기사가 현재 대기(READY)인지 휴식(UNAVAILABLE)인지 확인한다(UC-09 기본 흐름 1). 활성 기사가 처음 조회할 때 기본값은 UNAVAILABLE이다. 활성 계정만 조회할 수 있다.
       tags:
         - Drivers
       x-business-rules:
@@ -4064,7 +4064,7 @@ paths:
         작업 가능(READY) 상태의 기사 앱이 주기적으로 현재 위치를 보낸다. 서버는 최신 위치와 마지막 갱신 시각을 관리해 VALID, STALE(유효시간 초과), MISSING(위치 없음)을 구분하며
         VALID인 위치만 거리 기반 후보 선별에 쓴다. 위치 권한이 없거나 위치를 얻지 못하면 좌표 대신 issue를 보내 서버가 이 상태를 식별하게 한다(FR-06 7). 휴식(UNAVAILABLE) 중에는
         앱이 전송을 멈출 수 있다. 같은 요청을 반복해도 결과가 같으므로 Idempotency-Key를 요구하지 않는다. 위치정보는 업무상 필요한 사용자만 접근할 수 있고 로그에 남기지 않는다.
-        갱신 주기와 유효시간 수치는 미결정이다.
+        위치 유효시간은 기본 5분이다. 더 오래되거나 같은 시각의 보고는 최신 상태를 덮어쓰지 않는다. 서버 시각보다 미래인 보고는 거부한다.
       tags:
         - Drivers
       x-business-rules:
@@ -4102,7 +4102,6 @@ paths:
         "401": {$ref: "#/components/responses/Unauthorized"}
         "403": {$ref: "#/components/responses/Forbidden"}
         "400": {$ref: "#/components/responses/ValidationFailed"}
-        "429": {$ref: "#/components/responses/TooManyRequests"}
         "503": {$ref: "#/components/responses/ServiceUnavailable"}
   /drivers/me/dispatch-offers:
     get:
