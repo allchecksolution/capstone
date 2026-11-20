@@ -1,8 +1,8 @@
 package com.allcheck.reception.application.notification
 
 import com.allcheck.global.notification.FcmConnection
-import com.allcheck.reception.ReceptionPushBinding
-import com.allcheck.reception.ReceptionPushDevices
+import com.allcheck.identity.PushDeviceOperations
+import com.allcheck.identity.PushTarget
 import com.allcheck.reception.application.analysis.ReceptionAnalysisTransactions
 import com.allcheck.reception.application.recording.ReceptionRecordingTransactions
 import com.allcheck.reception.application.recording.RecordingUploadMetadata
@@ -76,6 +76,8 @@ class ReceptionPushIntegrationTest @Autowired constructor(
     fun resetExternalState() {
         clock.now.set(NOW)
         clock.barrier = null
+        devices.activeAdministrators.clear()
+        devices.activeAdministrators.addAll(listOf(1L, 2L))
         devices.bindings.clear()
         devices.invalidated.clear()
         oauthHook = null
@@ -87,9 +89,9 @@ class ReceptionPushIntegrationTest @Autowired constructor(
     fun `현재 업로더의 기기에만 발송하고 재확장과 재호출은 중복 전송하지 않는다`() {
         // given
         val source = event(success = true)
-        devices.bindings["device-a"] = Binding(1, "test-token-a")
-        devices.bindings["device-b"] = Binding(1, "test-token-b")
-        devices.bindings["other-owner"] = Binding(2, "test-other-token")
+        devices.bind("device-a", 1, "test-token-a")
+        devices.bind("device-b", 1, "test-token-b")
+        devices.bind("other-owner", 2, "test-other-token")
 
         // when
         sender.expand(PendingPushEvent(source.eventId, 1))
@@ -189,7 +191,7 @@ class ReceptionPushIntegrationTest @Autowired constructor(
         val id = target(event())
         replies.add(Reply(503))
         sender.send(id, TTL)
-        devices.bindings["device-a"] = Binding(2, "test-token-rebound")
+        devices.bind("device-a", 2, "test-token-rebound")
         clock.now.set(NOW.plusSeconds(60))
 
         // when
@@ -233,7 +235,7 @@ class ReceptionPushIntegrationTest @Autowired constructor(
     fun `인증 준비 중 토큰이 갱신되면 이전 토큰을 보내지 않고 다음 시도에 최신 토큰을 사용한다`() {
         // given
         val id = target(event())
-        oauthHook = { devices.bindings["device-a"] = Binding(1, "test-rotated-token") }
+        oauthHook = { devices.bind("device-a", 1, "test-rotated-token", bindingVersion = 1) }
 
         // when
         sender.send(id, TTL)
@@ -245,6 +247,21 @@ class ReceptionPushIntegrationTest @Autowired constructor(
         // then
         assertThat(deliveries.findById(id).orElseThrow().status).isEqualTo("PROVIDER_ACCEPTED")
         assertThat(mapper.readTree(requests.single()).path("message").path("token").asString()).isEqualTo("test-rotated-token")
+    }
+
+    @Test
+    fun `인증 준비 중 관리자가 비활성화되면 기기 연결이 있어도 발송을 생략한다`() {
+        // given
+        val id = target(event())
+        oauthHook = { devices.activeAdministrators.remove(1L) }
+
+        // when
+        sender.send(id, TTL)
+
+        // then
+        assertThat(deliveries.findById(id).orElseThrow().status).isEqualTo("SKIPPED")
+        assertThat(devices.bindings).containsKey("device-a")
+        assertThat(requests).isEmpty()
     }
 
     @Test
@@ -272,7 +289,7 @@ class ReceptionPushIntegrationTest @Autowired constructor(
     fun `동시 이벤트 확장과 발송 요청은 하나의 기기 행과 한 번의 원격 호출만 커밋한다`() {
         // given
         val source = event()
-        devices.bindings["device-a"] = Binding(1, "test-token-a")
+        devices.bind("device-a", 1, "test-token-a")
 
         // when
         val expanded = concurrently { sender.expand(PendingPushEvent(source.eventId, 1)) }
@@ -291,7 +308,7 @@ class ReceptionPushIntegrationTest @Autowired constructor(
     fun `현재 접수 접근 문맥을 잃은 이벤트와 수신 기기 없는 이벤트는 발송 없이 종료한다`() {
         // given
         val stale = event()
-        devices.bindings["device-a"] = Binding(1, "test-token-a")
+        devices.bind("device-a", 1, "test-token-a")
         JdbcTemplate(dataSource).update("UPDATE receptions SET latest_analysis_request_id=NULL WHERE reception_id=?", stale.receptionId)
 
         // when
@@ -308,7 +325,7 @@ class ReceptionPushIntegrationTest @Autowired constructor(
     }
 
     private fun target(source: Source): Long {
-        devices.bindings["device-a"] = Binding(1, "test-token-a")
+        devices.bind("device-a", 1, "test-token-a")
         sender.expand(PendingPushEvent(source.eventId, 1))
         return checkNotNull(deliveries.findAllByEventId(source.eventId).single().deliveryId)
     }
@@ -357,18 +374,24 @@ class ReceptionPushIntegrationTest @Autowired constructor(
     }
 
     data class Source(val eventId: Long, val receptionId: Long, val analysisId: Long)
-    data class Binding(val adminId: Long, val token: String)
     data class Reply(val status: Int, val retryAfter: String? = null, val unregistered: Boolean = false)
 
-    class Devices : ReceptionPushDevices {
-        val bindings = ConcurrentHashMap<String, Binding>()
+    class Devices : PushDeviceOperations {
+        val activeAdministrators = ConcurrentHashMap.newKeySet<Long>()
+        val bindings = ConcurrentHashMap<String, PushTarget>()
         val invalidated = CopyOnWriteArrayList<String>()
-        override fun activeInstallations(adminId: Long) = bindings.filterValues { it.adminId == adminId }.keys.toList()
-        override fun currentBinding(adminId: Long, installationId: String) = bindings[installationId]?.takeIf { it.adminId == adminId }?.let { ReceptionPushBinding(it.token, 0) }
-        override fun invalidateBinding(adminId: Long, installationId: String, rejected: ReceptionPushBinding) {
-            bindings.computeIfPresent(installationId) { _, value ->
-                if (value.adminId == adminId && value.token == rejected.token) {
-                    invalidated.add(installationId)
+        fun bind(installationId: String, accountId: Long, token: String, bindingVersion: Long = 0) {
+            bindings[installationId] = PushTarget(accountId, installationId, token, tokenHash = token, bindingVersion = bindingVersion)
+        }
+
+        override fun activeAdminAccountIds() = activeAdministrators.toList()
+        override fun isActiveAdministrator(accountId: Long) = accountId in activeAdministrators
+        override fun activeDevices(accountIds: Collection<Long>) = bindings.values.filter { it.accountId in accountIds }
+        override fun currentDevice(installationId: String, accountId: Long) = bindings[installationId]?.takeIf { it.accountId == accountId }
+        override fun invalidate(target: PushTarget) {
+            bindings.computeIfPresent(target.installationId) { _, value ->
+                if (value.sameBinding(target)) {
+                    invalidated.add(target.installationId)
                     null
                 } else {
                     value
@@ -398,7 +421,7 @@ class ReceptionPushIntegrationTest @Autowired constructor(
         fun pushClock(): Clock = clock
 
         @Bean @Primary
-        fun pushDevices(): ReceptionPushDevices = devices
+        fun pushDevices(): PushDeviceOperations = devices
 
         @Bean(destroyMethod = "close")
         fun fakeFcmConnection(): FcmConnection {

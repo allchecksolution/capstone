@@ -5,6 +5,7 @@ import com.allcheck.global.notification.FcmConnection
 import com.allcheck.global.security.principal.AuthPrincipal
 import com.allcheck.global.storage.SignedObjectUrl
 import com.allcheck.identity.AdminRole
+import com.allcheck.identity.PushTarget
 import com.allcheck.identity.UserType
 import com.allcheck.operations.coordination.application.OperationsPhotos
 import com.allcheck.operations.coordination.application.OperationsQueries
@@ -555,9 +556,10 @@ class OperationsIntegrationTest @Autowired constructor(
         // given: FCM 호출은 루프백 테스트 서버로만 전송한다.
         val driver = OperationsActor(ActorRole.DRIVER, 10)
         val administratorTwo = OperationsActor(ActorRole.ADMIN, 2)
-        pushFixture.bindings[driver] = mapOf("driver-device" to PushBinding("test-driver-token", "v1"))
-        pushFixture.bindings[admin] = mapOf("admin-one" to PushBinding("test-admin-one", "v1"))
-        pushFixture.bindings[administratorTwo] = mapOf("admin-two-a" to PushBinding("test-admin-two-a", "v1"), "admin-two-b" to PushBinding("test-admin-two-b", "v1"))
+        pushFixture.bind(driver, "driver-device", "test-driver-token")
+        pushFixture.bind(admin, "admin-one", "test-admin-one")
+        pushFixture.bind(administratorTwo, "admin-two-a", "test-admin-two-a")
+        pushFixture.bind(administratorTwo, "admin-two-b", "test-admin-two-b")
         val request = registered()
         worker.tick()
         assertThat(pushFixture.messages).hasSize(1)
@@ -584,7 +586,7 @@ class OperationsIntegrationTest @Autowired constructor(
         search(listOf(profile(10)))
         val work = accept(request, 10)
         transactions.cancel(OperationsActor(ActorRole.DRIVER, 10), work, "cancel", 1, CancellationReason.OTHER, "재일정")
-        pushFixture.bindings[admin] = mapOf("admin-one" to PushBinding("test-admin-one", "v1"))
+        pushFixture.bind(admin, "admin-one", "test-admin-one")
         val waiting = requests.get(request)
         transactions.decide(admin, request, "cancel-request", waiting.version, checkNotNull(waiting.followUpTarget), FollowUpChoice.CANCEL_REQUEST)
         // when
@@ -749,7 +751,7 @@ class OperationsIntegrationTest @Autowired constructor(
     class PushFixture :
         OperationsPushDevices,
         AutoCloseable {
-        val bindings = java.util.concurrent.ConcurrentHashMap<OperationsActor, Map<String, PushBinding>>()
+        val bindings = java.util.concurrent.ConcurrentHashMap<OperationsActor, Map<String, PushTarget>>()
         val messages = CopyOnWriteArrayList<Pair<String, Map<String, String>>>()
         private val mapper = JsonMapper.builder().build()
         private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
@@ -765,11 +767,17 @@ class OperationsIntegrationTest @Autowired constructor(
             start()
         }
         fun connection() = FcmConnection("operations-test", RestClient.builder().baseUrl("http://127.0.0.1:${server.address.port}").build(), { "test-oauth" })
+        fun bind(actor: OperationsActor, installationId: String, token: String) {
+            val target = PushTarget(actor.id, installationId, token, tokenHash = token, bindingVersion = 1)
+            bindings.compute(actor) { _, entries -> entries.orEmpty() + (installationId to target) }
+        }
         override fun installations(actor: OperationsActor) = bindings[actor]?.keys?.toList().orEmpty()
         override fun administrators() = listOf(1L, 2L)
         override fun current(actor: OperationsActor, installationId: String) = bindings[actor]?.get(installationId)
-        override fun invalidateIfCurrent(actor: OperationsActor, installationId: String, binding: PushBinding) {
-            bindings.computeIfPresent(actor) { _, entries -> if (entries[installationId] == binding) entries.minus(installationId) else entries }
+        override fun invalidateIfCurrent(actor: OperationsActor, target: PushTarget) {
+            bindings.computeIfPresent(actor) { _, entries ->
+                if (entries[target.installationId]?.sameBinding(target) == true) entries - target.installationId else entries
+            }
         }
         override fun close() {
             server.stop(0)

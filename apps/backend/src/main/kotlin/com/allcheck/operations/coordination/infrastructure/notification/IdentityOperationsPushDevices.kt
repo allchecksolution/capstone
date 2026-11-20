@@ -2,10 +2,10 @@ package com.allcheck.operations.coordination.infrastructure.notification
 
 import com.allcheck.driver.DriverOperations
 import com.allcheck.identity.PushDeviceOperations
+import com.allcheck.identity.PushTarget
 import com.allcheck.operations.ActorRole
 import com.allcheck.operations.OperationsActor
 import com.allcheck.operations.OperationsPushDevices
-import com.allcheck.operations.PushBinding
 import org.springframework.stereotype.Component
 
 @Component
@@ -20,15 +20,13 @@ class IdentityOperationsPushDevices(
 
     override fun administrators(): List<Long> = devices.activeAdminAccountIds()
 
-    override fun current(actor: OperationsActor, installationId: String): PushBinding? {
+    override fun current(actor: OperationsActor, installationId: String): PushTarget? {
         val accountId = accountId(actor) ?: return null
-        return devices.currentDevice(installationId, accountId)?.let { PushBinding(it.token, it.bindingVersion.toString()) }
+        return devices.currentDevice(installationId, accountId)
     }
 
-    override fun invalidateIfCurrent(actor: OperationsActor, installationId: String, binding: PushBinding) {
-        val accountId = accountId(actor) ?: return
-        val target = devices.currentDevice(installationId, accountId) ?: return
-        if (target.bindingVersion.toString() == binding.version && target.token == binding.token) devices.invalidate(target)
+    override fun invalidateIfCurrent(actor: OperationsActor, target: PushTarget) {
+        if (current(actor, target.installationId)?.sameBinding(target) == true) devices.invalidate(target)
     }
 
     private fun accountId(actor: OperationsActor): Long? = when (actor.role) {

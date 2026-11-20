@@ -595,10 +595,9 @@ New transcript rows require the unchanged nonblank text, its reception/recording
 
 ### Reception Completion Push
 
-- The Identity module owns administrator/device registration. `ReceptionPushDevices` supplies active installations,
-  resolves the current owned token at send time, and conditionally invalidates only the rejected token.
-  Reception does not read or mutate Identity's device table directly. An adapter and configured FCM project/ADC
-  credentials are required before enabling the push worker; no default user-ID/token inference is provided.
+- The Identity module owns administrator/device registration. Reception checks the administrator's active
+  status, resolves current device bindings, and conditionally invalidates a rejected binding through
+  `PushDeviceOperations`. The push worker requires a configured FCM project and ADC credentials.
 - Send only the four string fields eventId, eventType, receptionId, and analysisRequestId through FCM HTTP v1.
   Record PROVIDER_ACCEPTED separately from device receipt/viewing, and never put originals, contact details,
   signed URLs, device tokens, or OAuth credentials in delivery/event payload storage or logs.

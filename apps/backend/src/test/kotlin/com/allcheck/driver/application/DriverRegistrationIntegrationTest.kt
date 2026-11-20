@@ -636,11 +636,11 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
         mvc.perform(delete("/api/v1/push-devices/$installation").header(HttpHeaders.AUTHORIZATION, actor.header)).andExpect(status().isNoContent)
         assertThat(operationsDevices.current(recipient, installation)).isNull()
         registerDevice(actor, installation, token)
-        operationsDevices.invalidateIfCurrent(recipient, installation, previous)
+        operationsDevices.invalidateIfCurrent(recipient, previous)
 
         // then
         val rebound = checkNotNull(operationsDevices.current(recipient, installation))
-        assertThat(rebound.version).isNotEqualTo(previous.version)
+        assertThat(rebound.bindingVersion).isNotEqualTo(previous.bindingVersion)
         mvc.perform(
             post("/api/v1/auth/sessions/logout").contentType(MediaType.APPLICATION_JSON)
                 .content(mapper.writeValueAsString(mapOf("refreshToken" to actor.refreshToken))),

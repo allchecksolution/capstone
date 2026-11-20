@@ -92,7 +92,7 @@ and `HeadObject` with checksum mode enabled. A missing object or invalid/missing
 `FILE_UPLOAD_NOT_VERIFIED`; S3 permission/service failures are a safe 503 `RECORDING_STORAGE_UNAVAILABLE`.
 New uploads require a WAV filename and one of its four documented MIME aliases. A conditional range GET of the first 12 bytes verifies the WAVE container signature; it is not a full audio decoder or duration measurement. The AI service still validates decodability. Maximum size/duration and supported codec constraints are not inferred or imposed without a decision.
 
-Actual AWS/AI network verification, the Identity push-device adapter, Firebase credentials, and retention/cleanup remain deployment/integration work. Local integration tests use offline S3 signing and a loopback AI HTTP server.
+Actual AWS/AI network verification, Firebase credentials, and retention/cleanup remain deployment/integration work. Local integration tests use offline S3 signing and a loopback AI HTTP server.
 
 The unchanged original filename is sufficient input for server-side contact extraction. Parsing it on Backend
 keeps platform behavior consistent; parsing the random S3 key is impossible, and copying the name to S3 metadata
@@ -118,8 +118,8 @@ FCM uses Google Application Default Credentials (for example a runtime-mounted s
 by GOOGLE_APPLICATION_CREDENTIALS); secrets are not stored in YAML, Terraform outputs, database rows, or Git.
 
 To activate transport, set FCM_ENABLED=true, FCM_PROJECT_ID, FCM_CONNECT_TIMEOUT, and FCM_REQUEST_TIMEOUT.
-To activate the reception worker, also provide the Identity implementation of ReceptionPushDevices and set
-RECEPTION_PUSH_ENABLED=true, RECEPTION_PUSH_POLL_INTERVAL, and RECEPTION_PUSH_CLAIM_TTL. The claim TTL
+The reception worker uses Identity's `PushDeviceOperations` to resolve active administrator installations.
+Set RECEPTION_PUSH_ENABLED=true, RECEPTION_PUSH_POLL_INTERVAL, and RECEPTION_PUSH_CLAIM_TTL. The claim TTL
 must exceed the request timeout. These runtime durations remain explicit deployment choices.
 Retries default to three total attempts with one-minute base backoff; Retry-After can extend the delay.
 A dedicated one-thread executor keeps remote sends off the scheduler/DB transaction, with durable pending work
@@ -189,7 +189,7 @@ Runtime activation requires the following, in addition to the existing JWT and s
 | Database | PostgreSQL 17 with PostGIS. V12 installs the extension in public if absent; provision it beforehand when the migration role lacks extension permission. Unmapped legacy photo references stop V12 without deleting data or guessing new work IDs. Local Compose uses the official PostGIS image with amd64 emulation on Apple Silicon. Existing data volumes are not reset. |
 | Geocoding | `OPERATIONS_SGIS_ENABLED=true`, `OPERATIONS_SGIS_SERVICE_ID`, `OPERATIONS_SGIS_SECRET`, `OPERATIONS_SGIS_CONNECT_TIMEOUT`, `OPERATIONS_SGIS_REQUEST_TIMEOUT`, and the provider's required usage permission. A single complete building-level match is converted from EPSG:5179 to WGS84 in PostGIS; missing/ambiguous results do not create a request or alter reception confirmation. |
 | Photos | `S3_ENABLED=true`, the shared S3 settings/credentials, and private `OPERATIONS_PHOTO_BUCKET` with PUT/HEAD/GET and checksum permissions. Upload/access TTLs default to 15m/10m and are configurable with `OPERATIONS_PHOTO_UPLOAD_URL_TTL` / `OPERATIONS_PHOTO_ACCESS_URL_TTL`. No bucket or public ACL is created by application startup. |
-| Worker | `OPERATIONS_WORKER_ENABLED=true` requires a push device integration and an enabled FCM connection. The driver adapter is required by the application. `OPERATIONS_WORKER_LEASE` defaults to 60s and `OPERATIONS_WORKER_POLL_INTERVAL` to 1s. Configure integration timeouts within the lease and measure production capacity. |
+| Worker | `OPERATIONS_WORKER_ENABLED=true` requires an enabled FCM connection. The driver and push device adapters are required application dependencies. `OPERATIONS_WORKER_LEASE` defaults to 60s and `OPERATIONS_WORKER_POLL_INTERVAL` to 1s. Configure integration timeouts within the lease and measure production capacity. |
 | Dispatch | `OPERATIONS_OFFER_LIFETIME` defaults to 1m. Search and driver-device transient retries use three total attempts with 5s/10s delays. A longer provider Retry-After is honored only within offer expiry. |
 | Administrator push | `OPERATIONS_ADMIN_PUSH_MAX_ATTEMPTS` defaults to 3; `OPERATIONS_ADMIN_PUSH_RETRY_DELAY` to 1m. Device resolution revalidates current authorization and binding; only the current unresolved follow-up target may be sent. |
 

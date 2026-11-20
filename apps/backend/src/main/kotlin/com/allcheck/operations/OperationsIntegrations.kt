@@ -1,5 +1,6 @@
 package com.allcheck.operations
 
+import com.allcheck.identity.PushTarget
 import java.time.Duration
 import java.time.Instant
 
@@ -43,10 +44,6 @@ interface OperationsGeocoder {
 interface OperationsPushDevices {
     fun installations(actor: OperationsActor): List<String>
     fun administrators(): List<Long>
-    fun current(actor: OperationsActor, installationId: String): PushBinding?
-    fun invalidateIfCurrent(actor: OperationsActor, installationId: String, binding: PushBinding)
-}
-
-data class PushBinding(val token: String, val version: String) {
-    override fun toString(): String = "PushBinding(version=$version)"
+    fun current(actor: OperationsActor, installationId: String): PushTarget?
+    fun invalidateIfCurrent(actor: OperationsActor, target: PushTarget)
 }

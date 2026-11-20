@@ -22,7 +22,7 @@ import org.springframework.stereotype.Component
 class OperationsWorker(
     private val transactions: OperationsTaskTransactions,
     private val drivers: OperationsDrivers,
-    private val devices: ObjectProvider<OperationsPushDevices>,
+    private val devices: OperationsPushDevices,
     private val fcm: FcmClient,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -68,14 +68,9 @@ class OperationsWorker(
         transactions.searched(claim, candidates)
     }
     private fun expand(claim: TaskClaim) {
-        val bridge = devices.ifAvailable
-        if (bridge == null) {
-            transactions.expanded(claim, null)
-            return
-        }
         val recipients = try {
-            val actors = if (claim.kind == TaskKind.EXPAND_OFFER) listOf(transactions.offerActor(claim)) else bridge.administrators().distinct().map { OperationsActor(ActorRole.ADMIN, it) }
-            actors.flatMap { actor -> bridge.installations(actor).distinct().map { PushRecipient(actor, it) } }
+            val actors = if (claim.kind == TaskKind.EXPAND_OFFER) listOf(transactions.offerActor(claim)) else devices.administrators().distinct().map { OperationsActor(ActorRole.ADMIN, it) }
+            actors.flatMap { actor -> devices.installations(actor).distinct().map { PushRecipient(actor, it) } }
         } catch (_: Exception) {
             transactions.expanded(claim, null)
             return
@@ -85,26 +80,23 @@ class OperationsWorker(
     private fun push(claim: TaskClaim) {
         val actor = checkNotNull(claim.actor)
         val installation = checkNotNull(claim.installation)
-        val bridge = devices.ifAvailable
-        if (bridge == null) {
-            transactions.delivered(claim, false, true)
-            return
-        }
-        val binding = try {
-            bridge.current(actor, installation)
+        val target = try {
+            devices.current(actor, installation)
         } catch (_: Exception) {
             transactions.delivered(claim, false, true)
             return
         }
-        if (binding == null) {
+        if (target == null) {
             transactions.delivered(claim, false)
             return
         }
         try {
-            fcm.send(binding.token, transactions.payload(claim)) { transactions.valid(claim) && bridge.current(actor, installation) == binding }
+            fcm.send(target.token, transactions.payload(claim)) {
+                transactions.valid(claim) && devices.current(actor, installation)?.sameBinding(target) == true
+            }
             transactions.delivered(claim, true)
         } catch (failure: FcmException) {
-            if (failure.failure == FcmFailure.UNREGISTERED) runCatching { bridge.invalidateIfCurrent(actor, installation, binding) }
+            if (failure.failure == FcmFailure.UNREGISTERED) runCatching { devices.invalidateIfCurrent(actor, target) }
             transactions.delivered(claim, false, failure.failure.retryable || failure.failure == FcmFailure.CANCELLED, failure.retryAfter)
         } catch (_: Exception) {
             transactions.delivered(claim, false, true)
@@ -117,13 +109,10 @@ class OperationsWorker(
 @ConditionalOnProperty(name = ["operations.worker.enabled"], havingValue = "true")
 class OperationsWorkerSchedule(
     private val worker: OperationsWorker,
-    devices: ObjectProvider<OperationsPushDevices>,
     fcm: ObjectProvider<FcmConnection>,
 ) {
     init {
-        require(devices.ifAvailable != null && fcm.ifAvailable != null) {
-            "Operations worker requires a push device integration and an enabled FCM connection."
-        }
+        require(fcm.ifAvailable != null) { "Operations worker requires an enabled FCM connection." }
     }
 
     @Scheduled(fixedDelayString = "\${operations.worker.poll-interval:1s}")
