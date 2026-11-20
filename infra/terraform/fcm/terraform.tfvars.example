@@ -1,0 +1,12 @@
+# Create a DEVELOPMENT project in the Firebase console, then copy to dev.tfvars.
+# Replace this placeholder with its exact project ID before any plan/apply.
+project_id = "replace-with-firebase-project"
+
+# Explicitly list developers who may send messages through the sender account.
+# Empty by default; no public, automatic or organization-wide developer grants.
+# developer_members = ["user:developer@example.com"]
+
+# Optional: change before first creation if the default ID is unsuitable.
+# sender_account_id = "allcheck-dev-fcm"
+
+# Do not put service-account private keys, OAuth tokens or device tokens here.

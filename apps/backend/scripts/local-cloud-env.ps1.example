@@ -1,0 +1,34 @@
+# Copy to a private file outside the repository, fill in the values, then dot-source
+# it in the PowerShell session that runs .\gradlew.bat bootRun.
+# This file sets environment variables only; it does not log in or create resources.
+
+$env:SPRING_PROFILES_ACTIVE = 'local'
+
+# Enable only after creating the bucket and preparing AWS runtime credentials.
+$env:S3_ENABLED = 'false'
+$env:S3_REGION = ''
+$env:RECEPTION_RECORDING_BUCKET = ''
+$env:S3_REQUEST_TIMEOUT = '10s' # Development example, not a production deadline.
+# $env:AWS_PROFILE = '<backend-runtime-profile>'
+# AWS credentials must be supplied externally. Do not paste access keys here.
+
+# Enable only after preparing the Firebase project, sender permissions and ADC.
+$env:FCM_ENABLED = 'false'
+$env:FCM_PROJECT_ID = ''
+$env:FCM_CONNECT_TIMEOUT = '3s'
+$env:FCM_REQUEST_TIMEOUT = '10s'
+# With a separately prepared service-account/credential configuration file:
+# $env:GOOGLE_APPLICATION_CREDENTIALS = '<absolute-path-outside-repository>'
+# With gcloud local ADC, this environment variable should be unset.
+
+# FCM transport and the reception delivery worker are separate switches.
+$env:RECEPTION_PUSH_ENABLED = 'false'
+$env:RECEPTION_PUSH_POLL_INTERVAL = '5s'
+$env:RECEPTION_PUSH_CLAIM_TTL = '1m' # Must exceed FCM_REQUEST_TIMEOUT.
+
+# AI execution is a separate integration; leave it disabled in this scaffold.
+$env:RECEPTION_AI_ENABLED = 'false'
+$env:RECEPTION_WORKER_ENABLED = 'false'
+
+# Configure PostgreSQL and JWT_SECRET separately before starting the backend.
+# Never commit credentials, JWT keys, device tokens or presigned URLs.
