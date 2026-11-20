@@ -3,7 +3,7 @@ package com.allcheck.operations.coordination.application
 import com.allcheck.operations.ActorRole
 import com.allcheck.operations.CandidateContext
 import com.allcheck.operations.DeliveryStatus
-import com.allcheck.operations.DriverAvailability
+import com.allcheck.operations.DriverCandidate
 import com.allcheck.operations.FollowUpTarget
 import com.allcheck.operations.OfferStatus
 import com.allcheck.operations.OperationsActor
@@ -64,7 +64,7 @@ class OperationsTaskTransactions(
     fun payload(claim: TaskClaim): Map<String, String> = if (claim.kind == TaskKind.PUSH_OFFER) mapOf("eventType" to "DISPATCH_OFFER", "offerId" to "offer_${claim.subjectId}", "requestId" to "req_${claim.requestId}") else mapOf("eventType" to "FOLLOW_UP_REQUIRED", "requestId" to "req_${claim.requestId}")
 
     @Transactional
-    fun searched(claim: TaskClaim, candidates: List<DriverAvailability>?, retryable: Boolean = true) {
+    fun searched(claim: TaskClaim, candidates: List<DriverCandidate>?, retryable: Boolean = true) {
         val task = locked(claim) ?: return
         if (!relevant(task)) {
             task.cancel()
@@ -82,7 +82,7 @@ class OperationsTaskTransactions(
         }
         val context = searchContext(claim)
         val excluded = works.excluded(task.requestId)
-        val eligible = candidates.distinctBy { it.driverId }.filter { it.eligible(context) && it.driverId !in excluded }
+        val eligible = candidates.distinctBy { it.driverId }.filter { it.hasValidLocationAt(context.observedAt) && it.driverId !in excluded }
         val distances = spatial.within(context.site, context.radiusKm, eligible)
         // 조회 시점 이후 새 작업을 맡은 기사도 제외한다. 최종 수락에서는 다시 검사한다.
         val occupied = works.occupiedDrivers(distances.keys)

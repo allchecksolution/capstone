@@ -1,6 +1,6 @@
 package com.allcheck.operations.infrastructure.geo
 
-import com.allcheck.operations.DriverAvailability
+import com.allcheck.operations.DriverCandidate
 import com.allcheck.operations.SiteCoordinates
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Component
@@ -10,7 +10,7 @@ import tools.jackson.databind.json.JsonMapper
 @Component
 class OperationsSpatial(private val jdbc: JdbcTemplate) {
     private val mapper = JsonMapper.builder().build()
-    fun within(site: SiteCoordinates, radiusKm: Int, drivers: List<DriverAvailability>): Map<Long, Double> {
+    fun within(site: SiteCoordinates, radiusKm: Int, drivers: List<DriverCandidate>): Map<Long, Double> {
         if (drivers.isEmpty()) return emptyMap()
         val input = mapper.writeValueAsString(drivers.map { mapOf("id" to it.driverId, "lon" to it.longitude, "lat" to it.latitude) })
         return jdbc.query(

@@ -21,7 +21,7 @@ import org.springframework.stereotype.Component
 @Component
 class OperationsWorker(
     private val transactions: OperationsTaskTransactions,
-    private val drivers: ObjectProvider<OperationsDrivers>,
+    private val drivers: OperationsDrivers,
     private val devices: ObjectProvider<OperationsPushDevices>,
     private val fcm: FcmClient,
 ) {
@@ -56,13 +56,8 @@ class OperationsWorker(
         }
     }
     private fun search(claim: TaskClaim) {
-        val bridge = drivers.ifAvailable
-        if (bridge == null) {
-            transactions.searched(claim, null, false)
-            return
-        }
         val candidates = try {
-            bridge.candidates(transactions.searchContext(claim))
+            drivers.candidates(transactions.searchContext(claim))
         } catch (failure: DriverLookupException) {
             transactions.searched(claim, null, failure.retryable)
             return
@@ -122,13 +117,12 @@ class OperationsWorker(
 @ConditionalOnProperty(name = ["operations.worker.enabled"], havingValue = "true")
 class OperationsWorkerSchedule(
     private val worker: OperationsWorker,
-    drivers: ObjectProvider<OperationsDrivers>,
     devices: ObjectProvider<OperationsPushDevices>,
     fcm: ObjectProvider<FcmConnection>,
 ) {
     init {
-        require(drivers.ifAvailable != null && devices.ifAvailable != null && fcm.ifAvailable != null) {
-            "Operations worker requires driver/device bridges and an enabled FCM connection."
+        require(devices.ifAvailable != null && fcm.ifAvailable != null) {
+            "Operations worker requires a push device integration and an enabled FCM connection."
         }
     }
 

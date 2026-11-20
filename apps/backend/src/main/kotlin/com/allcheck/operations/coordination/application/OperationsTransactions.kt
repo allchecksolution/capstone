@@ -25,7 +25,6 @@ import com.allcheck.operations.work.WorkOperations
 import com.allcheck.reception.ReceptionOperations
 import com.allcheck.reception.ReceptionSnapshot
 import jakarta.persistence.EntityManager
-import org.springframework.beans.factory.ObjectProvider
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
@@ -40,7 +39,7 @@ class OperationsTransactions(
     private val tasks: OperationsTaskRepository,
     private val spatial: OperationsSpatial,
     private val em: EntityManager,
-    private val drivers: ObjectProvider<OperationsDrivers>,
+    private val drivers: OperationsDrivers,
 ) {
     @Transactional
     fun register(actor: OperationsActor, receptionId: Long, expected: Int, key: String, source: ReceptionSnapshot, site: SiteCoordinates): CommandResult {
@@ -79,20 +78,19 @@ class OperationsTransactions(
             }
             commands.driverLock(actor.id)
             val context = CandidateContext(request.intake.workType, request.site, dispatch.round(offer.roundId).radiusKm, now)
-            val bridge = drivers.ifAvailable ?: throw BusinessException(OperationsErrorCode.OPERATIONS_INTEGRATION_UNAVAILABLE)
-            val availability = bridge.lockForAcceptance(actor.id, context)
-            if (availability == null ||
-                availability.driverId != actor.id ||
-                !availability.eligible(context.copy(observedAt = commands.now())) ||
+            val candidate = drivers.lockForAcceptance(actor.id, context)
+            if (candidate == null ||
+                candidate.driverId != actor.id ||
+                !candidate.hasValidLocationAt(commands.now()) ||
                 works.occupied(actor.id) ||
                 actor.id in works.excluded(request.requestId) ||
-                spatial.within(request.site, context.radiusKm, listOf(availability)).isEmpty()
+                spatial.within(request.site, context.radiusKm, listOf(candidate)).isEmpty()
             ) {
                 throw BusinessException(OperationsErrorCode.DRIVER_NOT_ELIGIBLE)
             }
             // 자격 행 잠금과 공간 조회 대기 중 만료되었을 수 있으므로 수락 직전에 다시 읽는다.
             val acceptedAt = commands.now()
-            if (!availability.eligible(context.copy(observedAt = acceptedAt))) throw BusinessException(OperationsErrorCode.DRIVER_NOT_ELIGIBLE)
+            if (!candidate.hasValidLocationAt(acceptedAt)) throw BusinessException(OperationsErrorCode.DRIVER_NOT_ELIGIBLE)
             dispatch.accept(offerId, acceptedAt)
             val work = works.create(request.requestId, offer.roundId, offerId, actor.id, request.currentWorkId, acceptedAt)
             requests.accept(request.requestId, offer.roundId, work.workId, acceptedAt)

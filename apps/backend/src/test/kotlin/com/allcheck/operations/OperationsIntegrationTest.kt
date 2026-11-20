@@ -66,6 +66,7 @@ import org.springframework.web.client.RestClient
 import tools.jackson.databind.json.JsonMapper
 import java.net.InetSocketAddress
 import java.time.Clock
+import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
 import java.time.ZoneOffset
@@ -680,7 +681,7 @@ class OperationsIntegrationTest @Autowired constructor(
         val (id, version) = confirmed()
         return service.register(admin, id, version, key()).value.requestId
     }
-    private fun search(drivers: List<DriverAvailability>) {
+    private fun search(drivers: List<DriverCandidate>) {
         var claim = checkNotNull(tasks.claim())
         while (claim.kind != TaskKind.SEARCH) {
             // 다른 의뢰의 전송 준비 작업은 테스트 범위 밖이다. 공급자 전송은 하지 않는다.
@@ -696,7 +697,7 @@ class OperationsIntegrationTest @Autowired constructor(
     private fun progress(work: Long, driver: OperationsActor) {
         listOf(WorkStatus.EN_ROUTE, WorkStatus.ARRIVED, WorkStatus.IN_PROGRESS).forEachIndexed { i, status -> transactions.transition(driver, work, key(), i + 1, status, null, null) }
     }
-    private fun profile(id: Long) = DriverAvailability(id, true, true, setOf(WorkType.BOILER), true, 127.0, 37.5, clock.time)
+    private fun profile(id: Long) = DriverCandidate(id, 127.0, 37.5, clock.time, Duration.ofMinutes(5))
     private fun count(table: String) = jdbc.queryForObject("select count(*) from $table", Long::class.java)!!
     private fun key() = UUID.randomUUID().toString()
     private fun <T> race(actions: List<() -> T>): List<Result<T>> {
@@ -795,7 +796,7 @@ class OperationsIntegrationTest @Autowired constructor(
         @Bean @Primary
         fun operationsDrivers(clock: MutableClock) = object : OperationsDrivers {
             override fun candidates(context: CandidateContext) = listOf(current(10), current(20))
-            private fun current(driverId: Long) = DriverAvailability(driverId, true, true, WorkType.entries.toSet(), true, 127.0, 37.5, clock.time)
+            private fun current(driverId: Long) = DriverCandidate(driverId, 127.0, 37.5, clock.time, Duration.ofMinutes(5))
             override fun lockForAcceptance(driverId: Long, context: CandidateContext) = current(driverId)
         }
     }

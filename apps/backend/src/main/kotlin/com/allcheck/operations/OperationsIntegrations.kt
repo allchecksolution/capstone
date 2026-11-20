@@ -3,46 +3,33 @@ package com.allcheck.operations
 import java.time.Duration
 import java.time.Instant
 
-/** Driver 도메인의 일관된 현재 스냅샷. 페이지 누락/조회 오류를 빈 목록으로 반환하지 않는다. */
+/** 활성 계정, 대기 상태, 작업 유형, 서비스 지역을 충족한 기사만 반환한다. */
 interface OperationsDrivers {
-    fun candidates(context: CandidateContext): List<DriverAvailability>
+    /** 후보가 없으면 빈 목록을 반환하고, 조회 실패는 예외로 알린다. */
+    fun candidates(context: CandidateContext): List<DriverCandidate>
 
     /**
      * 수락 트랜잭션에 참여하는 짧은 로컬 조회. 자격·READY·지역·GPS의 권위 있는 행을 잠그거나
      * 동등한 버전 검증으로 커밋까지 변경 경합을 보호한다. 원격 HTTP 호출을 여기서 수행하지 않는다.
      */
-    fun lockForAcceptance(driverId: Long, context: CandidateContext): DriverAvailability?
+    fun lockForAcceptance(driverId: Long, context: CandidateContext): DriverCandidate?
 }
 
 data class CandidateContext(val workType: WorkType, val site: SiteCoordinates, val radiusKm: Int, val observedAt: Instant)
-data class DriverAvailability(
+data class DriverCandidate(
     val driverId: Long,
-    val activated: Boolean,
-    val ready: Boolean,
-    val specialties: Set<WorkType>,
-    val servesSite: Boolean,
-    val longitude: Double?,
-    val latitude: Double?,
-    val locationAt: Instant?,
-    val locationValidity: Duration = Duration.ofMinutes(5),
+    val longitude: Double,
+    val latitude: Double,
+    val locationAt: Instant,
+    val locationValidity: Duration,
 ) {
-    fun eligible(context: CandidateContext): Boolean {
-        val located = locationAt ?: return false
-        return driverId > 0 &&
-            activated &&
-            ready &&
-            context.workType in specialties &&
-            servesSite &&
-            longitude != null &&
-            longitude.isFinite() &&
-            longitude in -180.0..180.0 &&
-            latitude != null &&
-            latitude.isFinite() &&
-            latitude in -90.0..90.0 &&
-            located <= context.observedAt &&
-            located >= context.observedAt.minus(locationValidity)
-    }
-    override fun toString(): String = "DriverAvailability(driverId=$driverId, activated=$activated, ready=$ready)"
+    fun hasValidLocationAt(observedAt: Instant): Boolean = driverId > 0 &&
+        longitude in -180.0..180.0 &&
+        latitude in -90.0..90.0 &&
+        locationAt <= observedAt &&
+        locationAt >= observedAt.minus(locationValidity)
+
+    override fun toString(): String = "DriverCandidate(driverId=$driverId)"
 }
 
 /** 외부 조회 실패 분류. 원격 응답 본문/좌표/개인정보를 예외 메시지에 포함하지 않는다. */

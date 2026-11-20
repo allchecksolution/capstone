@@ -147,9 +147,11 @@ resolver checks that the authenticated authority matches the principal's user ty
 their account ID. Drivers use the driver ID resolved from their account ID through the active-driver API.
 Unsupported principals and accounts without current driver access return 403.
 
-`OperationsDrivers.candidates` must return a complete snapshot or an explicit lookup failure, never a partial
-page presented as a successful empty search. Coordinates use WGS84; eligibility, five-minute location freshness,
-PostGIS distance, existing work occupancy, and past same-request work cancellations are applied by operations.
+`OperationsDrivers` is a required dependency. The driver API applies account eligibility, standby status,
+specialty, and the configured location validity period. The operations adapter matches the service area and
+returns the candidate's WGS84 coordinates, measurement time, and validity period. Search distinguishes a
+complete empty result from a lookup failure. Operations rechecks location freshness and filters by PostGIS
+distance, existing work occupancy, and past cancellations for the same request.
 `lockForAcceptance` is a short local module call joining the acceptance transaction. Its implementation must
 lock authoritative profile/availability/location state, or provide equivalent version protection through commit;
 it must not make an HTTP call under the operations lock. Lock order is request, operations driver guard, then
@@ -187,7 +189,7 @@ Runtime activation requires the following, in addition to the existing JWT and s
 | Database | PostgreSQL 17 with PostGIS. V12 installs the extension in public if absent; provision it beforehand when the migration role lacks extension permission. Unmapped legacy photo references stop V12 without deleting data or guessing new work IDs. Local Compose uses the official PostGIS image with amd64 emulation on Apple Silicon. Existing data volumes are not reset. |
 | Geocoding | `OPERATIONS_SGIS_ENABLED=true`, `OPERATIONS_SGIS_SERVICE_ID`, `OPERATIONS_SGIS_SECRET`, `OPERATIONS_SGIS_CONNECT_TIMEOUT`, `OPERATIONS_SGIS_REQUEST_TIMEOUT`, and the provider's required usage permission. A single complete building-level match is converted from EPSG:5179 to WGS84 in PostGIS; missing/ambiguous results do not create a request or alter reception confirmation. |
 | Photos | `S3_ENABLED=true`, the shared S3 settings/credentials, and private `OPERATIONS_PHOTO_BUCKET` with PUT/HEAD/GET and checksum permissions. Upload/access TTLs default to 15m/10m and are configurable with `OPERATIONS_PHOTO_UPLOAD_URL_TTL` / `OPERATIONS_PHOTO_ACCESS_URL_TTL`. No bucket or public ACL is created by application startup. |
-| Worker | `OPERATIONS_WORKER_ENABLED=true` requires real driver/device adapters and an enabled FCM connection. `OPERATIONS_WORKER_LEASE` defaults to 60s; `OPERATIONS_WORKER_POLL_INTERVAL` to 1s. Configure integration timeouts within the lease and measure production capacity. Missing required bridges fail worker startup rather than generating spurious business failures. |
+| Worker | `OPERATIONS_WORKER_ENABLED=true` requires a push device integration and an enabled FCM connection. The driver adapter is required by the application. `OPERATIONS_WORKER_LEASE` defaults to 60s and `OPERATIONS_WORKER_POLL_INTERVAL` to 1s. Configure integration timeouts within the lease and measure production capacity. |
 | Dispatch | `OPERATIONS_OFFER_LIFETIME` defaults to 1m. Search and driver-device transient retries use three total attempts with 5s/10s delays. A longer provider Retry-After is honored only within offer expiry. |
 | Administrator push | `OPERATIONS_ADMIN_PUSH_MAX_ATTEMPTS` defaults to 3; `OPERATIONS_ADMIN_PUSH_RETRY_DELAY` to 1m. Device resolution revalidates current authorization and binding; only the current unresolved follow-up target may be sent. |
 
