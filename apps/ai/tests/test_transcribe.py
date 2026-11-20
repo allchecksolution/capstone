@@ -1,5 +1,7 @@
 from base64 import b64encode
 from datetime import datetime, timedelta, timezone
+from email import policy
+from email.parser import BytesParser
 from hashlib import sha256
 from io import BytesIO
 import json
@@ -161,10 +163,24 @@ def test_ack29_roundtrip(setup, mime):
     assert "X-CLOVASPEECH-API-KEY" not in get[4]
     assert post[:4] == ("clovaspeech-gw.ncloud.com", 4, "POST", "/external/v1/123/example/recognizer/upload")
     assert post[4]["X-CLOVASPEECH-API-KEY"] == "test-clova-key"
+    assert post[4]["Accept"] == "application/json"
     assert int(post[4]["Content-Length"]) == len(post[5])
-    assert b'name="media"; filename="recording.wav"' in post[5]
-    assert b'"completion": "sync"' in post[5]
-    assert state.audio in post[5]
+    header = f"Content-Type: {post[4]['Content-Type']}\r\n\r\n".encode("ascii")
+    multipart = BytesParser(policy=policy.default).parsebytes(header + post[5])
+    assert multipart.get_content_type() == "multipart/form-data"
+    assert not multipart.defects
+    params, media = multipart.iter_parts()
+    assert params.get_content_disposition() == media.get_content_disposition() == "form-data"
+    assert params.get_param("name", header="content-disposition") == "params"
+    assert params.get_content_type() == "application/json"
+    assert json.loads(params.get_payload(decode=True)) == {
+        "language": "ko-KR", "completion": "sync", "fullText": True, "wordAlignment": False,
+        "diarization": {"enable": False},
+    }
+    assert media.get_param("name", header="content-disposition") == "media"
+    assert media.get_filename() == "recording.wav"
+    assert media.get_content_type() == "audio/wav"
+    assert media.get_payload(decode=True) == state.audio
     assert [name for name, _ in state.wav_calls] == ["ffprobe", "ffmpeg"]
 
 
@@ -323,6 +339,37 @@ def test_provider_failure_is_not_retried(setup, status, timeout, expected, code)
     assert_error(response, expected, code)
     assert "private provider details" not in response.text
     assert [call[2] for call in state.calls] == ["GET", "POST"]
+
+
+@pytest.mark.parametrize(("status", "payload", "safe_code"), [
+    (400, {"result": "ERROR_REQUEST_PARAMETER"}, "ERROR_REQUEST_PARAMETER"),
+    (400, {"result": "ERROR_PARAMS_FORMAT_INVALID"}, "ERROR_PARAMS_FORMAT_INVALID"),
+    (400, {"result": "ERROR_AUDIO_EMPTY"}, "ERROR_AUDIO_EMPTY"),
+    (400, {"result": "ERROR_AUDIO_CONVERSION"}, "ERROR_AUDIO_CONVERSION"),
+    (401, {"code": 401}, "401"),
+    (401, {"result": "ERROR_INVALID_SECRET"}, "ERROR_INVALID_SECRET"),
+    (403, {"result": "private-invoke-url"}, "UNCLASSIFIED"),
+    (400, {"result": "ERROR_REQUEST_PARAMETER", "padding": "x" * 4096}, "UNCLASSIFIED"),
+])
+def test_clova_diagnostic_contains_no_raw_provider_data(setup, caplog, status, payload, safe_code):
+    client, state = setup
+    state.clova_status = status
+    state.clova_result = {**payload, "message": "private-invoke-url test-clova-key", "text": "private transcript"}
+    response = client.post(ENDPOINT, json=state.request, headers=AUTH)
+    assert_error(response, 502, "AI_PROVIDER_FAILED")
+    assert f"CLOVA Speech HTTP {status}, code={safe_code}" in caplog.text
+    for sensitive in ("private-invoke-url", "test-clova-key", "private transcript"):
+        assert sensitive not in caplog.text
+        assert sensitive not in response.text
+    assert [call[2] for call in state.calls] == ["GET", "POST"]
+
+
+@pytest.mark.parametrize("suffix", ["/recognizer/upload", "?unexpected=1"])
+def test_invoke_base_does_not_accept_upload_suffix_or_query(setup, monkeypatch, suffix):
+    client, state = setup
+    monkeypatch.setenv("CLOVA_SPEECH_INVOKE_URL", "https://clovaspeech-gw.ncloud.com/external/v1/123/example" + suffix)
+    assert_error(client.post(ENDPOINT, json=state.request, headers=AUTH), 503, "TEMPORARILY_UNAVAILABLE")
+    assert state.calls == []
 
 
 def test_blank_transcript_is_left_for_backend(setup):

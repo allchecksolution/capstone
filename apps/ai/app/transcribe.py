@@ -7,6 +7,7 @@ from hashlib import sha256
 from hmac import compare_digest
 from http.client import HTTPException, HTTPSConnection
 import json
+import logging
 from math import isfinite
 from os import getenv
 from pathlib import Path
@@ -39,6 +40,21 @@ RFC3339 = re.compile(
 )
 CHUNK = 64 * 1024
 MAX_TRANSCRIPT = 100_000
+CLOVA_DIAGNOSTIC_LIMIT = 4096
+CLOVA_ERROR_CODES = {
+    "400",
+    "401",
+    "ERROR_AUDIO_CONVERSION",
+    "ERROR_AUDIO_EMPTY",
+    "ERROR_INVALID_SECRET",
+    "ERROR_PARAMS_FORMAT_INVALID",
+    "ERROR_REQUEST_PARAMETER",
+    "STT002",
+    "STT003",
+    "STT004",
+    "STT005",
+}
+log = logging.getLogger(__name__)
 Id = Annotated[str, StringConstraints(min_length=1, max_length=64)]
 
 ERRORS = {
@@ -277,11 +293,42 @@ def validate_wav(path: Path, maximum_seconds: float, timeout: float):
         raise TranscribeError("UNSUPPORTED_MEDIA_TYPE") from None
 
 
+def clova_error_code(payload: object) -> str:
+    if isinstance(payload, dict):
+        for field in ("result", "code"):
+            value = payload.get(field)
+            if type(value) is int and value in (400, 401):
+                return str(value)
+            if isinstance(value, str) and value in CLOVA_ERROR_CODES:
+                return value
+    return "UNCLASSIFIED"
+
+
+def read_clova_error_code(response, deadline: float) -> str:
+    body = bytearray()
+    try:
+        while len(body) <= CLOVA_DIAGNOSTIC_LIMIT and monotonic() < deadline:
+            chunk = response.read1(CLOVA_DIAGNOSTIC_LIMIT + 1 - len(body))
+            if not chunk:
+                return clova_error_code(json.loads(body))
+            body.extend(chunk)
+    except (OSError, HTTPException, ValueError, RecursionError):
+        pass
+    return "UNCLASSIFIED"
+
+
 def clova_transcript(path: Path, endpoint: str, key: str, timeout: float) -> str:
     boundary = uuid4().hex
-    params = json.dumps({"language": "ko-KR", "completion": "sync", "fullText": True, "wordAlignment": False})
+    params = json.dumps({
+        "language": "ko-KR",
+        "completion": "sync",
+        "fullText": True,
+        "wordAlignment": False,
+        "diarization": {"enable": False},
+    })
     prefix = (
-        f'--{boundary}\r\nContent-Disposition: form-data; name="params"\r\n\r\n{params}\r\n'
+        f'--{boundary}\r\nContent-Disposition: form-data; name="params"\r\n'
+        f'Content-Type: application/json\r\n\r\n{params}\r\n'
         f'--{boundary}\r\nContent-Disposition: form-data; name="media"; filename="recording.wav"\r\n'
         'Content-Type: audio/wav\r\n\r\n'
     ).encode()
@@ -300,11 +347,15 @@ def clova_transcript(path: Path, endpoint: str, key: str, timeout: float) -> str
     try:
         with closing(HTTPSConnection(CLOVA_HOST, timeout=timeout)) as connection:
             connection.request("POST", endpoint, body=multipart(), headers={
+                "Accept": "application/json",
                 "X-CLOVASPEECH-API-KEY": key,
                 "Content-Type": f"multipart/form-data; boundary={boundary}",
                 "Content-Length": str(len(prefix) + path.stat().st_size + len(suffix)),
             })
             with connection.getresponse() as response:
+                if response.status != 200:
+                    log.warning("CLOVA Speech HTTP %d, code=%s", response.status,
+                                read_clova_error_code(response, deadline))
                 if response.status == 504:
                     raise TranscribeError("AI_TIMEOUT")
                 if response.status in (429, 503):
@@ -328,6 +379,7 @@ def clova_transcript(path: Path, endpoint: str, key: str, timeout: float) -> str
     except (OSError, HTTPException, ValueError):
         raise TranscribeError("AI_PROVIDER_FAILED") from None
     if not isinstance(result, dict) or result.get("result") != "COMPLETED":
+        log.warning("CLOVA Speech HTTP 200, code=%s", clova_error_code(result))
         raise TranscribeError("AI_PROVIDER_FAILED")
     transcript = result.get("text")
     # PostgreSQL text cannot store NUL. Reject it without changing the provider's text.
