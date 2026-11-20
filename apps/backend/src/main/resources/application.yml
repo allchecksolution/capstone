@@ -84,10 +84,6 @@ driver:
     service-key: ${NTS_SERVICE_KEY:}
     connect-timeout: ${NTS_CONNECT_TIMEOUT:PT2S}
     read-timeout: ${NTS_READ_TIMEOUT:PT5S}
-
-push:
-  fcm:
-    enabled: ${FCM_ENABLED:false}
-    project-id: ${FCM_PROJECT_ID:}
+  push:
     lease: ${FCM_DELIVERY_LEASE:PT1M}
     poll-interval: ${FCM_POLL_INTERVAL:PT5S}

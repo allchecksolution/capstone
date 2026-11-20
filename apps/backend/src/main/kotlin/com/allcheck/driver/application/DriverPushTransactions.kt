@@ -3,8 +3,7 @@ package com.allcheck.driver.application
 import com.allcheck.driver.domain.entity.DriverNotificationEvent
 import com.allcheck.driver.domain.entity.DriverPushDelivery
 import com.allcheck.driver.domain.vo.DriverAccountStatus
-import com.allcheck.driver.infrastructure.push.FcmProperties
-import com.allcheck.driver.infrastructure.push.FcmSendResult
+import com.allcheck.driver.infrastructure.push.DriverPushProperties
 import com.allcheck.driver.infrastructure.repository.DriverNotificationEventRepository
 import com.allcheck.driver.infrastructure.repository.DriverPushDeliveryRepository
 import com.allcheck.driver.infrastructure.repository.DriverRepository
@@ -23,7 +22,7 @@ class DriverPushTransactions(
     private val deliveries: DriverPushDeliveryRepository,
     private val drivers: DriverRepository,
     private val devices: PushDeviceOperations,
-    private val properties: FcmProperties,
+    private val properties: DriverPushProperties,
     private val clock: Clock = Clock.systemUTC(),
 ) {
     @Transactional
@@ -49,6 +48,10 @@ class DriverPushTransactions(
     }
 
     fun target(claim: DriverPushClaim): PushTarget? {
+        val delivery = deliveries.findById(claim.deliveryId).orElse(null) ?: return null
+        if (delivery.status != "PROCESSING" || delivery.claimId != claim.claimId) return null
+        val expiresAt = delivery.leaseExpiresAt ?: return null
+        if (!clock.instant().isBefore(expiresAt)) return null
         val event = events.findById(claim.eventId).orElse(null) ?: return null
         if (!isCurrent(event)) return null
         if (event.recipientAccountId != null && event.recipientAccountId != claim.accountId) return null
@@ -56,13 +59,13 @@ class DriverPushTransactions(
         return devices.currentDevice(claim.installationId, claim.accountId)
     }
 
-    fun event(eventId: String): com.allcheck.driver.infrastructure.push.FcmData {
+    fun event(eventId: String): DriverPushData {
         val event = events.findById(eventId).orElseThrow()
-        return com.allcheck.driver.infrastructure.push.FcmData(event.id, event.eventType, event.driverId, event.revision)
+        return DriverPushData(event.id, event.eventType, event.driverId, event.revision)
     }
 
     @Transactional
-    fun finish(claim: DriverPushClaim, result: FcmSendResult?) {
+    fun finish(claim: DriverPushClaim, result: DriverPushResult?) {
         val delivery = deliveries.findForUpdate(claim.deliveryId) ?: return
         val outcome = when {
             result == null -> "SKIPPED"

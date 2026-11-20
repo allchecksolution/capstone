@@ -26,6 +26,7 @@ import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
+import org.springframework.context.annotation.Primary
 import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.security.access.prepost.PreAuthorize
@@ -347,7 +348,8 @@ class SessionAuthenticationIntegrationTest @Autowired constructor(
     @TestConfiguration(proxyBeanMethods = false)
     class TestConfig {
         @Bean
-        fun clock(): Clock = Clock.fixed(Instant.parse("2026-11-17T12:00:00Z"), ZoneOffset.UTC)
+        @Primary
+        fun sessionAuthenticationClock(): Clock = Clock.fixed(Instant.parse("2026-11-17T12:00:00Z"), ZoneOffset.UTC)
     }
 
     @RestController

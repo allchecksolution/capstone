@@ -102,6 +102,14 @@ Registration changes, review history, idempotency results, and notification publ
 
 `identity` owns session-bound push installations for both apps. Logout removes only the current session's bindings; deactivation removes all account bindings. Driver registration events target active administrator devices, and approval/rejection events target the applicant's devices. Persist per-device delivery claims and recover abandoned claims through database leases. Revalidate current registration revision, status, account/session access, and device ownership before sending. FCM provider acceptance is not proof of device receipt. Payloads contain identifiers, with original information obtained through authorized queries. Explicit-failure retry policy remains undecided. Implementation scope and setup follow the [Driver API Contract](../../../docs/api/driver-contract.md).
 
+Reception and driver share the global FCM HTTP v1 connection and transport. Driver retains its existing
+generic notification title/body alongside event/driver identifiers; reception remains data-only.
+After OAuth preparation, driver rechecks the delivery claim, lease, current registration and device-token
+binding before HTTP transmission. Cancellation records SKIPPED when the claim is still current; stale
+workers cannot overwrite another claim. Explicit provider failures remain terminal FAILED for driver;
+the transport integration does not introduce a new automatic retry policy. A driver delivery lease must
+exceed the shared FCM request timeout.
+
 ## Project Integration and Migration Policies
 
 | Area | Project policy |
@@ -110,6 +118,7 @@ Registration changes, review history, idempotency results, and notification publ
 | Kakao authentication | Validate the SDK Access Token against Kakao and the configured numeric application ID before resolving an Account. The client returns only a verified SocialLogin and performs no database changes. Provider failure classification and configuration follow the [Identity API Contract](../../../docs/api/identity-contract.md#카카오-검증-클라이언트). |
 | Sensitive business data | Do not log internal keys, presigned URLs/signatures, FCM tokens, recording contents, or STT originals. Push carries resource identifiers; original contents require an authorized query. |
 | Migration versions | Begin at `V1` and allocate the next unused positive integer (`V2`, `V3`, ...). Do not use timestamp/date versions or renumber an applied migration. |
+| Main and identity/driver migration integration | Preserve main's V1-V11 unchanged. The identity/driver branch's unapplied V2-V7 are allocated V12-V17 in the same dependency order: accounts/sessions, driver registration, work orders, push devices, driver deliveries, and request limits. This renumbering is valid only because these branch migrations have not been applied; it is not a procedure for upgrading an already-applied branch history. |
 | Internal and external reception IDs | Generated primary keys and their internal references use Long/BIGINT with IDENTITY by default, following Persistence Conventions. At API/AI boundaries, format the numeric IDs as rec_{id}, file_rec_{id}, anl_{id}, and file_stt_{id}. AI treats these strings as opaque and returns them unchanged. Keep authenticated administrator resolution separate from external ID parsing; a parsed ID does not establish ownership. |
 | Existing string-key schema | V7 changes the unused V1-V6 key columns and their foreign-key references together, and adds a numeric device PK while preserving installation_id as a unique business identifier. It locks and checks all affected tables before changing types. If any existing rows are found, stop without deleting or inventing an ID mapping; a populated environment needs a separately reviewed migration. V1-V6 remain unchanged. |
 

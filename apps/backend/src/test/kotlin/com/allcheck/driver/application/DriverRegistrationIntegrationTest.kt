@@ -6,9 +6,6 @@ import com.allcheck.driver.domain.vo.VerifiedBusinessIdentity
 import com.allcheck.driver.domain.vo.WorkType
 import com.allcheck.driver.exception.DriverErrorCode
 import com.allcheck.driver.infrastructure.business.NtsBusinessClient
-import com.allcheck.driver.infrastructure.push.FcmClient
-import com.allcheck.driver.infrastructure.push.FcmData
-import com.allcheck.driver.infrastructure.push.FcmSendResult
 import com.allcheck.driver.infrastructure.repository.DriverRepository
 import com.allcheck.driver.presentation.dto.request.ApprovalDecision
 import com.allcheck.driver.presentation.dto.request.BusinessInfoRequest
@@ -38,10 +35,13 @@ import com.allcheck.operations.work.WorkReference
 import com.allcheck.operations.work.domain.entity.WorkOrder
 import com.allcheck.operations.work.domain.entity.WorkStatus
 import com.allcheck.operations.work.infrastructure.repository.WorkOrderRepository
+import com.allcheck.support.PostgresTestSchema
 import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.EnumSource
 import org.junit.jupiter.params.provider.ValueSource
@@ -53,6 +53,10 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.test.annotation.DirtiesContext
+import org.springframework.test.context.ActiveProfiles
+import org.springframework.test.context.DynamicPropertyRegistry
+import org.springframework.test.context.DynamicPropertySource
 import org.springframework.test.context.TestPropertySource
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.servlet.MockMvc
@@ -75,6 +79,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
+import javax.sql.DataSource
 
 @SpringBootTest(
     properties = [
@@ -82,9 +87,13 @@ import java.util.concurrent.atomic.AtomicLong
         "spring.datasource.username=\${IDENTITY_TEST_DATABASE_USER:allcheck}",
         "spring.datasource.password=\${IDENTITY_TEST_DATABASE_PASSWORD:allcheck_local_6}",
         "spring.jpa.show-sql=false",
+        "springdoc.api-docs.enabled=true",
     ],
 )
 @AutoConfigureMockMvc
+@ActiveProfiles("test")
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @TestPropertySource("classpath:jwt-test.properties")
 class DriverRegistrationIntegrationTest @Autowired constructor(
     private val mvc: MockMvc,
@@ -97,6 +106,7 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
     private val drivers: DriverRepository,
     private val works: WorkOrderRepository,
     private val jdbc: JdbcTemplate,
+    private val dataSource: DataSource,
     private val pushWorker: DriverPushWorker,
     private val pushTransactions: DriverPushTransactions,
     private val pushDevices: PushDeviceOperations,
@@ -106,10 +116,15 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
 ) {
     @MockitoBean private lateinit var nts: NtsBusinessClient
 
-    @MockitoBean private lateinit var fcm: FcmClient
+    @MockitoBean private lateinit var fcm: DriverPushSender
     private val tx = TransactionTemplate(transactionManager)
     private val ownAccounts = mutableListOf<String>()
     private val registrationPath = "/api/v1/drivers/me/registration"
+
+    @AfterAll
+    fun removeTestSchema() {
+        database.remove(dataSource)
+    }
 
     @BeforeEach
     fun verifyBusinessOutsideTransaction() {
@@ -142,6 +157,7 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
                 jdbc.update("delete from identity_accounts where account_id = ?", accountId)
             }
         }
+        ownAccounts.clear()
     }
 
     @Test
@@ -435,13 +451,13 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
         val registered = submit(actor, request())
         registerDevice(actor, "install-approve", "fcm-driver-token")
         decide(admin, registered.driverId, DriverApprovalRequest(1, ApprovalDecision.APPROVE))
-        enableFcm(FcmSendResult(messageId = "projects/test/messages/accepted"))
+        enableFcm(DriverPushResult(messageId = "projects/test/messages/accepted"))
 
         // when
         repeat(4) { pushWorker.runOnce() }
 
         // then
-        Mockito.verify(fcm, Mockito.times(1)).send(anyTarget(), anyFcmData())
+        Mockito.verify(fcm, Mockito.times(1)).send(anyTarget(), anyDriverPushData(), anyBeforeSend())
         assertThat(jdbc.queryForObject("select count(*) from driver_push_deliveries where event_id in (select event_id from driver_notification_events where driver_id = ?) and status = 'PROVIDER_ACCEPTED'", Long::class.java, registered.driverId)).isEqualTo(1)
     }
 
@@ -453,7 +469,7 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
         val registered = submit(actor, request())
         registerDevice(actor, "install-failure", "fcm-failure-token")
         decide(admin, registered.driverId, DriverApprovalRequest(1, ApprovalDecision.APPROVE))
-        enableFcm(FcmSendResult(errorCode = "UNAVAILABLE"))
+        enableFcm(DriverPushResult(errorCode = "UNAVAILABLE"))
 
         // when
         repeat(4) { pushWorker.runOnce() }
@@ -461,7 +477,7 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
         // then
         assertThat(drivers.findByAccountId(actor.accountId)?.accountStatus?.name).isEqualTo("ACTIVATED")
         assertThat(jdbc.queryForObject("select count(*) from driver_push_deliveries where event_id in (select event_id from driver_notification_events where driver_id = ?) and status = 'FAILED'", Long::class.java, registered.driverId)).isEqualTo(1)
-        Mockito.verify(fcm, Mockito.times(1)).send(anyTarget(), anyFcmData())
+        Mockito.verify(fcm, Mockito.times(1)).send(anyTarget(), anyDriverPushData(), anyBeforeSend())
     }
 
     @Test
@@ -479,12 +495,15 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
         )
             .andExpect(status().isConflict)
         decide(admin, registered.driverId, DriverApprovalRequest(1, ApprovalDecision.APPROVE))
-        enableFcm(FcmSendResult(errorCode = "UNREGISTERED", invalidToken = true))
+        enableFcm(DriverPushResult(errorCode = "UNREGISTERED", invalidToken = true))
 
         // when
         repeat(4) { pushWorker.runOnce() }
 
         // then
+        Mockito.verify(fcm, Mockito.times(1)).send(anyTarget(), anyDriverPushData(), anyBeforeSend())
+        assertThat(jdbc.queryForObject("select status from driver_push_deliveries where recipient_account_id = ?", String::class.java, actor.accountId)).isEqualTo("FAILED")
+        assertThat(jdbc.queryForObject("select error_code from driver_push_deliveries where recipient_account_id = ?", String::class.java, actor.accountId)).isEqualTo("UNREGISTERED")
         assertThat(pushDevices.currentDevice("install-invalid", actor.accountId)).isNull()
         assertThat(jdbc.queryForObject("select push_token from identity_push_devices where installation_id = ?", String::class.java, "install-invalid")).isNull()
     }
@@ -497,7 +516,7 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
         val registered = submit(actor, request())
         registerDevice(actor, "install-logout", "fcm-logout-token")
         decide(admin, registered.driverId, DriverApprovalRequest(1, ApprovalDecision.APPROVE))
-        enableFcm(FcmSendResult(messageId = "unused"))
+        enableFcm(DriverPushResult(messageId = "unused"))
         mvc.perform(post("/api/v1/auth/sessions/logout").contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(mapOf("refreshToken" to actor.refreshToken))))
             .andExpect(status().isNoContent)
 
@@ -505,9 +524,46 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
         repeat(4) { pushWorker.runOnce() }
 
         // then
-        Mockito.verify(fcm, Mockito.never()).send(anyTarget(), anyFcmData())
+        Mockito.verify(fcm, Mockito.never()).send(anyTarget(), anyDriverPushData(), anyBeforeSend())
         assertThat(pushDevices.currentDevice("install-logout", actor.accountId)).isNull()
         assertThat(jdbc.queryForObject("select push_token from identity_push_devices where installation_id = ?", String::class.java, "install-logout")).isNull()
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ["logout", "token-rotation", "expired-lease"])
+    fun `발송 준비 중 기기나 실행권이 바뀌면 최종 확인에서 전송을 취소한다`(scenario: String) {
+        // given
+        val actor = driver()
+        val admin = admin()
+        val registered = submit(actor, request())
+        registerDevice(actor, "install-checkpoint", "checkpoint-token")
+        decide(admin, registered.driverId, DriverApprovalRequest(1, ApprovalDecision.APPROVE))
+        enableFcm(DriverPushResult(messageId = "unused"))
+        var allowed = true
+        Mockito.`when`(fcm.send(anyTarget(), anyDriverPushData(), anyBeforeSend())).thenAnswer {
+            check(!TransactionSynchronizationManager.isActualTransactionActive())
+            when (scenario) {
+                "logout" -> mvc.perform(
+                    post("/api/v1/auth/sessions/logout").contentType(MediaType.APPLICATION_JSON)
+                        .content(mapper.writeValueAsString(mapOf("refreshToken" to actor.refreshToken))),
+                ).andExpect(status().isNoContent)
+                "token-rotation" -> registerDevice(actor, "install-checkpoint", "replacement-token")
+                "expired-lease" -> jdbc.update(
+                    "update driver_push_deliveries set lease_expires_at = ? where recipient_account_id = ?",
+                    java.sql.Timestamp.from(Instant.now().minusSeconds(1)),
+                    actor.accountId,
+                )
+            }
+            allowed = it.getArgument<() -> Boolean>(2).invoke()
+            if (allowed) DriverPushResult(messageId = "unexpected") else null
+        }
+
+        // when
+        repeat(4) { pushWorker.runOnce() }
+
+        // then
+        assertThat(allowed).isFalse()
+        assertThat(jdbc.queryForObject("select count(*) from driver_push_deliveries where recipient_account_id = ? and status = 'SKIPPED'", Long::class.java, actor.accountId)).isEqualTo(1)
     }
 
     @Test
@@ -560,12 +616,13 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
         registerDevice(actor, "install-recipient-driver", "recipient-driver-token")
         registerDevice(admin, "install-recipient-admin", "recipient-admin-token")
         val registered = submit(actor, request())
-        enableFcm(FcmSendResult(messageId = "accepted"))
+        enableFcm(DriverPushResult(messageId = "accepted"))
         val sent = mutableListOf<Pair<String, String>>()
-        Mockito.`when`(fcm.send(anyTarget(), anyFcmData())).thenAnswer {
+        Mockito.`when`(fcm.send(anyTarget(), anyDriverPushData(), anyBeforeSend())).thenAnswer {
             check(!TransactionSynchronizationManager.isActualTransactionActive())
-            sent.add(it.getArgument<PushTarget>(0).accountId to it.getArgument<FcmData>(1).eventType)
-            FcmSendResult(messageId = "accepted")
+            if (!it.getArgument<() -> Boolean>(2).invoke()) return@thenAnswer null
+            sent.add(it.getArgument<PushTarget>(0).accountId to it.getArgument<DriverPushData>(1).eventType)
+            DriverPushResult(messageId = "accepted")
         }
 
         // when
@@ -585,13 +642,13 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
         val registered = submit(actor, request())
         registerDevice(actor, "install-concurrent", "concurrent-token")
         decide(admin, registered.driverId, DriverApprovalRequest(1, ApprovalDecision.APPROVE))
-        enableFcm(FcmSendResult(messageId = "accepted"))
+        enableFcm(DriverPushResult(messageId = "accepted"))
 
         // when
         repeat(3) { concurrently({ pushWorker.runOnce() }, { pushWorker.runOnce() }) }
 
         // then
-        Mockito.verify(fcm, Mockito.times(1)).send(anyTarget(), anyFcmData())
+        Mockito.verify(fcm, Mockito.times(1)).send(anyTarget(), anyDriverPushData(), anyBeforeSend())
     }
 
     @Test
@@ -609,13 +666,14 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
 
         // when
         val recovered = checkNotNull(pushTransactions.claimOne())
-        pushTransactions.finish(first, FcmSendResult(messageId = "stale"))
+        pushTransactions.finish(first, DriverPushResult(messageId = "stale"))
 
         // then
         assertThat(recovered.deliveryId).isEqualTo(first.deliveryId)
         assertThat(recovered.claimId).isNotEqualTo(first.claimId)
+        assertThat(pushTransactions.target(first)).isNull()
         assertThat(jdbc.queryForObject("select status from driver_push_deliveries where delivery_id = ?", String::class.java, first.deliveryId)).isEqualTo("PROCESSING")
-        pushTransactions.finish(recovered, FcmSendResult(messageId = "recovered"))
+        pushTransactions.finish(recovered, DriverPushResult(messageId = "recovered"))
         assertThat(jdbc.queryForObject("select provider_message_id from driver_push_deliveries where delivery_id = ?", String::class.java, first.deliveryId)).isEqualTo("recovered")
     }
 
@@ -720,13 +778,13 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
                 .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(DriverResubmissionRequest(2, request()))),
         )
             .andExpect(status().isOk)
-        enableFcm(FcmSendResult(messageId = "unused"))
+        enableFcm(DriverPushResult(messageId = "unused"))
 
         // when
         repeat(5) { pushWorker.runOnce() }
 
         // then
-        Mockito.verify(fcm, Mockito.never()).send(anyTarget(), anyFcmData())
+        Mockito.verify(fcm, Mockito.never()).send(anyTarget(), anyDriverPushData(), anyBeforeSend())
         assertThat(jdbc.queryForObject("select count(*) from driver_notification_events where driver_id = ? and event_type = 'DRIVER_REJECTED' and status = 'SKIPPED'", Long::class.java, registered.driverId)).isEqualTo(1)
     }
 
@@ -800,16 +858,18 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
     )
         .andExpect(status().isOk).andExpect(jsonPath("$.pushToken").doesNotExist()).andReturn().response.contentAsString
 
-    private fun enableFcm(result: FcmSendResult) {
+    private fun enableFcm(result: DriverPushResult) {
         Mockito.`when`(fcm.isConfigured()).thenReturn(true)
-        Mockito.`when`(fcm.send(anyTarget(), anyFcmData())).thenAnswer {
+        Mockito.`when`(fcm.send(anyTarget(), anyDriverPushData(), anyBeforeSend())).thenAnswer {
             check(!TransactionSynchronizationManager.isActualTransactionActive())
+            if (!it.getArgument<() -> Boolean>(2).invoke()) return@thenAnswer null
             result
         }
     }
 
     private fun anyTarget(): PushTarget = any(PushTarget::class.java) ?: PushTarget("unused", "unused", "unused", "unused")
-    private fun anyFcmData(): FcmData = any(FcmData::class.java) ?: FcmData("unused", "unused", "unused", 1)
+    private fun anyDriverPushData(): DriverPushData = any(DriverPushData::class.java) ?: DriverPushData("unused", "unused", "unused", 1)
+    private fun anyBeforeSend(): () -> Boolean = any<() -> Boolean>() ?: { true }
 
     private fun submitStatus(actor: Actor, key: String): Int = mvc.perform(
         post(registrationPath).header(HttpHeaders.AUTHORIZATION, actor.header)
@@ -874,5 +934,12 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
     private fun anyIdentity(): BusinessIdentity = any(BusinessIdentity::class.java) ?: BusinessIdentity("1234567890", LocalDate.of(2020, 1, 15), "테스트대표")
     companion object {
         private val nextUser = AtomicLong(810000000)
+        private val database = PostgresTestSchema("driver_registration")
+
+        @JvmStatic
+        @DynamicPropertySource
+        fun properties(registry: DynamicPropertyRegistry) {
+            database.register(registry)
+        }
     }
 }

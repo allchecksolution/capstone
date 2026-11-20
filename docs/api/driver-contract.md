@@ -66,16 +66,18 @@ FCM에 전달하는 데이터는 eventId·eventType·driverId·revision뿐이며
 
 | 환경 변수 | 의미 | 기본값 |
 |---|---|---|
-| `FCM_ENABLED` | Firebase 클라이언트·주기 작업 활성화 | false |
+| `FCM_ENABLED` | 공통 FCM HTTP v1 연결·기사 주기 작업 활성화 | false |
 | `FCM_PROJECT_ID` | Firebase 프로젝트 ID, 활성화 시 필수 | 없음 |
+| `FCM_CONNECT_TIMEOUT` | 공통 FCM HTTP 연결 타임아웃, 활성화 시 양수 필수 | 없음 |
+| `FCM_REQUEST_TIMEOUT` | 공통 FCM HTTP 요청 타임아웃, 활성화 시 양수 필수 | 없음 |
 | `GOOGLE_APPLICATION_CREDENTIALS` | ADC에서 읽을 서비스 계정 파일 경로. 운영에서는 환경의 ADC도 사용 가능 | 환경 ADC |
 | `FCM_DELIVERY_LEASE` | 중단 전송 복구를 위한 임대 시간 | PT1M |
 | `FCM_POLL_INTERVAL` | DB 큐 조회 간격 | PT5S |
 
-Firebase Admin SDK는 ADC를 사용한다. 연결 2초·응답 5초다. FCM이 비활성이면 큐를 성공 처리하지 않고 그대로 보존한다. 활성화 시 유효한 프로젝트와 자격 증명을 준비한다. 기존 V1 관리자 분석 테이블과 AI 완료 알림 연결은 이번 기사 가입 발송기와 별개이며 기존 마이그레이션을 수정하지 않았다.
+reception과 driver는 `global.config.FcmConfig` 및 `global.notification.FcmClient`의 HTTP v1 전송과 ADC 인증을 공유한다. `notification.fcm`에서 프로젝트·연결·요청 타임아웃을 설정하며, 기사 큐의 임대·조회 주기는 `driver.push`에 둔다. 임대 시간은 공통 요청 타임아웃보다 길어야 한다. driver는 기존 제목·본문을 notification으로, 식별자를 data로 함께 전송하고 reception은 기존 data-only 동작을 유지한다. OAuth 준비 후 HTTP 전송 직전에도 현재 claimId·임대·신청 상태·기기 토큰을 재확인한다. 확인 실패는 현재 claim에 한해 SKIPPED로 기록하고 예전 작업자는 새 claim을 변경할 수 없다. FCM이 비활성이면 큐를 성공 처리하지 않고 그대로 보존한다. 활성화 시 유효한 프로젝트·자격 증명과 타임아웃을 준비한다. 도메인별 알림·배송 기록과 재시도 정책은 공유하지 않으며 기존 마이그레이션은 수정하지 않았다.
 
 ## 검증과 남은 연결
 
-실제 PostgreSQL에서 HTTP·Spring Security·Flyway/Hibernate·상태 전이·멱등성·롤백·동시 가입·작업 배정/탈퇴 경합·기기 소유권·로그아웃·FCM 실패/임대 복구를 검증한다. 외부 국세청·FCM 호출은 테스트 대역으로 격리하고 SDK 메시지 변환도 별도로 확인한다. 전체 실행 결과는 [인수인계](identity-handoff.md#검증-및-환경)에 기록한다.
+실제 PostgreSQL에서 HTTP·Spring Security·Flyway/Hibernate·상태 전이·멱등성·롤백·동시 가입·작업 배정/탈퇴 경합·기기 소유권·로그아웃·FCM 실패/임대 복구를 검증한다. 외부 국세청·FCM 호출은 테스트 대역으로 격리하고, 루프백 HTTP로 공통 FCM 메시지·일반 알림 보존·오류 분류·발송 직전 취소를 확인한다. 전체 실행 결과는 [인수인계](identity-handoff.md#검증-및-환경)에 기록한다.
 
 실제 국세청 키와 Firebase 자격 증명·실기기 토큰이 제공되지 않아 실서비스 발송은 미검증이다. 관리자 ID/PW 로그인과 운영자 CLI 신규 발급은 8단계에서 구현했다. 프론트의 새 인증/driver 계약 연결과 배차·작업 진행·위치·채팅 API는 후속 작업이다. 자동 재전송과 개인정보 보존/삭제 기간은 임의 확정하지 않는다. MASTER/SUB는 동일한 업무 권한을 가진다.
