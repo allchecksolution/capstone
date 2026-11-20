@@ -10,7 +10,18 @@
     "lint:branch": "node scripts/git-conventions.cjs branch",
     "lint:commit": "commitlint",
     "lint:pr": "node scripts/git-conventions.cjs pr-title",
-    "test:git": "node --test scripts/git-conventions.test.cjs"
+    "test:git": "node --test scripts/git-conventions.test.cjs",
+    "db:up": "docker compose -f infra/compose/compose.local.yml up -d postgres",
+    "backend:up": "docker compose -f infra/compose/compose.local.yml up -d --build backend",
+    "backend:stop": "docker compose -f infra/compose/compose.local.yml --profile backend stop backend",
+    "ai:up": "docker compose -f infra/compose/compose.local.yml up -d --build ai",
+    "ai:stop": "docker compose -f infra/compose/compose.local.yml --profile ai stop ai",
+    "local:up": "docker compose -f infra/compose/compose.local.yml --profile backend --profile ai up -d --build",
+    "local:down": "docker compose -f infra/compose/compose.local.yml --profile backend --profile ai down",
+    "swagger:up": "docker compose -f infra/compose/compose.swagger.yml up -d",
+    "swagger:down": "docker compose -f infra/compose/compose.swagger.yml down",
+    "mock": "npx --yes @stoplight/prism-cli mock docs/api/openapi.yaml -p 4010 -h 127.0.0.1",
+    "lint:api": "npx --yes @redocly/cli lint docs/api/openapi.yaml"
   },
   "devDependencies": {
     "@commitlint/cli": "21.0.2",

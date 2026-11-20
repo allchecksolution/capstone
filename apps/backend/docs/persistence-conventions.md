@@ -2,7 +2,7 @@
 
 ## Goal
 
-Persistence management in ALLCHECK Backend aims for **data consistency, clear transaction boundaries, efficient data access, and concurrency safety**.  
+Persistence management aims for **data consistency, clear transaction boundaries, efficient data access, and concurrency safety**.
 Manage persistence using Spring Data JPA and Hibernate,
 avoid unnecessary database access and complex persistence abstractions, and apply persistence and concurrency control strategies suited to business requirements.
 
@@ -13,14 +13,28 @@ avoid unnecessary database access and complex persistence abstractions, and appl
 - **MUST — Transaction Boundaries:** As a rule, manage transactions in Application Services, and define them as units that ensure data consistency within a single business operation.
 - **MUST — Read-Only Transactions:** For Application Services that use transactions, apply `@Transactional(readOnly = true)` at the class level by default, and explicitly override it with `@Transactional` on methods that modify data.
 - **SHOULD — Minimize Transaction Scope:** Limit transactions to the minimum scope needed to ensure data consistency, and exclude long-running external API calls and unnecessary computations.
+- **SHOULD — Reliable Event Publication:** When a database change requires asynchronous event publication, persist the publication intent in the same transaction, for example with an outbox, and make consumers idempotent.
 
 ---
 
 ## JPA Entity Management
 
-- **SHOULD — Entity Relationships:** Define relationships only when required by business needs, and avoid unnecessary bidirectional relationships.
+- **MUST — Cross-Aggregate Entity References:** Reference Entities in other Aggregates by ID rather than JPA relationships, even within the same Application Module.
+- **SHOULD — Entity Relationships:** Within an Aggregate, define JPA relationships only when required by business needs, and avoid unnecessary bidirectional relationships.
+- **MUST — Schema Mapping Consistency:** Explicitly declare column constraints supported by JPA, such as nullability, length, and uniqueness, in Entity mapping annotations consistently with the [Flyway-managed schema](flyway-conventions.md#migration-lifecycle).
 - **SHOULD — Lazy Loading:** Prefer lazy loading for Entity relationships, and explicitly fetch the required data according to the purpose of the query.
 - **SHOULD — Persistence Context Awareness:** Consider the persistence context lifecycle and Entity state, and do not rely on lazy loading outside transactions.
+- **MAY — Kotlin Entity Encapsulation:** For Kotlin Entities opened by `all-open`, use `protected set` when private setters conflict with open properties. Keep external state changes behind domain methods while allowing JPA proxy accessors.
+- **SHOULD — JSON Column Mapping:** Map JSON columns explicitly and configure their format mapper centrally. Preserve empty-object/null distinctions and date/time offsets when the stored original requires them.
+
+---
+
+## Identifiers and Generation
+
+- **MUST — Default Primary Keys:** Use Kotlin `Long` / PostgreSQL `BIGINT` for generated Entity primary keys and `GenerationType.IDENTITY` as the default generation strategy. Define the corresponding identity column and primary-key constraint through Flyway. A new Entity's generated ID is nullable until assigned by persistence; callers must not supply or modify generated IDs.
+- **MAY — Evidence-Based Sequence Exceptions:** Use `SEQUENCE` when a specific Entity requires an alternative generation strategy. Document the reason and align the JPA generator with the Flyway-managed sequence.
+- **MUST — Typed Internal References:** Store references to generated Entity keys as `Long` / `BIGINT`, following the cross-aggregate ID-reference rule. Keep external-provider identifiers, installation identifiers, idempotency keys, trace IDs, and other business identifiers distinct from generated primary keys.
+- **MUST — Persistence Before Publication:** A generated ID does not imply transaction commit. Ensure required database changes are committed before dependent external operations. Generated IDs are not guaranteed to be gapless or ordered by commit time.
 
 ---
 
@@ -49,3 +63,11 @@ avoid unnecessary database access and complex persistence abstractions, and appl
 and minimize scope and contention when using locks.
 - **SHOULD — Conflict Handling:** When concurrency conflicts occur, apply an appropriate handling strategy, such as failure responses or limited retries, according to business requirements.
 - **MAY — Isolation Levels:** Prefer the default transaction isolation level, and adjust it when needed to meet data consistency requirements.
+- **MUST — Database Invariants:** Enforce domain-defined uniqueness and other persisted invariants with database constraints or atomic conditional writes, independently of idempotency-key retention. Application-level prechecks alone are insufficient under concurrency.
+- **SHOULD — Version Ownership:** Leave `@Version` updates to JPA. When domain methods control a separate business revision, use a distinct persistence version or explicit conditional writes rather than manually changing the JPA-managed field.
+
+---
+
+## Idempotency
+
+- **MUST — Atomic Retry Records:** When an API uses an idempotency key, persist its scope, request fingerprint, and successful result consistently with the business mutation. Repeated matching requests reuse the successful result; reused keys with different inputs and concurrent in-flight requests must not execute the mutation again.

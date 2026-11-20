@@ -2,7 +2,7 @@
 
 ## Goal
 
-The ALLCHECK Backend codebase adopts **a Modular Monolith with a domain-oriented package structure
+This guide defines **a Modular Monolith with a domain-oriented package structure
 and a 4-layer Layered Architecture that apply the core design principles of DDD (Domain-Driven Design)**.
 Business domains are organized into cohesive application modules, with clearly separated layer responsibilities within each module.
 
@@ -33,10 +33,17 @@ Business domains are organized into cohesive application modules, with clearly s
 ### Modular Architecture
 
 - **MUST — Modular Monolith:** Structure the backend as a modular monolith, organizing business functionality into cohesive domain-oriented modules within a single Spring Boot application.
-- **MUST — Module Boundaries:** Define clear responsibilities and boundaries for each module, and prevent direct access to other modules' internal implementations.
+- **MUST — Module Boundaries:** Define clear responsibilities and boundaries for each module, and prevent direct access to other modules' internal implementations. For JPA references, follow [Persistence Conventions](persistence-conventions.md#jpa-entity-management).
 - **MUST — Module Dependencies:** Allow inter-module dependencies only through explicitly exposed APIs, and prevent circular dependencies between modules.
 - **SHOULD — Module Communication:** Use explicit module APIs for direct collaboration, and prefer application events for loosely coupled business reactions when appropriate.
 - **SHOULD — Module Documentation:** Generate and maintain application module diagrams and documentation using Spring Modulith's `Documenter`.
+
+---
+
+### Multi-Instance Readiness
+
+- **MUST — Multi-Instance Readiness:** Maintain business consistency across multiple application instances, without relying solely on local process memory for persistent state or business concurrency control.
+- **MAY — Additional Infrastructure:** Consider additional infrastructure, such as distributed locks or message queues, only when actual requirements arise.
 
 ---
 
@@ -54,7 +61,7 @@ Code dependencies between layers follow these directions.
 ### Package Structure
 
 ```text
-com.allcheck
+com.example
 ├── BackendApplication.kt
 │
 ├── {domain}/                         # Spring Modulith Application Module
@@ -62,7 +69,8 @@ com.allcheck
 │   ├── ModuleMetadata.kt             # Required @ApplicationModule & @PackageInfo
 │   │
 │   ├── presentation/
-│   │   ├── {Domain}Controller.kt
+│   │   ├── api/
+│   │   ├── {Resource}Controller.kt
 │   │   └── dto/
 │   │       ├── request/
 │   │       │   └── {UseCase}Request.kt
@@ -95,9 +103,12 @@ com.allcheck
 
 ### Package Rules
 
-- Implement new features in the corresponding business domain package.
+- Place new features in the context and module that owns their business data and behavior. Project-specific assignments are defined in [Business Specification](business-specification.md#project-domain-model); general boundary guidance follows [Domain Design Conventions](domain-design.md).
 - Before creating a new top-level domain package, check whether it belongs within an existing domain boundary.
 - Create a package only when code for that layer is actually needed.
+- When a layer grows, group related implementations by capability within the existing layer packages
+  (for example, `application.recording`, `domain.entity.analysis`, and `domain.vo.review`).
+  Keep cross-capability coordinators and shared types at the layer root; retain the existing module and layer boundaries.
 - Expose inter-module APIs through the module's root package, and use Spring Modulith Named Interfaces when additional packages need to be exposed.
 - Keep internal implementations within module subpackages and prevent other modules from depending on them.
 - Keep shared technical configuration and cross-cutting concerns in the `global` package, outside business application modules. Do not place domain-specific business logic in `global`, and prevent dependencies on business module internals.
@@ -143,3 +154,11 @@ com.allcheck
 
 - Clearly define data ownership and business responsibilities for each domain.
 - Introduce Domain Events only when there is a clear business need for event-driven collaboration.
+
+### Shared Object Storage
+
+Create S3 SDK client/presigner beans once per connection configuration in `global.config.S3Config`.
+Shared S3 metadata, range reads, and signing live in `global.storage`, with neutral technical results/errors.
+Business modules wrap these operations in their own infrastructure code to apply ownership, file format,
+object-key/bucket selection, write policy, and use-specific URL lifetimes. Do not move a business module's
+validators or error codes into global, or reuse another module's internal storage wrapper.

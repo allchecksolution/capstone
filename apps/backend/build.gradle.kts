@@ -1,3 +1,5 @@
+import org.springframework.boot.gradle.tasks.bundling.BootJar
+
 plugins {
     kotlin("jvm") version "2.3.21"
     kotlin("plugin.spring") version "2.3.21"
@@ -26,6 +28,7 @@ repositories {
 dependencyManagement {
     imports {
         mavenBom("org.springframework.modulith:spring-modulith-bom:2.1.2")
+        mavenBom("software.amazon.awssdk:bom:2.59.1")
     }
 }
 
@@ -47,8 +50,18 @@ dependencies {
     implementation("org.flywaydb:flyway-database-postgresql")
     runtimeOnly("org.postgresql:postgresql")
 
+    // Shared S3 Object Storage
+    implementation("software.amazon.awssdk:s3")
+    implementation("software.amazon.awssdk:url-connection-client")
+
+    // FCM / Google Application Default Credentials
+    implementation("com.google.auth:google-auth-library-oauth2-http:1.43.0")
+
     // Security / Authentication
     implementation("org.springframework.boot:spring-boot-starter-security")
+    implementation("io.jsonwebtoken:jjwt-api:0.13.0")
+    runtimeOnly("io.jsonwebtoken:jjwt-impl:0.13.0")
+    runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.13.0")
 
     // Monitoring / Observability
     implementation("org.springframework.boot:spring-boot-starter-actuator")
@@ -68,7 +81,7 @@ dependencies {
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testImplementation("org.springframework.modulith:spring-modulith-starter-test")
 
-    // redis , querydsl , swagger , jwt , websocket , retry
+    // redis , querydsl , websocket , retry
     // prometheus , jacoco , testcontainers
 }
 
@@ -82,6 +95,10 @@ allOpen {
     annotation("jakarta.persistence.Entity")
     annotation("jakarta.persistence.MappedSuperclass")
     annotation("jakarta.persistence.Embeddable")
+}
+
+tasks.named<BootJar>("bootJar") {
+    archiveFileName.set("app.jar")
 }
 
 tasks.withType<Test> {
