@@ -24,10 +24,10 @@ debug 빌드에서는 기본으로 로그인 화면에 ‘개발용으로 입장
 서버를 연결하는 실행 예시:
 
 ```powershell
-flutter run --dart-define=API_BASE_URL=https://YOUR_SERVER/api/frontend --dart-define=ALLCHECK_PUSH_ENABLED=true --dart-define=KAKAO_NATIVE_APP_KEY=YOUR_NATIVE_APP_KEY
+flutter run --dart-define=API_BASE_URL=https://YOUR_SERVER
 ```
 
-관리자앱은 아이디·비밀번호로 로그인합니다. 공개 관리자 회원가입 및 2차 인증 화면은 없습니다. 최초 관리자 계정 발급은 서버에서 처리합니다. 기사앱은 카카오 SDK 인증 후 서버가 검증한 계정 상태로 가입·승인 대기·홈을 구분합니다. 연결 정보가 없으면 실제 로그인/서버 업무를 성공으로 처리하지 않습니다.
+현재 main의 상담 접수·녹음 API만 관리자앱의 `SpringFrontendBackend`로 연결합니다. 서버 origin만 지정하며, 관리자 로그인·JWT 요청 인증은 아직 main에서 연결되지 않아 실서버 업무 검수에는 인증 구현 반영이 필요합니다. 기사앱은 기존 카카오 SDK 로그인을 유지합니다. [실제 API 연동 내역과 검수 방법](BACKEND-INTEGRATION.md)을 확인하세요.
 
 ## 연결 준비
 
@@ -45,7 +45,7 @@ iOS에서는 번들 ID 등록 및 `ios/Flutter/Kakao.local.xcconfig`의 키도 �
 
 설정 참고: https://developers.kakao.com/docs/ko/flutter/getting-started
 
-[서버 연결 계약](API-CONTRACT.md)에 작업별 경로, 응답, 알림 데이터, Firebase 준비와 요구사항별 범위를 정리했습니다. 이 계약은 프론트 어댑터의 연결 기준이며 이미 구현된 백엔드 API를 뜻하지 않습니다. 실제 서버 규격이 다르면 `FrontendBackend` 어댑터를 교체합니다.
+[실제 API 연동 문서](BACKEND-INTEGRATION.md)가 현재 main의 Controller·DTO에 맞춘 연결 기준입니다. [기존 연결 초안](API-CONTRACT.md)의 operation URL과 전체 state 응답은 실제 서버 구현을 뜻하지 않습니다. `HttpFrontendBackend`는 초안용으로 유지하며 기본 서버 연결에는 사용하지 않습니다.
 
 알림은 분석 완료/실패, 배차 요청/상태 변경, 작업 상태, 채팅, 기사 승인 상태를 구분합니다. 앱 실행 중에는 인앱 배너를 표시하고, 백그라운드·종료 상태에서 알림을 누르면 인증 후 서버에서 최신 상태를 가져와 이동합니다. 알림 설정에서 권한을 요청하고 기기 토큰을 서버에 등록합니다.
 
