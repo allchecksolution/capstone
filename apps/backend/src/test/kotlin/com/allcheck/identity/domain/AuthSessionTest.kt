@@ -1,7 +1,7 @@
 package com.allcheck.identity.domain
 
-import com.allcheck.identity.domain.entity.AuthSession
-import com.allcheck.identity.domain.vo.RefreshTokenHash
+import com.allcheck.identity.domain.entity.session.AuthSession
+import com.allcheck.identity.domain.vo.session.RefreshTokenHash
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test

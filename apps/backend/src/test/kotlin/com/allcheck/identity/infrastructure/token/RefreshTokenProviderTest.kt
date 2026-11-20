@@ -1,5 +1,6 @@
 package com.allcheck.identity.infrastructure.token
 
+import com.allcheck.identity.infrastructure.session.RefreshTokenProvider
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.security.SecureRandom

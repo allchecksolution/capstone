@@ -1,35 +1,43 @@
 package com.allcheck.driver.application
 
-import com.allcheck.driver.domain.vo.BusinessIdentity
-import com.allcheck.driver.domain.vo.BusinessOperatingStatus
-import com.allcheck.driver.domain.vo.VerifiedBusinessIdentity
-import com.allcheck.driver.domain.vo.WorkType
+import com.allcheck.driver.application.notification.DriverPushData
+import com.allcheck.driver.application.notification.DriverPushResult
+import com.allcheck.driver.application.notification.DriverPushSender
+import com.allcheck.driver.application.notification.DriverPushTransactions
+import com.allcheck.driver.application.notification.DriverPushWorker
+import com.allcheck.driver.application.registration.DriverRegistrationTransactions
+import com.allcheck.driver.application.registration.identity
+import com.allcheck.driver.domain.vo.registration.BusinessIdentity
+import com.allcheck.driver.domain.vo.registration.BusinessOperatingStatus
+import com.allcheck.driver.domain.vo.registration.VerifiedBusinessIdentity
+import com.allcheck.driver.domain.vo.registration.WorkType
+import com.allcheck.driver.domain.vo.review.ApprovalDecision
 import com.allcheck.driver.exception.DriverErrorCode
-import com.allcheck.driver.infrastructure.business.NtsBusinessClient
-import com.allcheck.driver.infrastructure.repository.DriverRepository
-import com.allcheck.driver.presentation.dto.request.ApprovalDecision
-import com.allcheck.driver.presentation.dto.request.BusinessInfoRequest
-import com.allcheck.driver.presentation.dto.request.BusinessVerificationRequest
-import com.allcheck.driver.presentation.dto.request.DriverApprovalRequest
-import com.allcheck.driver.presentation.dto.request.DriverProfileRequest
-import com.allcheck.driver.presentation.dto.request.DriverRegistrationRequest
-import com.allcheck.driver.presentation.dto.request.DriverResubmissionRequest
-import com.allcheck.driver.presentation.dto.request.DriverWithdrawalRequest
-import com.allcheck.driver.presentation.dto.request.SettlementAccountRequest
-import com.allcheck.driver.presentation.dto.response.DriverRegistrationResult
+import com.allcheck.driver.infrastructure.registration.NtsBusinessClient
+import com.allcheck.driver.infrastructure.repository.registration.DriverRepository
+import com.allcheck.driver.presentation.dto.request.registration.BusinessInfoRequest
+import com.allcheck.driver.presentation.dto.request.registration.BusinessVerificationRequest
+import com.allcheck.driver.presentation.dto.request.registration.DriverProfileRequest
+import com.allcheck.driver.presentation.dto.request.registration.DriverRegistrationRequest
+import com.allcheck.driver.presentation.dto.request.registration.DriverResubmissionRequest
+import com.allcheck.driver.presentation.dto.request.registration.SettlementAccountRequest
+import com.allcheck.driver.presentation.dto.request.review.DriverApprovalRequest
+import com.allcheck.driver.presentation.dto.request.withdrawal.DriverWithdrawalRequest
+import com.allcheck.driver.presentation.dto.response.registration.DriverRegistrationResult
+import com.allcheck.driver.presentation.registration.toCommand
 import com.allcheck.global.exception.BusinessException
 import com.allcheck.global.security.jwt.JwtTokenProvider
 import com.allcheck.identity.AdminRole
 import com.allcheck.identity.PushDeviceOperations
 import com.allcheck.identity.PushTarget
-import com.allcheck.identity.application.KakaoSessionService
-import com.allcheck.identity.domain.entity.Account
-import com.allcheck.identity.domain.entity.AuthSession
-import com.allcheck.identity.domain.vo.AdminCredential
-import com.allcheck.identity.domain.vo.SocialLogin
-import com.allcheck.identity.infrastructure.repository.AccountRepository
-import com.allcheck.identity.infrastructure.repository.AuthSessionRepository
-import com.allcheck.identity.infrastructure.token.RefreshTokenProvider
+import com.allcheck.identity.application.login.KakaoSessionService
+import com.allcheck.identity.domain.entity.account.Account
+import com.allcheck.identity.domain.entity.session.AuthSession
+import com.allcheck.identity.domain.vo.account.AdminCredential
+import com.allcheck.identity.domain.vo.account.SocialLogin
+import com.allcheck.identity.infrastructure.repository.account.AccountRepository
+import com.allcheck.identity.infrastructure.repository.session.AuthSessionRepository
+import com.allcheck.identity.infrastructure.session.RefreshTokenProvider
 import com.allcheck.operations.work.WorkOperations
 import com.allcheck.operations.work.WorkReference
 import com.allcheck.operations.work.domain.entity.WorkOrder
@@ -111,7 +119,7 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
     private val pushTransactions: DriverPushTransactions,
     private val pushDevices: PushDeviceOperations,
     private val workOperations: WorkOperations,
-    private val commandService: DriverCommandService,
+    private val commandService: DriverRegistrationTransactions,
     transactionManager: PlatformTransactionManager,
 ) {
     @MockitoBean private lateinit var nts: NtsBusinessClient
@@ -184,6 +192,74 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
         assertThat(jdbc.queryForObject("select count(*) from drivers where account_id = ?", Long::class.java, actor.accountId)).isEqualTo(1)
         assertThat(jdbc.queryForObject("select count(*) from driver_notification_events where driver_id = ?", Long::class.java, first.driverId)).isEqualTo(1)
         Mockito.verify(nts, Mockito.times(1)).verify(anyIdentity())
+    }
+
+    @ParameterizedTest
+    @EnumSource(WorkType::class)
+    fun `다섯 작업 분야 모두 가입 후 조회할 수 있다`(workType: WorkType) {
+        // given
+        val actor = driver()
+        val original = request()
+        val registration = original.copy(profile = original.profile.copy(specialties = listOf(workType)))
+
+        // when
+        submit(actor, registration)
+
+        // then
+        mvc.perform(get(registrationPath).header(HttpHeaders.AUTHORIZATION, actor.header))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.profile.specialties[0]").value(workType.name))
+        assertThat(tx.execute { checkNotNull(drivers.findByAccountId(actor.accountId)).profile.specialties.toList() }).containsExactly(workType)
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ["******", "********9012", "------", "123*456", "-123456", "123456-"])
+    fun `마스킹되거나 숫자 그룹이 아닌 계좌번호는 외부 검증과 저장 전에 거부한다`(accountNumber: String) {
+        // given
+        val actor = driver()
+        val original = request()
+        val registration = original.copy(
+            profile = original.profile.copy(
+                settlementAccount = original.profile.settlementAccount.copy(accountNumber = accountNumber),
+            ),
+        )
+
+        // when
+        val result = mvc.perform(
+            post(registrationPath).header(HttpHeaders.AUTHORIZATION, actor.header)
+                .header("Idempotency-Key", "invalid-account").contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(registration)),
+        )
+
+        // then
+        result.andExpect(status().isBadRequest).andExpect(jsonPath("$.code").value("INVALID_INPUT_VALUE"))
+        assertThat(drivers.existsByAccountId(actor.accountId)).isFalse()
+        Mockito.verifyNoInteractions(nts)
+    }
+
+    @Test
+    fun `숫자 그룹으로 구성된 계좌번호는 원본을 저장하고 관리자 응답만 마스킹한다`() {
+        // given
+        val actor = driver()
+        val reviewer = admin()
+        val original = request()
+        val registration = original.copy(
+            profile = original.profile.copy(
+                settlementAccount = original.profile.settlementAccount.copy(accountNumber = "123-456-789012"),
+            ),
+        )
+
+        // when
+        val registered = submit(actor, registration)
+
+        // then
+        mvc.perform(get(registrationPath).header(HttpHeaders.AUTHORIZATION, actor.header))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.profile.settlementAccount.accountNumber").value("123-456-789012"))
+        mvc.perform(get("/api/v1/drivers/${registered.driverId}").header(HttpHeaders.AUTHORIZATION, reviewer.header))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.profile.settlementAccount.accountNumber").value("**********9012"))
+        assertThat(tx.execute { checkNotNull(drivers.findByAccountId(actor.accountId)).profile.accountNumber }).isEqualTo("123-456-789012")
     }
 
     @ParameterizedTest
@@ -346,7 +422,7 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
             val pending = executor.submit {
                 tx.executeWithoutResult {
                     val data = request()
-                    commandService.submit(actor.accountId, "submit", data, VerifiedBusinessIdentity(data.business.identity(), BusinessOperatingStatus.CONTINUING, Instant.now()))
+                    commandService.submit(actor.accountId, "submit", data.toCommand(), VerifiedBusinessIdentity(data.toCommand().business.identity(), BusinessOperatingStatus.CONTINUING, Instant.now()))
                     entered.countDown()
                     check(release.await(10, TimeUnit.SECONDS))
                 }
@@ -432,7 +508,7 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
         // when
         org.assertj.core.api.Assertions.assertThatThrownBy {
             tx.executeWithoutResult {
-                commandService.submit(actor.accountId, "rollback", data, VerifiedBusinessIdentity(data.business.identity(), BusinessOperatingStatus.CONTINUING, Instant.now()))
+                commandService.submit(actor.accountId, "rollback", data.toCommand(), VerifiedBusinessIdentity(data.toCommand().business.identity(), BusinessOperatingStatus.CONTINUING, Instant.now()))
                 drivers.flush()
                 throw IllegalStateException("test-rollback")
             }

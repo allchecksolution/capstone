@@ -2,6 +2,9 @@ package com.allcheck.identity.infrastructure.kakao
 
 import com.allcheck.global.exception.BusinessException
 import com.allcheck.identity.exception.IdentityErrorCode
+import com.allcheck.identity.infrastructure.login.kakao.KakaoClient
+import com.allcheck.identity.infrastructure.login.kakao.KakaoClientConfig
+import com.allcheck.identity.infrastructure.login.kakao.KakaoProperties
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows

@@ -3,10 +3,14 @@ package com.allcheck.identity.application
 import com.allcheck.global.exception.BusinessException
 import com.allcheck.identity.AdminRole
 import com.allcheck.identity.UserType
+import com.allcheck.identity.application.login.AdminLoginService
+import com.allcheck.identity.application.provisioning.AdminAccountProvisioningService
+import com.allcheck.identity.application.provisioning.AdminAccountProvisioningTransactions
+import com.allcheck.identity.application.provisioning.ProvisionedAdministrator
 import com.allcheck.identity.exception.IdentityErrorCode
-import com.allcheck.identity.infrastructure.password.AdminPasswordHasher
-import com.allcheck.identity.infrastructure.repository.AccountRepository
-import com.allcheck.identity.infrastructure.repository.AuthSessionRepository
+import com.allcheck.identity.infrastructure.login.password.AdminPasswordHasher
+import com.allcheck.identity.infrastructure.repository.account.AccountRepository
+import com.allcheck.identity.infrastructure.repository.session.AuthSessionRepository
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.AfterEach

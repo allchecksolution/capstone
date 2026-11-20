@@ -1,5 +1,6 @@
 package com.allcheck.identity.infrastructure.password
 
+import com.allcheck.identity.infrastructure.login.password.AdminPasswordHasher
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest

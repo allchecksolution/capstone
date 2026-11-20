@@ -14,7 +14,7 @@ CREATE TABLE driver_profiles (
 CREATE TABLE driver_profile_specialties (
     profile_id VARCHAR(64) NOT NULL REFERENCES driver_profiles(profile_id),
     position INTEGER NOT NULL CHECK (position >= 0),
-    specialty VARCHAR(20) NOT NULL CHECK (specialty IN ('BLOCKAGE', 'INTERIOR_LEAK', 'EXTERIOR_LEAK')),
+    specialty VARCHAR(20) NOT NULL CHECK (specialty IN ('BLOCKAGE', 'INTERIOR_LEAK', 'EXTERIOR_LEAK', 'BOILER', 'WATERPROOFING')),
     PRIMARY KEY (profile_id, position),
     UNIQUE (profile_id, specialty)
 );

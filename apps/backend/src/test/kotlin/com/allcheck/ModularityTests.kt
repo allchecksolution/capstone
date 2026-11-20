@@ -9,6 +9,23 @@ import org.springframework.modulith.core.ApplicationModules
 class ModularityTests {
 
     @Test
+    fun `인증 기사 애플리케이션과 응답 DTO는 요청 DTO에 의존하지 않는다`() {
+        // given
+        val classes = ClassFileImporter().withImportOption(ImportOption.DoNotIncludeTests())
+            .importPackages("com.allcheck.identity", "com.allcheck.driver")
+
+        // when & then
+        noClasses().that().resideInAnyPackage(
+            "com.allcheck.identity.application..",
+            "com.allcheck.driver.application..",
+            "com.allcheck.driver.presentation.dto.response..",
+        ).should().dependOnClassesThat().resideInAnyPackage(
+            "com.allcheck.identity.presentation.dto.request..",
+            "com.allcheck.driver.presentation.dto.request..",
+        ).check(classes)
+    }
+
+    @Test
     fun verifyModuleStructure() {
         ApplicationModules.of(BackendApplication::class.java)
             .verify()

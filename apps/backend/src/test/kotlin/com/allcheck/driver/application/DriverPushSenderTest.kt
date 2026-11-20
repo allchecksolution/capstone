@@ -1,5 +1,7 @@
 package com.allcheck.driver.application
 
+import com.allcheck.driver.application.notification.DriverPushData
+import com.allcheck.driver.application.notification.DriverPushSender
 import com.allcheck.global.notification.FcmClient
 import com.allcheck.global.notification.FcmConnection
 import com.allcheck.identity.PushTarget

@@ -2,9 +2,9 @@ package com.allcheck.identity.domain
 
 import com.allcheck.identity.AdminRole
 import com.allcheck.identity.UserType
-import com.allcheck.identity.domain.entity.Account
-import com.allcheck.identity.domain.vo.AdminCredential
-import com.allcheck.identity.domain.vo.SocialLogin
+import com.allcheck.identity.domain.entity.account.Account
+import com.allcheck.identity.domain.vo.account.AdminCredential
+import com.allcheck.identity.domain.vo.account.SocialLogin
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test

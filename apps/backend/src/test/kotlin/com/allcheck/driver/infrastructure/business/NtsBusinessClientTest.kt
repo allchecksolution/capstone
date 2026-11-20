@@ -1,8 +1,10 @@
 package com.allcheck.driver.infrastructure.business
 
-import com.allcheck.driver.domain.vo.BusinessIdentity
-import com.allcheck.driver.domain.vo.BusinessOperatingStatus
+import com.allcheck.driver.domain.vo.registration.BusinessIdentity
+import com.allcheck.driver.domain.vo.registration.BusinessOperatingStatus
 import com.allcheck.driver.exception.DriverErrorCode
+import com.allcheck.driver.infrastructure.registration.NtsBusinessClient
+import com.allcheck.driver.infrastructure.registration.NtsProperties
 import com.allcheck.global.exception.BusinessException
 import com.allcheck.global.exception.ErrorResponse
 import org.assertj.core.api.Assertions.assertThat

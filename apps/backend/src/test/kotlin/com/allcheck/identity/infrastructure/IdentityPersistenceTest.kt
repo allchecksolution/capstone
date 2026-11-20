@@ -2,13 +2,13 @@ package com.allcheck.identity.infrastructure
 
 import com.allcheck.identity.AdminRole
 import com.allcheck.identity.UserType
-import com.allcheck.identity.domain.entity.Account
-import com.allcheck.identity.domain.entity.AuthSession
-import com.allcheck.identity.domain.vo.AdminCredential
-import com.allcheck.identity.domain.vo.RefreshTokenHash
-import com.allcheck.identity.domain.vo.SocialLogin
-import com.allcheck.identity.infrastructure.repository.AccountRepository
-import com.allcheck.identity.infrastructure.repository.AuthSessionRepository
+import com.allcheck.identity.domain.entity.account.Account
+import com.allcheck.identity.domain.entity.session.AuthSession
+import com.allcheck.identity.domain.vo.account.AdminCredential
+import com.allcheck.identity.domain.vo.account.SocialLogin
+import com.allcheck.identity.domain.vo.session.RefreshTokenHash
+import com.allcheck.identity.infrastructure.repository.account.AccountRepository
+import com.allcheck.identity.infrastructure.repository.session.AuthSessionRepository
 import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy

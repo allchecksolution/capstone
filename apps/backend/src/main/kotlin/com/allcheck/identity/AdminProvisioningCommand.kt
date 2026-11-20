@@ -1,8 +1,8 @@
 package com.allcheck.identity
 
-import com.allcheck.identity.application.AdminAccountProvisioningService
+import com.allcheck.identity.application.provisioning.AdminAccountProvisioningService
 import com.allcheck.identity.infrastructure.provisioning.AdminProvisioningConfig
-import com.allcheck.identity.presentation.cli.AdminProvisioningCli
+import com.allcheck.identity.presentation.provisioning.AdminProvisioningCli
 import org.springframework.boot.WebApplicationType
 import org.springframework.boot.builder.SpringApplicationBuilder
 

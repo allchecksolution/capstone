@@ -1,7 +1,9 @@
 package com.allcheck.driver.infrastructure.business
 
-import com.allcheck.driver.domain.vo.BusinessIdentity
+import com.allcheck.driver.domain.vo.registration.BusinessIdentity
 import com.allcheck.driver.exception.DriverErrorCode
+import com.allcheck.driver.infrastructure.registration.NtsBusinessClient
+import com.allcheck.driver.infrastructure.registration.NtsClientConfig
 import com.allcheck.global.exception.BusinessException
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test

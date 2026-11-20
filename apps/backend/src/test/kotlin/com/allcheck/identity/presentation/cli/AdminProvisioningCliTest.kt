@@ -2,8 +2,9 @@ package com.allcheck.identity.presentation.cli
 
 import com.allcheck.global.exception.BusinessException
 import com.allcheck.identity.AdminRole
-import com.allcheck.identity.application.ProvisionedAdministrator
+import com.allcheck.identity.application.provisioning.ProvisionedAdministrator
 import com.allcheck.identity.exception.IdentityErrorCode
+import com.allcheck.identity.presentation.provisioning.AdminProvisioningCli
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir

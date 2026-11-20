@@ -115,6 +115,8 @@ class DriverOnboardingBackend implements FrontendBackend {
     '막힘': 'BLOCKAGE',
     '내벽 누수': 'INTERIOR_LEAK',
     '외벽 누수': 'EXTERIOR_LEAK',
+    '보일러': 'BOILER',
+    '방수': 'WATERPROOFING',
   };
   ApiData _requestRegistration(ApiData flat) {
     final specialties = (flat['specialties'] as List).map((value) {
