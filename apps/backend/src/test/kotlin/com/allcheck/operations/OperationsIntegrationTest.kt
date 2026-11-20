@@ -27,6 +27,7 @@ import com.allcheck.reception.domain.vo.ReceptionExternalId
 import com.allcheck.reception.domain.vo.review.ReceptionConfirmationData
 import com.allcheck.reception.domain.vo.review.ReceptionCreationData
 import com.allcheck.support.PostgresTestSchema
+import com.allcheck.support.insertDriverFixture
 import com.sun.net.httpserver.HttpServer
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterAll
@@ -103,6 +104,8 @@ class OperationsIntegrationTest @Autowired constructor(
     @BeforeEach
     fun reset() {
         jdbc.execute("TRUNCATE receptions,operations_receipts RESTART IDENTITY CASCADE")
+        jdbc.insertDriverFixture(10)
+        jdbc.insertDriverFixture(20)
         clock.time = Instant.parse("2026-10-31T14:59:00Z")
         geo.fail = false
         geo.barrier = null
@@ -768,18 +771,20 @@ class OperationsIntegrationTest @Autowired constructor(
         fun photoFixture() = PhotoFixture()
 
         @Bean(destroyMethod = "close")
+        @Primary
         fun pushFixture() = PushFixture()
 
         @Bean fun operationsFcmConnection(fixture: PushFixture) = fixture.connection()
 
-        @Bean
+        @Bean @Primary
         fun operationsDrivers(clock: MutableClock) = object : OperationsDrivers {
-            override fun candidates(context: CandidateContext) = listOf(current(10, context), current(20, context))
-            override fun current(driverId: Long, context: CandidateContext) = DriverAvailability(driverId, true, true, WorkType.entries.toSet(), true, 127.0, 37.5, clock.time)
-            override fun lockForAcceptance(driverId: Long, context: CandidateContext) = current(driverId, context)
+            override fun candidates(context: CandidateContext) = listOf(current(10), current(20))
+            private fun current(driverId: Long) = DriverAvailability(driverId, true, true, WorkType.entries.toSet(), true, 127.0, 37.5, clock.time)
+            override fun lockForAcceptance(driverId: Long, context: CandidateContext) = current(driverId)
         }
 
-        @Bean fun operationsIdentity() = object : OperationsIdentity {
+        @Bean @Primary
+        fun operationsIdentity() = object : OperationsIdentity {
             override fun resolve(authentication: org.springframework.security.core.Authentication): OperationsActor? = when (authentication.name) {
                 "admin-1" -> OperationsActor(ActorRole.ADMIN, 1)
                 "admin-2" -> OperationsActor(ActorRole.ADMIN, 2)

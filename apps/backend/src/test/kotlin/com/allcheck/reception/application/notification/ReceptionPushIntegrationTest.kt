@@ -1,6 +1,7 @@
 package com.allcheck.reception.application.notification
 
 import com.allcheck.global.notification.FcmConnection
+import com.allcheck.reception.ReceptionPushBinding
 import com.allcheck.reception.ReceptionPushDevices
 import com.allcheck.reception.application.analysis.ReceptionAnalysisTransactions
 import com.allcheck.reception.application.recording.ReceptionRecordingTransactions
@@ -363,10 +364,10 @@ class ReceptionPushIntegrationTest @Autowired constructor(
         val bindings = ConcurrentHashMap<String, Binding>()
         val invalidated = CopyOnWriteArrayList<String>()
         override fun activeInstallations(adminId: Long) = bindings.filterValues { it.adminId == adminId }.keys.toList()
-        override fun currentToken(adminId: Long, installationId: String) = bindings[installationId]?.takeIf { it.adminId == adminId }?.token
-        override fun invalidateToken(adminId: Long, installationId: String, rejectedToken: String) {
+        override fun currentBinding(adminId: Long, installationId: String) = bindings[installationId]?.takeIf { it.adminId == adminId }?.let { ReceptionPushBinding(it.token, 0) }
+        override fun invalidateBinding(adminId: Long, installationId: String, rejected: ReceptionPushBinding) {
             bindings.computeIfPresent(installationId) { _, value ->
-                if (value.adminId == adminId && value.token == rejectedToken) {
+                if (value.adminId == adminId && value.token == rejected.token) {
                     invalidated.add(installationId)
                     null
                 } else {
@@ -396,7 +397,8 @@ class ReceptionPushIntegrationTest @Autowired constructor(
         @Bean @Primary
         fun pushClock(): Clock = clock
 
-        @Bean fun pushDevices(): ReceptionPushDevices = devices
+        @Bean @Primary
+        fun pushDevices(): ReceptionPushDevices = devices
 
         @Bean(destroyMethod = "close")
         fun fakeFcmConnection(): FcmConnection {

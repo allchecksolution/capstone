@@ -1,5 +1,6 @@
 package com.allcheck.operations.work.application
 
+import com.allcheck.driver.DriverWorkload
 import com.allcheck.global.exception.BusinessException
 import com.allcheck.operations.CancellationFact
 import com.allcheck.operations.CancellationReason
@@ -20,12 +21,15 @@ import java.time.Instant
 
 @Service
 @Transactional(readOnly = true)
-class WorkService(private val works: WorkOrderRepository, private val cancellations: WorkCancellationRepository, private val em: EntityManager) : WorkOperations {
+class WorkService(private val works: WorkOrderRepository, private val cancellations: WorkCancellationRepository, private val em: EntityManager) :
+    WorkOperations,
+    DriverWorkload {
     @Transactional(propagation = Propagation.MANDATORY)
     override fun create(requestId: Long, roundId: Long, offerId: Long, driverId: Long, previousWorkId: Long?, now: Instant) = snapshot(works.saveAndFlush(WorkOrder(requestId, roundId, offerId, driverId, previousWorkId, now)), null)
     override fun get(workId: Long) = snapshot(entity(workId), cancellations.findByWorkId(workId))
     override fun forRequest(requestId: Long) = snapshots(works.findAllByRequestIdOrderByWorkId(requestId))
-    override fun occupied(driverId: Long) = works.occupied(driverId)
+    override fun occupied(driverId: Long) = hasUnfinishedWork(driverId)
+    override fun hasUnfinishedWork(driverId: Long) = works.occupied(driverId)
     override fun occupiedDrivers(driverIds: Set<Long>) = if (driverIds.isEmpty()) emptySet() else works.occupiedDrivers(driverIds)
     override fun excluded(requestId: Long) = cancellations.excluded(requestId)
     override fun cancelled(page: Int, size: Int): List<WorkSnapshot> = snapshots(em.createQuery("select w from WorkOrder w where w.status=com.allcheck.operations.WorkStatus.CANCELLED order by w.cancelledAt desc,w.workId desc", WorkOrder::class.java).setFirstResult((page - 1) * size).setMaxResults(size).resultList)

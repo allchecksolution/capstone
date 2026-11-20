@@ -25,8 +25,8 @@ class ReceptionPushService(private val transactions: ReceptionPushTransactions, 
         } catch (_: ObjectOptimisticLockingFailureException) {
             return
         } ?: return
-        val token = devices().currentToken(task.adminId, task.installationId)
-        if (token == null) {
+        val binding = devices().currentBinding(task.adminId, task.installationId)
+        if (binding == null) {
             transactions.skip(task)
             return
         }
@@ -38,14 +38,14 @@ class ReceptionPushService(private val transactions: ReceptionPushTransactions, 
             "analysisRequestId" to ReceptionExternalId.ANALYSIS.format(task.analysisId),
         )
         val providerId = try {
-            fcm.send(token, payload) {
-                val current = devices().currentToken(task.adminId, task.installationId)
+            fcm.send(binding.token, payload) {
+                val current = devices().currentBinding(task.adminId, task.installationId)
                 when {
                     current == null -> {
                         transactions.skip(task)
                         false
                     }
-                    current != token -> {
+                    current != binding -> {
                         transactions.failed(task, "TOKEN_ROTATED", true, null)
                         false
                     }
@@ -54,7 +54,7 @@ class ReceptionPushService(private val transactions: ReceptionPushTransactions, 
             }
         } catch (failure: FcmException) {
             transactions.failed(task, failure.failure.name, failure.failure.retryable, failure.retryAfter)
-            if (failure.failure == FcmFailure.UNREGISTERED) devices().invalidateToken(task.adminId, task.installationId, token)
+            if (failure.failure == FcmFailure.UNREGISTERED) devices().invalidateBinding(task.adminId, task.installationId, binding)
             return
         }
         transactions.accepted(task, providerId)

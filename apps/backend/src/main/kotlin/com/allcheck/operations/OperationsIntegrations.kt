@@ -1,6 +1,7 @@
 package com.allcheck.operations
 
 import org.springframework.security.core.Authentication
+import java.time.Duration
 import java.time.Instant
 
 /** Identity 도메인이 현재 권한을 검증하여 구현한다. 토큰 subject를 숫자 ID로 추측하지 않는다. */
@@ -11,7 +12,6 @@ interface OperationsIdentity {
 /** Driver 도메인의 일관된 현재 스냅샷. 페이지 누락/조회 오류를 빈 목록으로 반환하지 않는다. */
 interface OperationsDrivers {
     fun candidates(context: CandidateContext): List<DriverAvailability>
-    fun current(driverId: Long, context: CandidateContext): DriverAvailability?
 
     /**
      * 수락 트랜잭션에 참여하는 짧은 로컬 조회. 자격·READY·지역·GPS의 권위 있는 행을 잠그거나
@@ -30,6 +30,7 @@ data class DriverAvailability(
     val longitude: Double?,
     val latitude: Double?,
     val locationAt: Instant?,
+    val locationValidity: Duration = Duration.ofMinutes(5),
 ) {
     fun eligible(context: CandidateContext): Boolean {
         val located = locationAt ?: return false
@@ -45,8 +46,9 @@ data class DriverAvailability(
             latitude.isFinite() &&
             latitude in -90.0..90.0 &&
             located <= context.observedAt &&
-            located >= context.observedAt.minusSeconds(300)
+            located >= context.observedAt.minus(locationValidity)
     }
+    override fun toString(): String = "DriverAvailability(driverId=$driverId, activated=$activated, ready=$ready)"
 }
 
 /** 외부 조회 실패 분류. 원격 응답 본문/좌표/개인정보를 예외 메시지에 포함하지 않는다. */
@@ -64,4 +66,6 @@ interface OperationsPushDevices {
     fun invalidateIfCurrent(actor: OperationsActor, installationId: String, binding: PushBinding)
 }
 
-data class PushBinding(val token: String, val version: String)
+data class PushBinding(val token: String, val version: String) {
+    override fun toString(): String = "PushBinding(version=$version)"
+}

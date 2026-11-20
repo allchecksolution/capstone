@@ -5,8 +5,12 @@ interface ReceptionPushDevices {
     fun activeInstallations(adminId: Long): List<String>
 
     /** 재시도마다 현재 연결과 토큰을 다시 확인한다. 해제/이전/접근 불가이면 null이다. */
-    fun currentToken(adminId: Long, installationId: String): String?
+    fun currentBinding(adminId: Long, installationId: String): ReceptionPushBinding?
 
     /** 아직 해당 토큰인 경우에만 해제한다. 이미 갱신된 토큰을 무효화하지 않는다. */
-    fun invalidateToken(adminId: Long, installationId: String, rejectedToken: String)
+    fun invalidateBinding(adminId: Long, installationId: String, rejected: ReceptionPushBinding)
+}
+
+data class ReceptionPushBinding(val token: String, val version: Long) {
+    override fun toString(): String = "ReceptionPushBinding(version=$version)"
 }

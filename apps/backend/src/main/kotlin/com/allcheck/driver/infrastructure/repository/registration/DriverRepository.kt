@@ -1,5 +1,6 @@
 package com.allcheck.driver.infrastructure.repository.registration
 
+import com.allcheck.driver.DriverIdentity
 import com.allcheck.driver.domain.entity.registration.Driver
 import com.allcheck.driver.domain.vo.registration.DriverAccountStatus
 import jakarta.persistence.LockModeType
@@ -12,6 +13,12 @@ import org.springframework.data.repository.query.Param
 
 interface DriverRepository : JpaRepository<Driver, Long> {
     fun findByAccountId(accountId: Long): Driver?
+
+    @Query("select new com.allcheck.driver.DriverIdentity(d.id, d.accountId) from Driver d where d.accountId = :accountId and d.accountStatus = com.allcheck.driver.domain.vo.registration.DriverAccountStatus.ACTIVATED")
+    fun findActiveIdentityByAccountId(accountId: Long): DriverIdentity?
+
+    @Query("select new com.allcheck.driver.DriverIdentity(d.id, d.accountId) from Driver d where d.id = :driverId and d.accountStatus = com.allcheck.driver.domain.vo.registration.DriverAccountStatus.ACTIVATED")
+    fun findActiveIdentityByDriverId(driverId: Long): DriverIdentity?
 
     fun existsByAccountId(accountId: Long): Boolean
 

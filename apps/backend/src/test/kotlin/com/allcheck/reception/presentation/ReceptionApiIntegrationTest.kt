@@ -403,6 +403,7 @@ class ReceptionApiIntegrationTest @Autowired constructor(
         fun offlineSigner(fixture: StorageFixture): S3Presigner = S3TestFixtures.signer { fixture.signatures.incrementAndGet() }
 
         @Bean
+        @Primary
         fun administratorIdentity() = ReceptionAdministratorIdentity { authentication -> (authentication.principal as? TestAdmin)?.id }
 
         @Bean

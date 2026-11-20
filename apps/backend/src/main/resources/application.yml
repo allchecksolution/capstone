@@ -80,6 +80,8 @@ identity:
     read-timeout: ${KAKAO_READ_TIMEOUT:PT5S}
 
 driver:
+  dispatch:
+    location-validity: ${DRIVER_LOCATION_VALIDITY:5m}
   nts:
     service-key: ${NTS_SERVICE_KEY:}
     connect-timeout: ${NTS_CONNECT_TIMEOUT:PT2S}

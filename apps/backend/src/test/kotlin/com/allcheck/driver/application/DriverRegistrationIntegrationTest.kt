@@ -38,11 +38,23 @@ import com.allcheck.identity.domain.vo.account.SocialLogin
 import com.allcheck.identity.infrastructure.repository.account.AccountRepository
 import com.allcheck.identity.infrastructure.repository.session.AuthSessionRepository
 import com.allcheck.identity.infrastructure.session.RefreshTokenProvider
+import com.allcheck.operations.ActorRole
+import com.allcheck.operations.OperationsActor
+import com.allcheck.operations.OperationsGeocoder
+import com.allcheck.operations.OperationsPushDevices
+import com.allcheck.operations.RequestIntake
+import com.allcheck.operations.SiteCoordinates
+import com.allcheck.operations.WorkStatus
+import com.allcheck.operations.coordination.application.OperationsTaskTransactions
+import com.allcheck.operations.coordination.application.OperationsWorker
+import com.allcheck.operations.dispatch.DispatchOperations
+import com.allcheck.operations.dispatch.OfferSnapshot
+import com.allcheck.operations.domain.entity.TaskKind
+import com.allcheck.operations.request.RequestOperations
 import com.allcheck.operations.work.WorkOperations
-import com.allcheck.operations.work.WorkReference
-import com.allcheck.operations.work.domain.entity.WorkOrder
-import com.allcheck.operations.work.domain.entity.WorkStatus
-import com.allcheck.operations.work.infrastructure.repository.WorkOrderRepository
+import com.allcheck.reception.application.review.ReceptionService
+import com.allcheck.reception.domain.vo.ReceptionExternalId
+import com.allcheck.reception.domain.vo.review.ReceptionCreationData
 import com.allcheck.support.PostgresTestSchema
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterAll
@@ -70,6 +82,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
@@ -80,8 +93,11 @@ import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.transaction.support.TransactionTemplate
 import tools.jackson.databind.json.JsonMapper
+import java.sql.Timestamp
+import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneOffset
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -112,7 +128,12 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
     private val tokens: JwtTokenProvider,
     private val refreshTokens: RefreshTokenProvider,
     private val drivers: DriverRepository,
-    private val works: WorkOrderRepository,
+    private val tasks: OperationsTaskTransactions,
+    private val operationsWorker: OperationsWorker,
+    private val operationsDevices: OperationsPushDevices,
+    private val receptions: ReceptionService,
+    private val requests: RequestOperations,
+    private val dispatch: DispatchOperations,
     private val jdbc: JdbcTemplate,
     private val dataSource: DataSource,
     private val pushWorker: DriverPushWorker,
@@ -123,6 +144,8 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
     transactionManager: PlatformTransactionManager,
 ) {
     @MockitoBean private lateinit var nts: NtsBusinessClient
+
+    @MockitoBean private lateinit var geocoder: OperationsGeocoder
 
     @MockitoBean private lateinit var fcm: DriverPushSender
     private val tx = TransactionTemplate(transactionManager)
@@ -147,7 +170,10 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
         tx.executeWithoutResult {
             ownAccounts.mapNotNull { drivers.findByAccountId(it) }.forEach { driver ->
                 val businessId = checkNotNull(driver.business.id)
-                jdbc.update("delete from work_orders where driver_id = ?", checkNotNull(driver.id))
+                val driverId = checkNotNull(driver.id)
+                jdbc.update("update service_requests set current_work_id=null where current_work_id in (select work_id from work_orders where driver_id=?)", driverId)
+                jdbc.update("delete from work_orders where driver_id = ?", driverId)
+                jdbc.update("delete from driver_dispatch_states where driver_id = ?", driverId)
                 jdbc.update("delete from driver_push_deliveries where event_id in (select event_id from driver_notification_events where driver_id = ?)", checkNotNull(driver.id))
                 jdbc.update("delete from driver_notification_events where driver_id = ?", checkNotNull(driver.id))
                 jdbc.update("delete from driver_registration_history where driver_id = ?", checkNotNull(driver.id))
@@ -335,7 +361,13 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
         val admin = admin()
         val registered = submit(actor, request())
         decide(admin, registered.driverId, DriverApprovalRequest(1, ApprovalDecision.APPROVE))
-        tx.execute { works.saveAndFlush(WorkOrder(nextRequest.incrementAndGet(), registered.driverId, workStatus, Instant.now())) }
+        val offer = offerFor(admin.accountId, registered.driverId)
+        val work = tx.execute {
+            workOperations.create(offer.requestId, offer.roundId, offer.offerId, offer.driverId, null, Instant.now())
+        }
+        val completed = if (workStatus == WorkStatus.WORK_DONE) Timestamp.from(Instant.now()) else null
+        val cancelled = if (workStatus == WorkStatus.CANCELLED) Timestamp.from(Instant.now()) else null
+        jdbc.update("update work_orders set status = ?, completed_at = ?, cancelled_at = ? where work_id = ?", workStatus.name, completed, cancelled, work.workId)
         val terminal = workStatus in listOf(WorkStatus.WORK_DONE, WorkStatus.CANCELLED)
 
         // when & then
@@ -479,29 +511,141 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
         val registered = submit(actor, request())
         decide(admin, registered.driverId, DriverApprovalRequest(1, ApprovalDecision.APPROVE))
 
+        markReady(actor)
+        val offer = offerFor(admin.accountId, registered.driverId)
+
         // when
         val results = concurrently(
-            {
-                try {
-                    workOperations.recordAssignment(nextRequest.incrementAndGet(), registered.driverId)
-                } catch (ex: BusinessException) {
-                    ex.errorCode
-                }
-            },
+            { mvc.perform(acceptOffer(actor, "offer_${offer.offerId}")).andReturn().response.status },
             {
                 mvc.perform(
                     post("/api/v1/drivers/me/withdrawal").header(HttpHeaders.AUTHORIZATION, actor.header).header("Idempotency-Key", "withdraw")
                         .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(DriverWithdrawalRequest(2, true))),
-                )
-                    .andReturn().response.status
+                ).andReturn().response.status
             },
         )
 
         // then
-        val assigned = results.first() is WorkReference
+        val assigned = results.first() == 200
+        if (!assigned) assertThat(results.first()).isIn(401, 403, 409)
         assertThat(results.last()).isEqualTo(if (assigned) 409 else 200)
         assertThat(accounts.findById(actor.accountId).orElseThrow().enabled).isEqualTo(assigned)
-        assertThat(works.existsByDriverIdAndStatusNotIn(registered.driverId, listOf(WorkStatus.WORK_DONE, WorkStatus.CANCELLED))).isEqualTo(assigned)
+        assertThat(workOperations.occupied(registered.driverId)).isEqualTo(assigned)
+    }
+
+    @Test
+    fun `인증된 접수와 배차는 실제 기사 자격 기기 매핑과 작업 점유로 이어진다`() {
+        // given
+        val admin = admin()
+        val otherAdmin = admin(AdminRole.SUB)
+        val actor = driver()
+        val otherRegion = driver()
+        val profile = request().profile
+        val eligible = submit(actor, request().copy(profile = profile.copy(activityRegions = listOf("서울 강남구"))))
+        val ineligible = submit(otherRegion, request().copy(profile = profile.copy(activityRegions = listOf("서울 강동구"))))
+        assertThat(actor.accountId).isNotEqualTo(eligible.driverId)
+        setAvailability(actor, "READY").andExpect(status().isForbidden)
+        decide(admin, eligible.driverId, DriverApprovalRequest(1, ApprovalDecision.APPROVE))
+        decide(admin, ineligible.driverId, DriverApprovalRequest(1, ApprovalDecision.APPROVE))
+        mvc.perform(get("/api/v1/drivers/me/availability").header(HttpHeaders.AUTHORIZATION, actor.header))
+            .andExpect(status().isOk).andExpect(jsonPath("$.availability").value("UNAVAILABLE"))
+        markReady(actor)
+        markReady(otherRegion)
+        registerDevice(actor, "ack31-eligible", "eligible-fcm-token")
+
+        val reception = mvc.perform(
+            post("/api/v1/receptions").header(HttpHeaders.AUTHORIZATION, admin.header).header("Idempotency-Key", "reception")
+                .contentType(MediaType.APPLICATION_JSON).content("{}"),
+        ).andExpect(status().isCreated).andReturn().response.contentAsString.let(mapper::readTree)
+        val receptionId = reception["receptionId"].asString()
+        val address = "서울특별시 강남구 가상로 12"
+        Mockito.`when`(geocoder.resolve(address)).thenReturn(SiteCoordinates(127.0, 37.5, "서울특별시 강남구 역삼동"))
+        val from = Instant.now().atOffset(ZoneOffset.UTC).plusHours(1)
+        val confirmation = mapOf(
+            "expectedVersion" to reception["version"].asInt(),
+            "finalData" to mapOf(
+                "workType" to "BLOCKAGE",
+                "symptoms" to "배관 막힘",
+                "address" to address,
+                "contactPhone" to "01012345678",
+                "desiredVisitFrom" to from.toString(),
+                "desiredVisitTo" to from.plusHours(1).toString(),
+            ),
+        )
+        val confirmed = mvc.perform(
+            post("/api/v1/receptions/$receptionId/confirmation").header(HttpHeaders.AUTHORIZATION, admin.header).header("Idempotency-Key", "confirm")
+                .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(confirmation)),
+        ).andExpect(status().isOk).andReturn().response.contentAsString.let(mapper::readTree)
+
+        // when
+        val registration = mvc.perform(
+            post("/api/v1/service-requests").header(HttpHeaders.AUTHORIZATION, admin.header).header("Idempotency-Key", "request")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(mapOf("receptionId" to receptionId, "expectedVersion" to confirmed["version"].asInt()))),
+        ).andExpect(status().isCreated).andReturn().response.contentAsString.let(mapper::readTree)
+        val requestId = registration["requestId"].asString()
+        val search = checkNotNull(tasks.claim())
+        assertThat(search.kind).isEqualTo(TaskKind.SEARCH)
+        operationsWorker.execute(search)
+        val expansion = checkNotNull(tasks.claim())
+        assertThat(expansion.kind).isEqualTo(TaskKind.EXPAND_OFFER)
+        operationsWorker.execute(expansion)
+        val delivery = checkNotNull(tasks.claim())
+        assertThat(delivery.kind).isEqualTo(TaskKind.PUSH_OFFER)
+        assertThat(delivery.actor).isEqualTo(OperationsActor(ActorRole.DRIVER, eligible.driverId))
+        assertThat(delivery.installation).isEqualTo("ack31-eligible")
+        val offerId = "offer_${delivery.subjectId}"
+
+        // then
+        mvc.perform(get("/api/v1/dispatch-offers/$offerId").header(HttpHeaders.AUTHORIZATION, otherRegion.header)).andExpect(status().isNotFound)
+        mvc.perform(get("/api/v1/dispatch-offers/$offerId").header(HttpHeaders.AUTHORIZATION, actor.header))
+            .andExpect(status().isOk).andExpect(jsonPath("$.addressArea").value("서울특별시 강남구 역삼동"))
+        val issueAt = Instant.now()
+        sendLocation(actor, """{"issue":"PERMISSION_DENIED","occurredAt":"$issueAt"}""")
+            .andExpect(status().isOk).andExpect(jsonPath("$.locationUsability").value("MISSING"))
+        sendLocation(actor, """{"latitude":37.5,"longitude":127.0,"accuracyMeters":10,"measuredAt":"${issueAt.minusSeconds(10)}"}""")
+            .andExpect(status().isOk).andExpect(jsonPath("$.issue").value("PERMISSION_DENIED"))
+        mvc.perform(acceptOffer(actor, offerId, "without-location"))
+            .andExpect(status().isConflict).andExpect(jsonPath("$.code").value("DRIVER_NOT_ELIGIBLE"))
+        markReady(actor)
+        setAvailability(actor, "UNAVAILABLE").andExpect(status().isOk)
+        mvc.perform(acceptOffer(actor, offerId, "while-unavailable"))
+            .andExpect(status().isConflict).andExpect(jsonPath("$.code").value("DRIVER_NOT_ELIGIBLE"))
+        setAvailability(actor, "READY").andExpect(status().isOk)
+        mvc.perform(acceptOffer(actor, offerId)).andExpect(status().isOk)
+        assertThat(workOperations.occupied(eligible.driverId)).isTrue()
+        mvc.perform(get("/api/v1/service-requests/$requestId").header(HttpHeaders.AUTHORIZATION, otherAdmin.header))
+            .andExpect(status().isOk).andExpect(jsonPath("$.requestStatus").value("ACCEPTED"))
+        mvc.perform(get("/api/v1/receptions/$receptionId").header(HttpHeaders.AUTHORIZATION, otherAdmin.header)).andExpect(status().isNotFound)
+    }
+
+    @Test
+    fun `이전 연결의 무효화 결과는 같은 토큰으로 다시 연결한 기사 기기에 영향을 주지 않는다`() {
+        // given
+        val admin = admin()
+        val actor = driver()
+        val registered = submit(actor, request())
+        decide(admin, registered.driverId, DriverApprovalRequest(1, ApprovalDecision.APPROVE))
+        val recipient = OperationsActor(ActorRole.DRIVER, registered.driverId)
+        val installation = "ack31-device-rebind"
+        val token = "ack31-device-token"
+        registerDevice(actor, installation, token)
+        val previous = checkNotNull(operationsDevices.current(recipient, installation))
+
+        // when
+        mvc.perform(delete("/api/v1/push-devices/$installation").header(HttpHeaders.AUTHORIZATION, actor.header)).andExpect(status().isNoContent)
+        assertThat(operationsDevices.current(recipient, installation)).isNull()
+        registerDevice(actor, installation, token)
+        operationsDevices.invalidateIfCurrent(recipient, installation, previous)
+
+        // then
+        val rebound = checkNotNull(operationsDevices.current(recipient, installation))
+        assertThat(rebound.version).isNotEqualTo(previous.version)
+        mvc.perform(
+            post("/api/v1/auth/sessions/logout").contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(mapOf("refreshToken" to actor.refreshToken))),
+        ).andExpect(status().isNoContent)
+        assertThat(operationsDevices.current(recipient, installation)).isNull()
     }
 
     @Test
@@ -948,7 +1092,43 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
         }
     }
 
-    private fun anyTarget(): PushTarget = any(PushTarget::class.java) ?: PushTarget(1L, "unused", "unused", "unused")
+    private fun setAvailability(actor: Actor, availability: String) = mvc.perform(
+        patch("/api/v1/drivers/me/availability").header(HttpHeaders.AUTHORIZATION, actor.header)
+            .contentType(MediaType.APPLICATION_JSON).content("""{"availability":"$availability"}"""),
+    )
+
+    private fun markReady(actor: Actor) {
+        setAvailability(actor, "READY").andExpect(status().isOk)
+        val now = Instant.now()
+        sendLocation(actor, """{"latitude":37.5,"longitude":127.0,"accuracyMeters":10,"measuredAt":"$now"}""")
+            .andExpect(status().isOk).andExpect(jsonPath("$.locationUsability").value("VALID"))
+    }
+
+    private fun sendLocation(actor: Actor, body: String) = mvc.perform(
+        put("/api/v1/drivers/me/location").header(HttpHeaders.AUTHORIZATION, actor.header)
+            .contentType(MediaType.APPLICATION_JSON).content(body),
+    )
+
+    private fun acceptOffer(actor: Actor, offerId: String, key: String = "accept") = post("/api/v1/dispatch-offers/$offerId/response").header(HttpHeaders.AUTHORIZATION, actor.header)
+        .header("Idempotency-Key", key).contentType(MediaType.APPLICATION_JSON).content("""{"response":"ACCEPT"}""")
+
+    private fun offerFor(adminId: Long, driverId: Long): OfferSnapshot {
+        val reception = receptions.create(adminId, ReceptionCreationData())
+        val id = ReceptionExternalId.RECEPTION.parse(reception.receptionId)
+        val now = Instant.now()
+        val from = now.atOffset(ZoneOffset.UTC).plusHours(1)
+        val intake = RequestIntake(com.allcheck.operations.WorkType.BLOCKAGE, "온수 이상", "서울 강남구", from, from.plusHours(1), "01012345678", null)
+        return checkNotNull(
+            tx.execute {
+                val request = requests.create(id, adminId, intake, SiteCoordinates(127.0, 37.5, "서울 강남구"), now)
+                val round = dispatch.create(request.requestId, now)
+                requests.startRound(request.requestId, round.roundId, now)
+                dispatch.publish(round.roundId, mapOf(driverId to 0.0), now, Duration.ofMinutes(1)).single()
+            },
+        )
+    }
+
+    private fun anyTarget(): PushTarget = any(PushTarget::class.java) ?: PushTarget(1L, "unused", "unused", "unused", 0)
     private fun anyDriverPushData(): DriverPushData = any(DriverPushData::class.java) ?: DriverPushData(1L, "unused", 1L, 1)
     private fun anyBeforeSend(): () -> Boolean = any<() -> Boolean>() ?: { true }
 
@@ -1015,7 +1195,6 @@ class DriverRegistrationIntegrationTest @Autowired constructor(
     private fun anyIdentity(): BusinessIdentity = any(BusinessIdentity::class.java) ?: BusinessIdentity("1234567890", LocalDate.of(2020, 1, 15), "테스트대표")
     companion object {
         private val nextUser = AtomicLong(810000000)
-        private val nextRequest = AtomicLong(1)
         private val database = PostgresTestSchema("driver_registration")
 
         @JvmStatic
