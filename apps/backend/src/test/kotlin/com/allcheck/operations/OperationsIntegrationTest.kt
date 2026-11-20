@@ -2,7 +2,10 @@ package com.allcheck.operations
 
 import com.allcheck.global.exception.BusinessException
 import com.allcheck.global.notification.FcmConnection
+import com.allcheck.global.security.principal.AuthPrincipal
 import com.allcheck.global.storage.SignedObjectUrl
+import com.allcheck.identity.AdminRole
+import com.allcheck.identity.UserType
 import com.allcheck.operations.coordination.application.OperationsPhotos
 import com.allcheck.operations.coordination.application.OperationsQueries
 import com.allcheck.operations.coordination.application.OperationsReportTransactions
@@ -45,6 +48,9 @@ import org.springframework.context.annotation.Import
 import org.springframework.context.annotation.Primary
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
+import org.springframework.security.core.authority.AuthorityUtils
+import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user
 import org.springframework.test.annotation.DirtiesContext
 import org.springframework.test.context.ActiveProfiles
@@ -372,22 +378,24 @@ class OperationsIntegrationTest @Autowired constructor(
         val offer = dispatch.offers(checkNotNull(requests.get(request).currentRoundId)).single()
         // when & then
         mvc.perform(get("/api/v1/service-requests/req_$request")).andExpect(status().isUnauthorized)
-        mvc.perform(get("/api/v1/service-requests/req_$request").with(user("driver-10").roles("DRIVER"))).andExpect(status().isForbidden)
-        mvc.perform(get("/api/v1/dispatch-offers/offer_${offer.offerId}").with(user("driver-20").roles("DRIVER"))).andExpect(status().isNotFound)
-        mvc.perform(get("/api/v1/dispatch-offers/offer_${offer.offerId}").with(user("driver-10").roles("DRIVER")))
+        mvc.perform(get("/api/v1/service-requests/req_$request").with(authenticated(10, UserType.DRIVER))).andExpect(status().isForbidden)
+        mvc.perform(get("/api/v1/dispatch-offers/offer_${offer.offerId}").with(authenticated(20, UserType.DRIVER))).andExpect(status().isNotFound)
+        mvc.perform(get("/api/v1/dispatch-offers/offer_${offer.offerId}").with(authenticated(10, UserType.DRIVER)))
             .andExpect(status().isOk).andExpect(jsonPath("$.addressArea").value("서울특별시 중구 가상동"))
             .andExpect(jsonPath("$.contactPhone").doesNotExist()).andExpect(jsonPath("$.address").doesNotExist())
-        mvc.perform(get("/api/v1/drivers/me/works").param("month", "2026-11").with(user("driver-10").roles("DRIVER"))).andExpect(status().isBadRequest)
-        mvc.perform(get("/api/v1/service-requests/req_$request").with(user("admin-2").roles("ADMIN"))).andExpect(status().isOk)
+        mvc.perform(get("/api/v1/drivers/me/works").param("month", "2026-11").with(authenticated(10, UserType.DRIVER))).andExpect(status().isBadRequest)
+        mvc.perform(get("/api/v1/service-requests/req_$request").with(authenticated(2, UserType.ADMIN))).andExpect(status().isOk)
         mvc.perform(get("/api/v1/service-requests/req_$request").with(user("unmapped").roles("ADMIN"))).andExpect(status().isForbidden)
-        mvc.perform(post("/api/v1/dispatch-offers/offer_${offer.offerId}/response").with(user("driver-10").roles("DRIVER")).header("Idempotency-Key", "bad").contentType(MediaType.APPLICATION_JSON).content("{\"response\":\"OTHER\"}"))
+        mvc.perform(get("/api/v1/works/work_1").with(authenticated(2, UserType.ADMIN, authority = UserType.DRIVER))).andExpect(status().isForbidden)
+        mvc.perform(get("/api/v1/drivers/me/work-statistics").param("month", "2026-11").with(authenticated(99, UserType.DRIVER))).andExpect(status().isForbidden)
+        mvc.perform(post("/api/v1/dispatch-offers/offer_${offer.offerId}/response").with(authenticated(10, UserType.DRIVER)).header("Idempotency-Key", "bad").contentType(MediaType.APPLICATION_JSON).content("{\"response\":\"OTHER\"}"))
             .andExpect(status().isBadRequest)
         mvc.perform(get("/v3/api-docs")).andExpect(status().isOk)
             .andExpect(jsonPath("$.paths['/api/v1/works/{workId}/reports'].post.operationId").value("submitWorkReport"))
             .andExpect(jsonPath("$.components.schemas.SubmitReportRequest.properties.beforePhotoIds.minItems").value(3))
-        mvc.perform(post("/api/v1/dispatch-offers/offer_${offer.offerId}/response").with(user("driver-10").roles("DRIVER")).header("Idempotency-Key", "unknown").contentType(MediaType.APPLICATION_JSON).content("{\"response\":\"REJECT\",\"duringPhotoIds\":[]}"))
+        mvc.perform(post("/api/v1/dispatch-offers/offer_${offer.offerId}/response").with(authenticated(10, UserType.DRIVER)).header("Idempotency-Key", "unknown").contentType(MediaType.APPLICATION_JSON).content("{\"response\":\"REJECT\",\"duringPhotoIds\":[]}"))
             .andExpect(status().isBadRequest)
-        mvc.perform(get("/api/v1/service-requests").with(user("admin-1").roles("ADMIN"))).andExpect(status().isOk)
+        mvc.perform(get("/api/v1/service-requests").with(authenticated(1, UserType.ADMIN))).andExpect(status().isOk)
     }
 
     @Test
@@ -596,7 +604,7 @@ class OperationsIntegrationTest @Autowired constructor(
         val before = uploaded(work, driver, PhotoPhase.BEFORE).joinToString(",") { "\"photo_$it\"" }
         val after = uploaded(work, driver, PhotoPhase.AFTER).joinToString(",") { "\"photo_$it\"" }
         fun submit(cost: String) = mvc.perform(
-            post("/api/v1/works/work_$work/reports").with(user("driver-10").roles("DRIVER")).header("Idempotency-Key", key()).contentType(MediaType.APPLICATION_JSON)
+            post("/api/v1/works/work_$work/reports").with(authenticated(10, UserType.DRIVER)).header("Idempotency-Key", key()).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"expectedVersion\":4,\"workDescription\":\"작업\",\"diagnosis\":\"진단\",\"totalCost\":$cost,\"beforePhotoIds\":[$before],\"afterPhotoIds\":[$after]}"),
         )
         // when & then
@@ -644,6 +652,14 @@ class OperationsIntegrationTest @Autowired constructor(
             server.stop(0)
         }
     }
+
+    private fun authenticated(accountId: Long, userType: UserType, authority: UserType = userType) = authentication(
+        UsernamePasswordAuthenticationToken.authenticated(
+            AuthPrincipal(accountId, 1L, userType, AdminRole.SUB.takeIf { userType == UserType.ADMIN }),
+            null,
+            AuthorityUtils.createAuthorityList("ROLE_${authority.name}"),
+        ),
+    )
 
     private fun metadata(phase: PhotoPhase) = PhotoMetadata(phase, "site.jpg", "image/jpeg", 100, java.util.Base64.getEncoder().encodeToString(ByteArray(32) { 1 }))
     private fun uploaded(workId: Long, actor: OperationsActor, phase: PhotoPhase): List<Long> = (1..3).map {
@@ -781,17 +797,6 @@ class OperationsIntegrationTest @Autowired constructor(
             override fun candidates(context: CandidateContext) = listOf(current(10), current(20))
             private fun current(driverId: Long) = DriverAvailability(driverId, true, true, WorkType.entries.toSet(), true, 127.0, 37.5, clock.time)
             override fun lockForAcceptance(driverId: Long, context: CandidateContext) = current(driverId)
-        }
-
-        @Bean @Primary
-        fun operationsIdentity() = object : OperationsIdentity {
-            override fun resolve(authentication: org.springframework.security.core.Authentication): OperationsActor? = when (authentication.name) {
-                "admin-1" -> OperationsActor(ActorRole.ADMIN, 1)
-                "admin-2" -> OperationsActor(ActorRole.ADMIN, 2)
-                "driver-10" -> OperationsActor(ActorRole.DRIVER, 10)
-                "driver-20" -> OperationsActor(ActorRole.DRIVER, 20)
-                else -> null
-            }
         }
     }
     companion object {

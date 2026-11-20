@@ -1,13 +1,7 @@
 package com.allcheck.operations
 
-import org.springframework.security.core.Authentication
 import java.time.Duration
 import java.time.Instant
-
-/** Identity 도메인이 현재 권한을 검증하여 구현한다. 토큰 subject를 숫자 ID로 추측하지 않는다. */
-interface OperationsIdentity {
-    fun resolve(authentication: Authentication): OperationsActor?
-}
 
 /** Driver 도메인의 일관된 현재 스냅샷. 페이지 누락/조회 오류를 빈 목록으로 반환하지 않는다. */
 interface OperationsDrivers {

@@ -142,10 +142,10 @@ related work version. Reads and signed URL responses use `Cache-Control: no-stor
 
 External IDs are `req_`, `round_`, `offer_`, `work_`, `cancel_`, `report_`, `revision_`, `photo_`, and `decision_`
 followed by their numeric IDs. Identity resolution is separate from these resource identifiers.
-`OperationsIdentity` must validate current administrator/driver permission and map trusted authentication to a
-persisted numeric actor. Without it, an otherwise authenticated allowed role receives 503. No production
-account, JWT filter, driver profile, GPS registration, or device registration implementation is supplied here.
-Controlled identity/driver/device adapters used by integration tests never authenticate production requests.
+Controllers receive the verified `AuthPrincipal` through `@AuthenticationPrincipal`. The operations actor
+resolver checks that the authenticated authority matches the principal's user type. Administrators use
+their account ID. Drivers use the driver ID resolved from their account ID through the active-driver API.
+Unsupported principals and accounts without current driver access return 403.
 
 `OperationsDrivers.candidates` must return a complete snapshot or an explicit lookup failure, never a partial
 page presented as a successful empty search. Coordinates use WGS84; eligibility, five-minute location freshness,
@@ -191,6 +191,6 @@ Runtime activation requires the following, in addition to the existing JWT and s
 | Dispatch | `OPERATIONS_OFFER_LIFETIME` defaults to 1m. Search and driver-device transient retries use three total attempts with 5s/10s delays. A longer provider Retry-After is honored only within offer expiry. |
 | Administrator push | `OPERATIONS_ADMIN_PUSH_MAX_ATTEMPTS` defaults to 3; `OPERATIONS_ADMIN_PUSH_RETRY_DELAY` to 1m. Device resolution revalidates current authorization and binding; only the current unresolved follow-up target may be sent. |
 
-Keys and credentials belong in runtime secret configuration. Live SGIS/S3/FCM verification, production identity
-and driver/device adapter integration, retention/cleanup, and cross-application deployment remain integration
-work. Automated coverage uses isolated PostgreSQL/PostGIS schemas, offline S3 signing, and loopback SGIS/FCM.
+Keys and credentials belong in runtime secret configuration. Live SGIS/S3/FCM verification, retention/cleanup,
+and cross-application deployment remain integration work. Automated coverage uses isolated PostgreSQL/PostGIS
+schemas, offline S3 signing, and loopback SGIS/FCM.
