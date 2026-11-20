@@ -15,7 +15,7 @@
 - 백엔드: Java 21·격리 PostgreSQL 17에서 `ktlintCheck`와 가입 통합·국세청 클라이언트·모듈 경계 테스트 **90개 통과**, 실패·오류·건너뜀 0.
 - 프론트: 공유 패키지 전체 테스트 **38개 통과**. 국세청 입력값 변경·날짜 형식·하이픈 정규화, 실제 REST 경로와 필드·멱등성 헤더, 갱신 후 GET 재시도, 미가입 404 구분과 오류 비밀정보 제외를 검증했습니다. 정적 분석은 오류·경고 0, 기존 정보성 진단 22개이며 `--no-fatal-infos` 통과. Node 구조 검사·debug manifest XML 파싱·Git 공백 검사도 통과했습니다.
 - `ALLCHECK_DEV_ACCESS=false`로 인증·개발 진입 테스트 **14개 통과**. 실제 검증용 설정에서 개발용 진입 버튼을 숨기고 신청 전·승인 전 차단을 유지합니다.
-- 실제 국세청 인증키를 사용한 네트워크 호출과 Android 실기기 화면 검증은 수행하지 않았습니다. 키 설정·USB 연결·화면 검증 순서는 [국세청 연결 안내](../../docs/api/nts-business-verification.md)를 참고합니다.
+- 실제 국세청 인증키를 사용한 네트워크 호출과 Android 실기기 화면 검증은 수행하지 않았습니다. 사업자 검증의 판단 기준은 [업무 명세](../backend/docs/business-specification.md#driver-registration-persistence)를 따릅니다.
 
 ## 2026-11-18 기사 가입 입력·개발용 승인 건너뛰기 수정
 

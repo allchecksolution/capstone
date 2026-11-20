@@ -1,6 +1,6 @@
 # 관리자 앱, 기사앱
 
-관리자 인증은 MFA 없이 사전 발급 ID/PW만 사용합니다. 백엔드 인증 최초 구현은 확정된 [Identity 인증 API 계약](../../docs/api/identity-contract.md)을 따릅니다. 아래 operation은 현재 프론트 어댑터의 동작이며, 서버 구현·어댑터 연결 단계에서 확정된 HTTP 경로·입출력으로 변경합니다. 이 문서의 기존 인증 응답·세션 설명이 확정 계약과 다르면 확정 계약을 우선합니다.
+관리자 인증은 MFA 없이 사전 발급 ID/PW만 사용합니다. 인증·가입·접근 권한의 업무 정책은 [Business Specification](../backend/docs/business-specification.md)을 기준으로 합니다. 아래 operation은 현재 프론트 어댑터의 동작이며, 구현된 HTTP 경로·입출력은 백엔드의 생성 OpenAPI와 API 인터페이스·DTO에서 확인합니다. [전체 OpenAPI 초안](../../docs/api/openapi.yaml)은 초기 설계 참고 자료이며 업무 명세를 대체하지 않습니다.
 
 ## 서버 어댑터
 
@@ -15,7 +15,7 @@
 | drivers/business-check | POST `/drivers/business-verifications`, 번호·개업일자·대표자명 |
 | drivers/register | POST `/drivers/me/registration`, 반려 후에는 `/resubmission`과 expectedVersion |
 
-확인한 사업자 정보가 바뀌면 세 가지 입력의 확인 결과를 무효로 취급합니다. 최종 가입에서는 서버 DTO의 profile/business로 변환하고 `Idempotency-Key`를 보내며 로컬 확인 플래그를 보내지 않습니다. 현재 서버의 전문 분야는 `BLOCKAGE/INTERIOR_LEAK/EXTERIOR_LEAK` 세 종류입니다. 실제 인증키·기기 연결은 [국세청 연결 안내](../../docs/api/nts-business-verification.md)를 따릅니다.
+확인한 사업자 정보가 바뀌면 세 가지 입력의 확인 결과를 무효로 취급합니다. 최종 가입에서는 서버 DTO의 profile/business로 변환하고 `Idempotency-Key`를 보내며 로컬 확인 플래그를 보내지 않습니다. 현재 서버의 전문 분야는 `BLOCKAGE/INTERIOR_LEAK/EXTERIOR_LEAK` 세 종류입니다. 사업자 확인과 최종 신청의 업무 정책은 [기사 가입 정책](../backend/docs/business-specification.md#driver-registration-persistence)을 따릅니다. 인증키는 백엔드에서만 관리합니다.
 
 `shared/lib/src/backend.dart`의 `FrontendBackend.call(operation, data)`가 HTTP 연결 지점입니다. 기존 `HttpFrontendBackend`는 `API_BASE_URL` 뒤에 operation을 붙여 JSON POST를 보냅니다. 기사 어댑터는 `driver_backend.dart`에서 위 REST 요청으로 변환합니다. 다른 규격은 이 인터페이스를 구현해 `launchAllcheck(backend: ...)`로 주입할 수 있습니다.
 

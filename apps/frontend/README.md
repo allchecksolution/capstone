@@ -25,7 +25,7 @@ debug 빌드에서는 기본으로 로그인 화면에 ‘개발용으로 입장
 
 서버를 연결하는 실행 예시:
 
-아래 `/api/frontend` 예시는 기존 관리자/업무 어댑터 기준입니다. 기사 가입은 `API_BASE_URL=http://127.0.0.1:8080/api/v1`과 새 `DriverOnboardingBackend`를 사용합니다. USB 포트 연결·국세청 키·실제 가입 검증은 [국세청 연결 안내](../../docs/api/nts-business-verification.md)를 참고하세요. 키는 백엔드에만 설정합니다.
+아래 `/api/frontend` 예시는 기존 관리자/업무 어댑터 기준입니다. 기사 가입은 `API_BASE_URL=http://127.0.0.1:8080/api/v1`과 새 `DriverOnboardingBackend`를 사용합니다. 사업자 검증·가입 정책은 [업무 명세](../backend/docs/business-specification.md#driver-registration-persistence), 구현된 경로와 입출력은 백엔드 Swagger에서 확인합니다. 국세청 키는 백엔드에만 설정합니다.
 
 ```powershell
 flutter run --dart-define=API_BASE_URL=https://YOUR_SERVER/api/frontend --dart-define=ALLCHECK_PUSH_ENABLED=true --dart-define=KAKAO_NATIVE_APP_KEY=YOUR_NATIVE_APP_KEY
