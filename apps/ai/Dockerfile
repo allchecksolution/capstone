@@ -1,7 +1,13 @@
 # syntax=docker/dockerfile:1
 FROM ghcr.io/astral-sh/uv:0.13.7 AS uv
 
-FROM python:3.13.9-slim-bookworm AS base
+FROM python:3.13.9-slim-bookworm AS audio-runtime
+RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+FROM audio-runtime AS base
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     UV_PYTHON_DOWNLOADS=0 \
@@ -20,7 +26,7 @@ CMD ["python", "-m", "pytest", "-W", "error::DeprecationWarning", "-p", "no:cach
 FROM base AS production-build
 RUN uv sync --locked --no-dev --no-editable
 
-FROM python:3.13.9-slim-bookworm AS runtime
+FROM audio-runtime AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/app/.venv/bin:$PATH"
