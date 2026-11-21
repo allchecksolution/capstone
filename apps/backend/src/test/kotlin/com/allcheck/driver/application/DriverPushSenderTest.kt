@@ -22,7 +22,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 class DriverPushSenderTest {
     private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
     private val requests = CopyOnWriteArrayList<String>()
-    private val target = PushTarget(999999L, "installation", "test-device-token", "digest")
+    private val target = PushTarget(999999L, "installation", "test-device-token", "digest", 0)
     private val data = DriverPushData(1L, "DRIVER_APPROVED", 2L, 1)
 
     @AfterEach

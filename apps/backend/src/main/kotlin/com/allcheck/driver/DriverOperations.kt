@@ -4,6 +4,8 @@ data class DriverIdentity(val driverId: Long, val accountId: Long)
 
 interface DriverOperations {
     fun isActiveDriverAccount(accountId: Long): Boolean
+    fun findActiveDriverByAccountId(accountId: Long): DriverIdentity?
+    fun findActiveDriverById(driverId: Long): DriverIdentity?
 
     /** 호출자 쓰기 트랜잭션에서 인증 계정 → 활성 기사 순서로 잠근다. */
     fun lockActiveDriver(driverId: Long): DriverIdentity

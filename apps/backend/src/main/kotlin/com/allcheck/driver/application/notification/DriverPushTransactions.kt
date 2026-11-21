@@ -55,7 +55,7 @@ class DriverPushTransactions(
         val event = events.findById(claim.eventId).orElse(null) ?: return null
         if (!isCurrent(event)) return null
         if (event.recipientAccountId != null && event.recipientAccountId != claim.accountId) return null
-        if (event.recipientAccountId == null && claim.accountId !in devices.activeAdminAccountIds()) return null
+        if (event.recipientAccountId == null && !devices.isActiveAdministrator(claim.accountId)) return null
         return devices.currentDevice(claim.installationId, claim.accountId)
     }
 

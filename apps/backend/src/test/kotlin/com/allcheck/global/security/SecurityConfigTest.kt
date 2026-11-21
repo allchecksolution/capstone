@@ -69,11 +69,11 @@ class SecurityConfigTest {
 
     @Test
     @WithMockUser(roles = ["ADMIN"])
-    fun `접수의 실제 관리자 식별 연동이 없으면 사용자명을 임의 ID로 해석하지 않고 503을 반환한다`() {
+    fun `검증된 관리자 계정 식별자가 없으면 접수에 접근할 수 없다`() {
         // when & then
         mockMvc.perform(get("/api/v1/receptions"))
-            .andExpect(status().isServiceUnavailable)
-            .andExpect(content().json("""{"code":"RECEPTION_IDENTITY_UNAVAILABLE","message":"관리자 인증 연동이 준비되지 않았습니다."}"""))
+            .andExpect(status().isForbidden)
+            .andExpect(content().json("""{"code":"ACCESS_DENIED","message":"접근 권한이 없습니다."}"""))
     }
 
     @ParameterizedTest

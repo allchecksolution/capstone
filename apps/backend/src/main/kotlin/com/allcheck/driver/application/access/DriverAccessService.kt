@@ -19,6 +19,10 @@ class DriverAccessService(
 ) : DriverOperations {
     override fun isActiveDriverAccount(accountId: Long): Boolean = drivers.existsByAccountIdAndAccountStatus(accountId, DriverAccountStatus.ACTIVATED)
 
+    override fun findActiveDriverByAccountId(accountId: Long) = drivers.findActiveIdentityByAccountId(accountId)
+
+    override fun findActiveDriverById(driverId: Long) = drivers.findActiveIdentityByDriverId(driverId)
+
     @Transactional(propagation = Propagation.MANDATORY)
     override fun lockActiveDriver(driverId: Long): DriverIdentity {
         val accountId = drivers.findAccountId(driverId) ?: throw BusinessException(DriverErrorCode.DRIVER_NOT_FOUND)

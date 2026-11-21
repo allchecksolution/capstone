@@ -1,5 +1,6 @@
 package com.allcheck.identity.infrastructure.repository.account
 
+import com.allcheck.identity.UserType
 import com.allcheck.identity.domain.entity.account.Account
 import com.allcheck.identity.domain.vo.account.SocialLogin
 import jakarta.persistence.LockModeType
@@ -16,6 +17,11 @@ interface AccountRepository : JpaRepository<Account, Long> {
     fun findByIdForUpdate(@Param("accountId") accountId: Long): Account?
 
     fun findBySocialLogin(socialLogin: SocialLogin): Account?
+
+    @Query("select account.id from Account account where account.id in :ids and account.enabled = true and account.userType = com.allcheck.identity.UserType.DRIVER")
+    fun activeDriverIds(ids: Collection<Long>): Set<Long>
+
+    fun existsByIdAndEnabledTrueAndUserType(id: Long, userType: UserType): Boolean
 
     fun findByAdminCredentialLoginId(loginId: String): Account?
 

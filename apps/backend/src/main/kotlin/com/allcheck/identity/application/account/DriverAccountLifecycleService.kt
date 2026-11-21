@@ -22,6 +22,8 @@ class DriverAccountLifecycleService(
     private val devices: PushDeviceRepository,
     private val clock: Clock = Clock.systemUTC(),
 ) : IdentityAccountOperations {
+    override fun activeDriverAccountIds(accountIds: Collection<Long>): Set<Long> = if (accountIds.isEmpty()) emptySet() else accountIds.chunked(1000).flatMap(accounts::activeDriverIds).toSet()
+
     @Transactional(propagation = Propagation.MANDATORY)
     override fun lockActiveDriverAccount(accountId: Long): AuthenticatedAccount {
         val account = lockDriverAccount(accountId)

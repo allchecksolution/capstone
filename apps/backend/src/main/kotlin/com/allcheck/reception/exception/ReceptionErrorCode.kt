@@ -7,7 +7,6 @@ enum class ReceptionErrorCode(
     override val status: HttpStatus,
     override val message: String,
 ) : ErrorCode {
-    RECEPTION_IDENTITY_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "관리자 인증 연동이 준비되지 않았습니다."),
     RECORDING_STORAGE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "녹음 저장소를 사용할 수 없습니다. 잠시 후 다시 시도해 주세요."),
     RECORDING_FORMAT_NOT_SUPPORTED(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "WAV 녹음 파일만 업로드할 수 있습니다."),
     RECEPTION_NOT_FOUND(HttpStatus.NOT_FOUND, "접수를 찾을 수 없습니다."),
