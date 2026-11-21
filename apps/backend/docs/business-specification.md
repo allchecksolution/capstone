@@ -165,6 +165,7 @@ exceed the shared FCM request timeout.
 | [BR-07](#br-07) | Original reports and revision history |
 | [BR-08](#br-08) | Status, history, and statistics queries |
 | [BR-09](#br-09) | Recording ingestion, analysis attempts, S3 originals, and completion push |
+| [BR-10](#br-10) | Administrator–driver chat |
 
 Rule IDs support cross-document references. Do not reuse BR-03 and BR-05, which were removed through consolidation or migration.
 
@@ -562,6 +563,17 @@ Provider review sources:
 STT storage decision: use database text storage for the immutable original and provide it through the authorized reception detail API. STT Presigned GET URLs and the previous S3 transcript-file access flow are outside the MVP. V4 aligns the S3-based V1 transcript table without rewriting V1-V3 or changing recording/analysis source foreign keys. The user confirmed no STT originals have been stored; no content import is required. If unexpected legacy transcript rows exist, migration must fail rather than invent content or delete originals.
 
 New transcript rows require the unchanged nonblank text, its reception/recording/producing-attempt identities, and a storage timestamp. The current AI contract limits the original to 100,000 Unicode code points; never truncate it to fit. Keep one original per producing attempt and reject duplicate ID/producer inserts without replacing existing content. S3 bucket/key remain null. Existing internal `status=UPLOADED` and `uploaded_at` columns represent database storage completion/time for these rows, independently of the analysis attempt's STT/storage progress states. Retained byte length and SHA-256 metadata describe the exact UTF-8 content; they do not require an S3 copy.
+
+<a id="br-10"></a>
+
+## BR-10 Administrator–Driver Chat
+
+- Maintain one conversation per driver across all assignments. The first saved message creates it. Active administrators with either role share the same room. An active driver may access only their own room. The administrator room list includes existing conversations, with partial driver-name search, the latest message, and the administrator side's unread count. Open a new conversation using the driver's ID from driver management.
+- Active drivers can send and update read status. Administrators can read retained conversations with inactive drivers in read-only mode. Recheck driver eligibility inside send and read-write transactions using the account and driver locks used by withdrawal. Retention duration and erasure after withdrawal are pending under [UC-15](../../../docs/requirements/use-cases/uc-15-driver-account-withdrawal.md).
+- A send accepts nonblank text of up to 2,000 Unicode code points. Scope `Idempotency-Key` to the conversation and sending account. A successful replay returns the original message and sent timestamp, and a different body with the same key returns `IDEMPOTENCY_KEY_REUSED`. Check current access before returning a replay.
+- Maintain a monotonic read position for each side of the conversation. The administrators share a read position. Mark incoming messages through the selected message and retain the timestamp each message was first marked read. The selected message must belong to the same room. Repeating the same or an older position returns the current position.
+- Commit one durable event with a new message. After commit, notify active subscribers over WebSocket and enqueue FCM deliveries to the other side's active installations when that side has no room subscriber. Suppress stale offline notifications if the message is read, the room has a current recipient subscriber, or the recipient loses access. Check device binding again before the external call. FCM provider acceptance records only the provider outcome.
+- The MVP runs a single WebSocket instance. The database outbox and delivery worker consume message events independently of the transport. Use the same event IDs to discard duplicate notifications. Reconnect and recover messages from their REST history, using the last received message ID.
 
 [FR-01]: ../../../docs/requirements/functional-requirements/fr-01-admin-login.md
 [FR-02]: ../../../docs/requirements/functional-requirements/fr-02-call-recording-collection-and-stt-transcription.md

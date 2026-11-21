@@ -16,7 +16,7 @@ info:
     UC-01~16의 관리자 앱·기사 앱 흐름을 대상으로 한다. 세부 미확정 사항은 해당 계약 설명에 표시한다.
     녹음·STT·AI·분석 완료 푸시의 업무 정책은 BR-09, Backend→AI 계약은 apps/ai/docs/openapi.yaml을 따른다.
     녹음 업로드 완료를 검증하면 최초 분석을 자동 접수하고 앱에 202로 응답한다. Backend는 백그라운드에서 STT 동기 호출→원문 DB 저장→구조화 동기 호출→FCM 완료/실패 알림 순서로 처리한다.
-    기존 /files multipart·공통 접근 경로는 녹음·사진의 종류별 S3 경로로 교체했다. STT 원문은 DB에서 접수 상세로 제공하며 STT용 S3 접근 URL은 사용하지 않는다. 배차 푸시는 BR-04의 활성 기기 전체 전송·기사 단위 결과 집계를 따른다. 서버 보고서 임시 저장은 MVP에서 제공하지 않는다. 실시간 채팅(WebSocket)·채팅 푸시의 상세 연동과 조회 내보내기는 별도 검토한다.
+    기존 /files multipart·공통 접근 경로는 녹음·사진의 종류별 S3 경로로 교체했다. STT 원문은 DB에서 접수 상세로 제공하며 STT용 S3 접근 URL은 사용하지 않는다. 배차 푸시는 BR-04의 활성 기기 전체 전송·기사 단위 결과 집계를 따른다. 서버 보고서 임시 저장은 MVP에서 제공하지 않는다. 실시간 채팅과 푸시 연동은 BR-10 및 백엔드 API 컨벤션의 Chat Integration을 따른다. 조회 내보내기는 별도 검토한다.
     실제 녹음의 단계별 소요 시간과 p95/p99·타임아웃을 측정해 제한·동시 실행 수를 정한다. 필요 시 WebClient 또는 AI 비동기 작업/웹훅 전환은 후속 검토한다.
     의뢰 현황·기간 통계·상세·회차 조회는 아래 x-uc04-inquiry-scope와 BR-08을 따른다.
 x-uc04-inquiry-scope:
@@ -4504,6 +4504,7 @@ paths:
         - DRIVER
       parameters:
         - $ref: "#/components/parameters/ChatBefore"
+        - $ref: "#/components/parameters/ChatAfter"
         - $ref: "#/components/parameters/ChatLimit"
       responses:
         "200":
@@ -4526,8 +4527,7 @@ paths:
       summary: 관리자에게 메시지 전송(기사)
       description: >-
         기사가 관리자에게 텍스트 메시지를 보낸다. Idempotency-Key는 클라이언트가 만든 메시지 전송 식별자로 쓴다. 전송 결과를 확인하지 못했을 때 같은 키로 재전송해도 메시지가 중복
-        저장되지 않고 최초 응답이 재현된다(UC-16 E1). 전송 시점에 계정이 ACTIVATED가 아니면 403(CHAT_NOT_ALLOWED)이다(E3). 실시간 전송(WebSocket) 계약은 미결정이며 이 REST API가
-        저장과 이력의 기준이다.
+        저장되지 않고 최초 응답이 재현된다(UC-16 E1). 전송 시점에 기사 계정이 활성이 아니면 접근이 차단된다(E3). 이 REST API가 저장과 이력의 기준이며, WebSocket으로 메시지 도착을 알린다.
       tags:
         - Chat
       x-business-rules:
@@ -4604,7 +4604,7 @@ paths:
       summary: 기사별 채팅방 목록(관리자)
       description: >-
         관리자가 기사별 1:1 채팅방과 마지막 메시지, 읽지 않은 수를 확인한다. 승인 대기·반려·탈퇴 기사의 방은 readOnly=true이며 권한 있는 관리자가 과거 이력만 읽을 수 있고 새 메시지는 보낼 수 없다.
-        보존 정책과 열람 권한은 UC-15를 따른다.
+        대화를 시작한 기사만 포함하고 최근 메시지 순으로 반환한다. 보존 정책과 열람 권한은 UC-15를 따른다.
       tags:
         - Chat
       x-business-rules:
@@ -4615,6 +4615,10 @@ paths:
       x-roles:
         - ADMIN
       parameters:
+        - name: q
+          in: query
+          description: 기사명 부분 검색.
+          schema: {type: string, minLength: 1, maxLength: 100}
         - $ref: "#/components/parameters/PageNumber"
         - $ref: "#/components/parameters/PageSize"
       responses:
@@ -4653,6 +4657,7 @@ paths:
       parameters:
         - $ref: "#/components/parameters/DriverIdPath"
         - $ref: "#/components/parameters/ChatBefore"
+        - $ref: "#/components/parameters/ChatAfter"
         - $ref: "#/components/parameters/ChatLimit"
       responses:
         "200":
@@ -4854,6 +4859,11 @@ components:
       name: before
       in: query
       description: 이 메시지 ID보다 오래된 메시지를 조회하는 커서. 생략하면 최신 메시지부터 조회.
+      schema: {$ref: "#/components/schemas/Id"}
+    ChatAfter:
+      name: after
+      in: query
+      description: 재접속 후 이 메시지 ID보다 새로운 메시지를 오래된 순서부터 조회한다. before와 동시에 지정할 수 없다.
       schema: {$ref: "#/components/schemas/Id"}
     ChatLimit:
       name: limit
@@ -6899,7 +6909,7 @@ components:
           items: {$ref: "#/components/schemas/ChatMessage"}
         nextCursor:
           $ref: "#/components/schemas/NullableId"
-          description: 더 오래된 메시지가 있으면 다음 요청의 before 값. 없으면 null.
+          description: 조회한 방향에 메시지가 더 있으면 다음 before 또는 after 값. 없으면 null.
         readOnly: {type: boolean, description: 기사 계정이 활성이 아니어서 과거 이력만 읽을 수 있으면 true. 이때 메시지 전송은 거부된다.}
     ChatRoomSummary:
       type: object

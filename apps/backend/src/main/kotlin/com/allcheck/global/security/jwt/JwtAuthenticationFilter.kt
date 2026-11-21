@@ -22,6 +22,7 @@ class JwtAuthenticationFilter(
     private val identity: IdentityOperations,
     private val entryPoint: AuthenticationEntryPoint,
     private val credentialRequest: RequestMatcher,
+    private val websocketRequest: RequestMatcher? = null,
 ) : OncePerRequestFilter() {
     override fun shouldNotFilter(request: HttpServletRequest): Boolean = credentialRequest.matches(request)
 
@@ -38,12 +39,20 @@ class JwtAuthenticationFilter(
 
     private fun authenticate(request: HttpServletRequest) {
         val headers = request.getHeaders(HttpHeaders.AUTHORIZATION).toList()
-        if (headers.isEmpty()) return
-        if (headers.size != 1) throw TokenAuthenticationException(SecurityErrorCode.INVALID_TOKEN)
-        val match = BEARER_HEADER.matchEntire(headers.single())
-            ?: throw TokenAuthenticationException(SecurityErrorCode.INVALID_TOKEN)
+        val protocolTokens = if (websocketRequest?.matches(request) == true && request.getHeader(HttpHeaders.UPGRADE).equals("websocket", ignoreCase = true)) {
+            request.getHeaders("Sec-WebSocket-Protocol").toList().flatMap { it.split(',') }
+                .map(String::trim).filter { it.startsWith("bearer.") }.map { it.removePrefix("bearer.") }
+        } else {
+            emptyList()
+        }
+        val token = when {
+            headers.isEmpty() && protocolTokens.isEmpty() -> return
+            headers.size == 1 && protocolTokens.isEmpty() -> BEARER_HEADER.matchEntire(headers.single())?.groupValues?.get(1)
+            headers.isEmpty() && protocolTokens.size == 1 -> protocolTokens.single().takeIf { it.isNotBlank() }
+            else -> null
+        } ?: throw TokenAuthenticationException(SecurityErrorCode.INVALID_TOKEN)
         val claims = try {
-            tokens.parseClaims(match.groupValues[1])
+            tokens.parseClaims(token)
         } catch (ex: ExpiredJwtException) {
             throw TokenAuthenticationException(SecurityErrorCode.TOKEN_EXPIRED, ex)
         } catch (ex: JwtException) {
@@ -62,9 +71,11 @@ class JwtAuthenticationFilter(
         val context = SecurityContextHolder.createEmptyContext()
         context.authentication = authentication
         SecurityContextHolder.setContext(context)
+        request.setAttribute(TOKEN_EXPIRATION_ATTRIBUTE, claims.expiration.toInstant())
     }
 
     companion object {
+        const val TOKEN_EXPIRATION_ATTRIBUTE = "accessTokenExpiration"
         private val BEARER_HEADER = Regex("Bearer +([^\\s,]+)", RegexOption.IGNORE_CASE)
     }
 }
