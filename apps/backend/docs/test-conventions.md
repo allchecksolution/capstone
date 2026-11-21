@@ -127,6 +127,10 @@ Full application and security tests also use owned UUID-named schemas. The `test
 Swagger automatically; tests that verify the documentation endpoints enable it explicitly. Run all backend
 coverage with `./gradlew ktlintCheck test`; it must not migrate or clear the local application's public schema.
 
+Identity and request rate-limit integration tests use `PostgresTestSchema` with the same `TEST_DATABASE_*`
+connection settings as the other backend tests. Each test class creates its own UUID-named schema and drops
+it after the class finishes. The backend CI job supplies those same connection settings to all tests.
+
 `RecordingStorageClientTest` signs real SDK requests offline and checks conditional PUT headers, distinct URL
 lifetimes, HEAD checksums, error translation, and disabled-storage behavior. `ReceptionApiIntegrationTest` also
 verifies failed object verification leaves no analysis, successful and concurrent completion converge on one

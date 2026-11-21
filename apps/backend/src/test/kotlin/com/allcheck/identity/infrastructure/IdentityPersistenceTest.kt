@@ -9,9 +9,11 @@ import com.allcheck.identity.domain.vo.account.SocialLogin
 import com.allcheck.identity.domain.vo.session.RefreshTokenHash
 import com.allcheck.identity.infrastructure.repository.account.AccountRepository
 import com.allcheck.identity.infrastructure.repository.session.AuthSessionRepository
+import com.allcheck.support.PostgresTestSchema
 import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
@@ -19,6 +21,9 @@ import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabas
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.dao.OptimisticLockingFailureException
 import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.test.annotation.DirtiesContext
+import org.springframework.test.context.DynamicPropertyRegistry
+import org.springframework.test.context.DynamicPropertySource
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
@@ -29,17 +34,16 @@ import java.time.Instant
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import javax.sql.DataSource
 
 @DataJpaTest(
     properties = [
-        "spring.datasource.url=\${IDENTITY_TEST_DATABASE_URL:jdbc:postgresql://localhost:15432/allcheck_identity_test}",
-        "spring.datasource.username=\${IDENTITY_TEST_DATABASE_USER:allcheck}",
-        "spring.datasource.password=\${IDENTITY_TEST_DATABASE_PASSWORD:allcheck_local_6}",
         "spring.jpa.hibernate.ddl-auto=validate",
         "spring.jpa.show-sql=false",
     ],
 )
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class IdentityPersistenceTest @Autowired constructor(
     private val accounts: AccountRepository,
     private val sessions: AuthSessionRepository,
@@ -246,5 +250,17 @@ class IdentityPersistenceTest @Autowired constructor(
                 accounts.deleteById(checkNotNull(account.id))
             }
         }
+    }
+
+    companion object {
+        private val database = PostgresTestSchema("identity_persistence")
+
+        @JvmStatic
+        @DynamicPropertySource
+        fun properties(registry: DynamicPropertyRegistry) = database.register(registry)
+
+        @JvmStatic
+        @AfterAll
+        fun removeTestSchema(@Autowired dataSource: DataSource) = database.remove(dataSource)
     }
 }

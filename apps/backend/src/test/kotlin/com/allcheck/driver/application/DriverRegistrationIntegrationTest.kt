@@ -107,9 +107,6 @@ import javax.sql.DataSource
 
 @SpringBootTest(
     properties = [
-        "spring.datasource.url=\${IDENTITY_TEST_DATABASE_URL:jdbc:postgresql://localhost:15432/allcheck_identity_test}",
-        "spring.datasource.username=\${IDENTITY_TEST_DATABASE_USER:allcheck}",
-        "spring.datasource.password=\${IDENTITY_TEST_DATABASE_PASSWORD:allcheck_local_6}",
         "spring.jpa.show-sql=false",
         "springdoc.api-docs.enabled=true",
     ],
