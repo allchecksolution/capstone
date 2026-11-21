@@ -2,7 +2,6 @@ package com.allcheck.operations.coordination.presentation.controller
 
 import com.allcheck.global.security.principal.AuthPrincipal
 import com.allcheck.operations.ReportContent
-import com.allcheck.operations.RequestStatus
 import com.allcheck.operations.coordination.application.CommandResult
 import com.allcheck.operations.coordination.application.OperationsPhotos
 import com.allcheck.operations.coordination.application.OperationsQueries
@@ -43,7 +42,6 @@ class OperationsController(
     override fun cancellations(principal: AuthPrincipal?, page: Int, size: Int) = ok(queries.cancellations(actors.resolve(principal), page, size))
     override fun cancellation(principal: AuthPrincipal?, cancellationId: String) = ok(queries.cancellation(actors.resolve(principal), OperationsId.CANCELLATION.parse(cancellationId)))
     override fun register(principal: AuthPrincipal?, key: String, body: RegisterServiceRequest) = command(service.register(actors.resolve(principal), OperationsId.RECEPTION.parse(body.receptionId), body.expectedVersion, key), OperationsId.REQUEST, OperationsId.ROUND, "/api/v1/service-requests")
-    override fun requests(principal: AuthPrincipal?, status: RequestStatus?, page: Int, size: Int) = ok(queries.requests(actors.resolve(principal), status, page, size))
     override fun request(principal: AuthPrincipal?, requestId: String) = ok(queries.request(actors.resolve(principal), OperationsId.REQUEST.parse(requestId)))
     override fun history(principal: AuthPrincipal?, requestId: String) = ok(queries.history(actors.resolve(principal), OperationsId.REQUEST.parse(requestId)))
     override fun rounds(principal: AuthPrincipal?, requestId: String) = ok(queries.history(actors.resolve(principal), OperationsId.REQUEST.parse(requestId)).rounds)

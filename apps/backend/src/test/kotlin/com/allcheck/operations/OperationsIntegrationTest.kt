@@ -373,6 +373,59 @@ class OperationsIntegrationTest @Autowired constructor(
     }
 
     @Test
+    fun `대시보드는 동일 과거 작업에서 기사와 상태를 찾고 최신 보고 비용을 의뢰당 한 번 집계한다`() {
+        // given: 서울 10월 말 등록, 첫 기사 취소와 재배차 후 11월에 완료
+        val request = registered()
+        search(listOf(profile(10)))
+        val oldWork = accept(request, 10)
+        transactions.cancel(OperationsActor(ActorRole.DRIVER, 10), oldWork, "cancel", 1, CancellationReason.OTHER, "이동 불가")
+        val waiting = requests.get(request)
+        transactions.decide(admin, request, "redispatch", waiting.version, checkNotNull(waiting.followUpTarget), FollowUpChoice.REDISPATCH)
+        search(listOf(profile(20)))
+        val newWork = accept(request, 20)
+        val driver = OperationsActor(ActorRole.DRIVER, 20)
+        progress(newWork, driver)
+        val before = uploaded(newWork, driver, PhotoPhase.BEFORE)
+        val after = uploaded(newWork, driver, PhotoPhase.AFTER)
+        clock.time = Instant.parse("2026-10-31T15:00:00Z")
+        val report = reports.submit(driver, newWork, "report", 4, ReportContent("수리", "진단", 1000), before, after).value.resourceId
+        reports.revise(admin, report, "revise", 1, "비용 정정", null, null, 3000)
+        registered()
+
+        // when & then
+        mvc.perform(
+            get("/api/v1/service-requests").param("from", "2026-10-31").param("to", "2026-10-31")
+                .param("driverId", "10").param("workStatus", "CANCELLED").param("region", "서울 중구")
+                .param("workType", "BOILER").param("q", "req_$request").with(authenticated(1, UserType.ADMIN)),
+        ).andExpect(status().isOk).andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].currentDriverId").value(20))
+            .andExpect(jsonPath("$.items[0].currentWorkStatus").value("WORK_DONE"))
+        mvc.perform(
+            get("/api/v1/service-requests").param("driverId", "10").param("workStatus", "WORK_DONE")
+                .with(authenticated(1, UserType.ADMIN)),
+        ).andExpect(status().isOk).andExpect(jsonPath("$.items.length()").value(0))
+        mvc.perform(
+            get("/api/v1/work-statistics").param("from", "2026-10-25").param("to", "2026-10-31")
+                .param("driverId", "10").param("workStatus", "CANCELLED").with(authenticated(2, UserType.ADMIN)),
+        ).andExpect(status().isOk).andExpect(jsonPath("$.metrics.totalRequests").value(1))
+            .andExpect(jsonPath("$.metrics.completedRequests").value(1))
+            .andExpect(jsonPath("$.metrics.cancelledRequests").value(0))
+            .andExpect(jsonPath("$.metrics.totalCostKrw").value(3000))
+            .andExpect(jsonPath("$.metrics.averageCostKrw").value(3000))
+            .andExpect(jsonPath("$.metrics.weeklyCounts[0].from").value("2026-10-25"))
+            .andExpect(jsonPath("$.metrics.workTypes.length()").value(5))
+        mvc.perform(
+            get("/api/v1/work-statistics").param("from", "2026-11-01").param("to", "2026-11-01")
+                .param("driverId", "10").with(authenticated(1, UserType.ADMIN)),
+        ).andExpect(status().isOk).andExpect(jsonPath("$.hasData").value(false)).andExpect(jsonPath("$.metrics").isEmpty)
+        mvc.perform(get("/api/v1/service-requests").param("status", "OPEN").with(authenticated(1, UserType.ADMIN)))
+            .andExpect(status().isOk).andExpect(jsonPath("$.items.length()").value(1))
+        mvc.perform(get("/api/v1/work-statistics").with(authenticated(10, UserType.DRIVER))).andExpect(status().isForbidden)
+        mvc.perform(get("/api/v1/work-statistics").param("from", "2026-11-01").param("to", "2026-10-31").with(authenticated(1, UserType.ADMIN)))
+            .andExpect(status().isBadRequest)
+    }
+
+    @Test
     fun `HTTP 인증 역할 자원 권한과 생성 OpenAPI를 검증한다`() {
         // given
         val request = registered()
@@ -392,9 +445,13 @@ class OperationsIntegrationTest @Autowired constructor(
         mvc.perform(get("/api/v1/drivers/me/work-statistics").param("month", "2026-11").with(authenticated(99, UserType.DRIVER))).andExpect(status().isForbidden)
         mvc.perform(post("/api/v1/dispatch-offers/offer_${offer.offerId}/response").with(authenticated(10, UserType.DRIVER)).header("Idempotency-Key", "bad").contentType(MediaType.APPLICATION_JSON).content("{\"response\":\"OTHER\"}"))
             .andExpect(status().isBadRequest)
-        mvc.perform(get("/v3/api-docs")).andExpect(status().isOk)
+        val api = mvc.perform(get("/v3/api-docs")).andExpect(status().isOk)
             .andExpect(jsonPath("$.paths['/api/v1/works/{workId}/reports'].post.operationId").value("submitWorkReport"))
             .andExpect(jsonPath("$.components.schemas.SubmitReportRequest.properties.beforePhotoIds.minItems").value(3))
+            .andReturn().response.contentAsString
+        val parameters = JsonMapper.builder().build().readTree(api).at("/paths/~1api~1v1~1work-statistics/get/parameters")
+        val required = parameters.filter { it.path("required").asBoolean() }.map { it.path("name").asString() }
+        assertThat(required).containsExactlyInAnyOrder("from", "to")
         mvc.perform(post("/api/v1/dispatch-offers/offer_${offer.offerId}/response").with(authenticated(10, UserType.DRIVER)).header("Idempotency-Key", "unknown").contentType(MediaType.APPLICATION_JSON).content("{\"response\":\"REJECT\",\"duringPhotoIds\":[]}"))
             .andExpect(status().isBadRequest)
         mvc.perform(get("/api/v1/service-requests").with(authenticated(1, UserType.ADMIN))).andExpect(status().isOk)

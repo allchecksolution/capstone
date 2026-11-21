@@ -44,14 +44,6 @@ class OperationsQueries(private val requests: RequestOperations, private val dis
         own(actor.role == ActorRole.ADMIN)
         return requests.get(requestId).response()
     }
-    fun requests(actor: OperationsActor, status: RequestStatus?, page: Int, size: Int): OperationsPage<ServiceRequestResponse> {
-        own(actor.role == ActorRole.ADMIN)
-        bounds(page, size)
-        // 해당 페이지 크기로 조회한 뒤 한 항목 존재 여부를 별도로 검사하여 페이지 경계를 유지한다.
-        val rows = requests.list(status, page, size)
-        val more = requests.list(status, page + 1, size).isNotEmpty()
-        return OperationsPage(rows.map { it.response() }, page, size, more)
-    }
     fun offers(actor: OperationsActor, page: Int, size: Int): OperationsPage<DispatchOfferResponse> {
         own(actor.role == ActorRole.DRIVER)
         bounds(page, size)

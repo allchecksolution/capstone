@@ -2,7 +2,6 @@ package com.allcheck.operations.coordination.presentation.api
 
 import com.allcheck.global.exception.ErrorResponse
 import com.allcheck.global.security.principal.AuthPrincipal
-import com.allcheck.operations.RequestStatus
 import com.allcheck.operations.coordination.presentation.dto.CancelWorkRequest
 import com.allcheck.operations.coordination.presentation.dto.DispatchHistoryResponse
 import com.allcheck.operations.coordination.presentation.dto.DispatchOfferResponse
@@ -79,10 +78,6 @@ interface OperationsApi {
     @Operation(operationId = "registerServiceRequest", summary = "ADMIN: 확정 접수 등록 및 자동 배차 시작", description = "원본 접수 소유자만 등록한다. SGIS 단일 현장 좌표를 먼저 확보하고 의뢰·회차·검색 의도·접수 연결을 원자적으로 저장한다.")
     @ApiResponse(responseCode = "422", description = "현장 주소 불명확. 접수 확정은 보존된다.")
     fun register(@Parameter(hidden = true) @AuthenticationPrincipal principal: AuthPrincipal?, @RequestHeader("Idempotency-Key") @NotBlank @Size(max = 200) key: String, @Valid @RequestBody body: RegisterServiceRequest): ResponseEntity<OperationResponse>
-
-    @GetMapping("/service-requests")
-    @Operation(operationId = "listServiceRequests", summary = "ADMIN: 모든 관리자 공유 의뢰 목록")
-    fun requests(@Parameter(hidden = true) @AuthenticationPrincipal principal: AuthPrincipal?, @RequestParam(required = false) status: RequestStatus?, @RequestParam(defaultValue = "1") @Min(1) @Max(1000000) page: Int, @RequestParam(defaultValue = "20") @Min(1) @Max(100) size: Int): ResponseEntity<OperationsPage<ServiceRequestResponse>>
 
     @GetMapping("/service-requests/{requestId}")
     @Operation(operationId = "getServiceRequest", summary = "ADMIN: 의뢰 현재 상태")
