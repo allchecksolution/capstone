@@ -1,11 +1,16 @@
 package com.allcheck.global.ratelimit
 
+import com.allcheck.support.PostgresTestSchema
 import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.test.annotation.DirtiesContext
+import org.springframework.test.context.DynamicPropertyRegistry
+import org.springframework.test.context.DynamicPropertySource
 import org.springframework.test.context.TestPropertySource
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionTemplate
@@ -15,15 +20,10 @@ import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import javax.sql.DataSource
 
-@SpringBootTest(
-    properties = [
-        "spring.datasource.url=\${IDENTITY_TEST_DATABASE_URL:jdbc:postgresql://localhost:15432/allcheck_identity_test}",
-        "spring.datasource.username=\${IDENTITY_TEST_DATABASE_USER:allcheck}",
-        "spring.datasource.password=\${IDENTITY_TEST_DATABASE_PASSWORD:allcheck_local_6}",
-        "spring.jpa.show-sql=false",
-    ],
-)
+@SpringBootTest(properties = ["spring.jpa.show-sql=false"])
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @TestPropertySource("classpath:jwt-test.properties")
 class RequestLimitIntegrationTest @Autowired constructor(
     private val limits: RequestLimitService,
@@ -110,5 +110,17 @@ class RequestLimitIntegrationTest @Autowired constructor(
     } catch (exception: RequestLimitExceededException) {
         assertThat(exception.retryAfterSeconds).isBetween(1L, 60L)
         false
+    }
+
+    companion object {
+        private val database = PostgresTestSchema("request_limit")
+
+        @JvmStatic
+        @DynamicPropertySource
+        fun properties(registry: DynamicPropertyRegistry) = database.register(registry)
+
+        @JvmStatic
+        @AfterAll
+        fun removeTestSchema(@Autowired dataSource: DataSource) = database.remove(dataSource)
     }
 }

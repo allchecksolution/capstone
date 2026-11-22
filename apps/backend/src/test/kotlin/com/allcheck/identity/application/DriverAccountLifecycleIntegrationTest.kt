@@ -16,8 +16,10 @@ import com.allcheck.identity.infrastructure.repository.account.AccountRepository
 import com.allcheck.identity.infrastructure.repository.session.AuthSessionRepository
 import com.allcheck.identity.infrastructure.session.RefreshTokenProvider
 import com.allcheck.identity.presentation.dto.response.session.TokenPairResponse
+import com.allcheck.support.PostgresTestSchema
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
@@ -28,6 +30,9 @@ import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
 import org.springframework.context.annotation.Primary
+import org.springframework.test.annotation.DirtiesContext
+import org.springframework.test.context.DynamicPropertyRegistry
+import org.springframework.test.context.DynamicPropertySource
 import org.springframework.test.context.TestPropertySource
 import org.springframework.transaction.IllegalTransactionStateException
 import org.springframework.transaction.PlatformTransactionManager
@@ -39,15 +44,10 @@ import java.time.ZoneOffset
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import javax.sql.DataSource
 
-@SpringBootTest(
-    properties = [
-        "spring.datasource.url=\${IDENTITY_TEST_DATABASE_URL:jdbc:postgresql://localhost:15432/allcheck_identity_test}",
-        "spring.datasource.username=\${IDENTITY_TEST_DATABASE_USER:allcheck}",
-        "spring.datasource.password=\${IDENTITY_TEST_DATABASE_PASSWORD:allcheck_local_6}",
-        "spring.jpa.show-sql=false",
-    ],
-)
+@SpringBootTest(properties = ["spring.jpa.show-sql=false"])
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @TestPropertySource("classpath:jwt-test.properties")
 @Import(DriverAccountLifecycleIntegrationTest.TestConfig::class)
 class DriverAccountLifecycleIntegrationTest @Autowired constructor(
@@ -248,5 +248,17 @@ class DriverAccountLifecycleIntegrationTest @Autowired constructor(
         @Bean
         @Primary
         fun driverAccountLifecycleClock(): Clock = Clock.fixed(Instant.parse("2026-11-18T00:00:00Z"), ZoneOffset.UTC)
+    }
+
+    companion object {
+        private val database = PostgresTestSchema("driver_account_lifecycle")
+
+        @JvmStatic
+        @DynamicPropertySource
+        fun properties(registry: DynamicPropertyRegistry) = database.register(registry)
+
+        @JvmStatic
+        @AfterAll
+        fun removeTestSchema(@Autowired dataSource: DataSource) = database.remove(dataSource)
     }
 }
