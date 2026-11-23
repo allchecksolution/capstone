@@ -1,11 +1,11 @@
 package com.allcheck.chat.presentation.socket
 
-import com.allcheck.chat.application.ChatActor
-import com.allcheck.chat.application.ChatMessageEvent
 import com.allcheck.chat.application.ChatRealtimeDelivery
 import com.allcheck.chat.application.ChatService
-import com.allcheck.chat.application.ChatSide
+import com.allcheck.chat.domain.vo.ChatActor
+import com.allcheck.chat.domain.vo.ChatSide
 import com.allcheck.chat.presentation.chatMessageId
+import com.allcheck.chat.presentation.security.toChatActor
 import com.allcheck.identity.IdentityOperations
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
@@ -44,7 +44,7 @@ internal class ChatSocketHandler(
         connections[session.id] = Connection(
             ConcurrentWebSocketSessionDecorator(session, 5000, 32 * 1024),
             socketIdentity,
-            chat.actor(socketIdentity.principal),
+            socketIdentity.principal.toChatActor(),
             clock.instant(),
         )
     }
@@ -85,22 +85,22 @@ internal class ChatSocketHandler(
         send(connection, mapOf("type" to "SUBSCRIBED", "driverId" to driverId))
     }
 
-    override fun publish(event: ChatMessageEvent): Boolean {
+    override fun publish(messageId: Long, driverId: Long, sender: ChatSide): Boolean {
         val payload = mapOf(
             "type" to "MESSAGE_CREATED",
-            "driverId" to event.driverId,
-            "messageId" to chatMessageId(event.messageId),
-            "sender" to event.sender.name,
+            "driverId" to driverId,
+            "messageId" to chatMessageId(messageId),
+            "sender" to sender.name,
         )
         var recipientNotified = false
         for (connection in connections.values) {
-            if (connection.driverId != event.driverId || !valid(connection)) continue
-            if (!chat.canSubscribe(connection.actor, event.driverId)) {
+            if (connection.driverId != driverId || !valid(connection)) continue
+            if (!chat.canSubscribe(connection.actor, driverId)) {
                 connection.driverId = null
                 continue
             }
             val sent = send(connection, payload)
-            if (sent && connection.actor.side == event.sender.opposite()) recipientNotified = true
+            if (sent && connection.actor.side == sender.opposite()) recipientNotified = true
         }
         return recipientNotified
     }

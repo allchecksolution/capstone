@@ -1,12 +1,16 @@
-package com.allcheck.dashboard.presentation
+package com.allcheck.dashboard.presentation.api
 
 import com.allcheck.dashboard.presentation.dto.request.DashboardParameters
 import com.allcheck.dashboard.presentation.dto.response.DashboardPage
 import com.allcheck.dashboard.presentation.dto.response.DashboardStatistics
+import com.allcheck.global.exception.ErrorResponse
 import com.allcheck.global.security.principal.AuthPrincipal
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
+import io.swagger.v3.oas.annotations.media.Content
+import io.swagger.v3.oas.annotations.media.Schema
 import io.swagger.v3.oas.annotations.responses.ApiResponse
+import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.security.SecurityRequirement
 import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
@@ -25,6 +29,12 @@ import java.time.LocalDate
 @RequestMapping("/api/v1", produces = ["application/json"])
 @Tag(name = "Dashboard", description = "관리자 의뢰 현황과 기간 통계")
 @SecurityRequirement(name = "bearerAuth")
+@ApiResponses(
+    ApiResponse(responseCode = "400", description = "조회 기간·필터·페이지 입력이 올바르지 않음", content = [Content(schema = Schema(implementation = ErrorResponse::class))]),
+    ApiResponse(responseCode = "401", description = "유효한 인증 세션 필요", content = [Content(schema = Schema(implementation = ErrorResponse::class))]),
+    ApiResponse(responseCode = "403", description = "관리자 권한 필요", content = [Content(schema = Schema(implementation = ErrorResponse::class))]),
+    ApiResponse(responseCode = "500", description = "서버에서 조회를 완료하지 못함", content = [Content(schema = Schema(implementation = ErrorResponse::class))]),
+)
 interface DashboardApi {
 
     @GetMapping("/service-requests")

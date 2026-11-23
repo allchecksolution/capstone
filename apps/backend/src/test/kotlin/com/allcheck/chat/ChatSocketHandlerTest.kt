@@ -1,9 +1,8 @@
 package com.allcheck.chat
 
-import com.allcheck.chat.application.ChatActor
-import com.allcheck.chat.application.ChatMessageEvent
 import com.allcheck.chat.application.ChatService
-import com.allcheck.chat.application.ChatSide
+import com.allcheck.chat.domain.vo.ChatActor
+import com.allcheck.chat.domain.vo.ChatSide
 import com.allcheck.chat.presentation.socket.ChatSocketHandler
 import com.allcheck.chat.presentation.socket.ChatSocketIdentity
 import com.allcheck.global.security.principal.AuthPrincipal
@@ -35,7 +34,6 @@ class ChatSocketHandlerTest {
         val principal = AuthPrincipal(10, 11, UserType.DRIVER, null)
         val actor = ChatActor(10, ChatSide.DRIVER)
         val chat = mock(ChatService::class.java)
-        `when`(chat.actor(principal)).thenReturn(actor)
         `when`(chat.canSubscribe(actor, 20)).thenReturn(true)
         val identity = mock(IdentityOperations::class.java)
         `when`(identity.findAuthenticatedAccount(10, 11)).thenReturn(AuthenticatedAccount(10, UserType.DRIVER, null))
@@ -60,6 +58,6 @@ class ChatSocketHandlerTest {
         // then
         verify(socket).close(CloseStatus.POLICY_VIOLATION)
         assertThat(handler.hasRecipient(20, ChatSide.DRIVER)).isFalse()
-        assertThat(handler.publish(ChatMessageEvent(1, 20, ChatSide.ADMIN, read = false))).isFalse()
+        assertThat(handler.publish(1, 20, ChatSide.ADMIN)).isFalse()
     }
 }

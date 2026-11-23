@@ -30,6 +30,16 @@ class ModularityTests {
     }
 
     @Test
+    fun `채팅 도메인과 인프라는 애플리케이션 계층에 의존하지 않는다`() {
+        val classes = ClassFileImporter().withImportOption(ImportOption.DoNotIncludeTests())
+            .importPackages("com.allcheck.chat")
+
+        noClasses().that().resideInAnyPackage("com.allcheck.chat.domain..", "com.allcheck.chat.infrastructure..")
+            .should().dependOnClassesThat().resideInAPackage("com.allcheck.chat.application..")
+            .check(classes)
+    }
+
+    @Test
     fun `공통 기술 코드는 비즈니스 모듈 내부에 의존하지 않는다`() {
         // given
         val classes = ClassFileImporter().importPackages("com.allcheck.global")

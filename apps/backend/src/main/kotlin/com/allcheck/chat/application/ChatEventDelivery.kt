@@ -1,6 +1,8 @@
 package com.allcheck.chat.application
 
+import com.allcheck.chat.domain.vo.ChatSide
 import com.allcheck.chat.infrastructure.ChatEventRepository
+import com.allcheck.chat.infrastructure.ChatPushDelivery
 import com.allcheck.chat.infrastructure.PushDeliveryStatus
 import com.allcheck.driver.DriverOperations
 import com.allcheck.global.notification.FcmClient
@@ -23,7 +25,7 @@ import java.util.Locale
 
 /** Replace the local WebSocket fan-out and presence check together when deploying multiple instances. */
 internal interface ChatRealtimeDelivery {
-    fun publish(event: ChatMessageEvent): Boolean
+    fun publish(messageId: Long, driverId: Long, sender: ChatSide): Boolean
     fun hasRecipient(driverId: Long, side: ChatSide): Boolean
 }
 
@@ -32,9 +34,9 @@ internal interface ChatRealtimeDelivery {
 internal class ChatDeliveryTransactions(private val events: ChatEventRepository) {
 
     @Transactional
-    fun finishEvent(event: ChatMessageEvent, recipients: List<Pair<Long, String>>) {
-        if (!events.completeEvent(event.messageId) || !events.isUnread(event.messageId)) return
-        recipients.forEach { (accountId, installationId) -> events.enqueuePush(event.messageId, accountId, installationId) }
+    fun finishEvent(messageId: Long, recipients: List<Pair<Long, String>>) {
+        if (!events.completeEvent(messageId) || !events.isUnread(messageId)) return
+        recipients.forEach { (accountId, installationId) -> events.enqueuePush(messageId, accountId, installationId) }
     }
 
     @Transactional
@@ -62,7 +64,7 @@ internal class ChatDeliveryWorker(
     fun dispatchEvents() {
         events.pendingEvents(50).forEach { event ->
             val driver = drivers.findActiveDriverById(event.driverId)
-            val recipients = if (driver == null || realtime.publish(event) || event.read) {
+            val recipients = if (driver == null || realtime.publish(event.messageId, event.driverId, event.sender) || event.read) {
                 emptyList()
             } else {
                 val accounts = when (event.sender) {
@@ -71,7 +73,7 @@ internal class ChatDeliveryWorker(
                 }
                 devices.activeDevices(accounts).map { it.accountId to it.installationId }
             }
-            transactions.finishEvent(event, recipients)
+            transactions.finishEvent(event.messageId, recipients)
         }
     }
 

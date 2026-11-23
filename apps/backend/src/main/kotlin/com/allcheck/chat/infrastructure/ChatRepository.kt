@@ -1,12 +1,10 @@
 package com.allcheck.chat.infrastructure
 
-import com.allcheck.chat.application.ChatActor
-import com.allcheck.chat.application.ChatDriver
-import com.allcheck.chat.application.ChatMessage
-import com.allcheck.chat.application.ChatReadState
-import com.allcheck.chat.application.ChatRoom
-import com.allcheck.chat.application.ChatSide
-import com.allcheck.chat.application.Conversation
+import com.allcheck.chat.domain.entity.ChatMessage
+import com.allcheck.chat.domain.entity.Conversation
+import com.allcheck.chat.domain.vo.ChatActor
+import com.allcheck.chat.domain.vo.ChatReadState
+import com.allcheck.chat.domain.vo.ChatSide
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.stereotype.Repository
 import java.sql.ResultSet
@@ -42,7 +40,7 @@ internal class ChatRepository(private val jdbc: JdbcClient) {
         ).param("driverId", driverId).param("now", now.atOffset(ZoneOffset.UTC)).update()
     }
 
-    fun rooms(search: String?, offset: Int, limit: Int): List<ChatRoom> {
+    fun rooms(search: String?, offset: Int, limit: Int): List<ChatRoomRecord> {
         val searchClause = if (search == null) "" else "WHERE strpos(lower(d.worker_name), lower(:search)) > 0"
         val query = jdbc.sql(
             """
@@ -63,7 +61,7 @@ internal class ChatRepository(private val jdbc: JdbcClient) {
         search?.let { query.param("search", it) }
         return query.query { row, _ ->
             val driver = row.driver()
-            ChatRoom(driver, row.message(driver.id), row.getLong("unread_count"))
+            ChatRoomRecord(driver, row.message(driver.id), row.getLong("unread_count"))
         }.list()
     }
 
@@ -107,7 +105,7 @@ internal class ChatRepository(private val jdbc: JdbcClient) {
         .param("key", key).param("body", body).param("now", now.atOffset(ZoneOffset.UTC))
         .query { row, _ -> row.message(room.driverId) }.single()
 
-    fun advanceReadState(room: Conversation, reader: ChatSide, through: Long, now: Instant): ChatReadState {
+    fun saveReadState(roomId: Long, reader: ChatSide, state: ChatReadState): ChatReadState {
         val columns = if (reader == ChatSide.ADMIN) "admin" else "driver"
         val updated = jdbc.sql(
             """
@@ -115,19 +113,19 @@ internal class ChatRepository(private val jdbc: JdbcClient) {
             WHERE conversation_id = :room
             RETURNING ${columns}_read_message_id, ${columns}_read_at
             """.trimIndent(),
-        ).param("room", room.id).param("through", through).param("now", now.atOffset(ZoneOffset.UTC))
+        ).param("room", roomId).param("through", state.messageId).param("now", state.readAt.atOffset(ZoneOffset.UTC))
             .query { row, _ -> checkNotNull(row.readState(columns)) }.single()
         jdbc.sql(
             """
             UPDATE chat_messages SET read_at = :now
             WHERE conversation_id = :room AND sender = :incoming AND read_at IS NULL AND message_id <= :through
             """.trimIndent(),
-        ).param("room", room.id).param("incoming", reader.opposite().name)
-            .param("through", through).param("now", updated.readAt.atOffset(ZoneOffset.UTC)).update()
+        ).param("room", roomId).param("incoming", reader.opposite().name)
+            .param("through", state.messageId).param("now", updated.readAt.atOffset(ZoneOffset.UTC)).update()
         return updated
     }
 
-    private fun ResultSet.driver() = ChatDriver(getLong("driver_id"), getLong("account_id"), getString("worker_name"), getString("account_status"))
+    private fun ResultSet.driver() = ChatDriverRecord(getLong("driver_id"), getLong("account_id"), getString("worker_name"), getString("account_status"))
 
     private fun ResultSet.readState(side: String): ChatReadState? = instant("${side}_read_at")?.let {
         ChatReadState(getLong("${side}_read_message_id"), it)

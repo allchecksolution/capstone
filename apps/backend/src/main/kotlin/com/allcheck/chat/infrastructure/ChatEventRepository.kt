@@ -1,8 +1,6 @@
 package com.allcheck.chat.infrastructure
 
-import com.allcheck.chat.application.ChatMessageEvent
-import com.allcheck.chat.application.ChatPushDelivery
-import com.allcheck.chat.application.ChatSide
+import com.allcheck.chat.domain.vo.ChatSide
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.stereotype.Repository
 import java.sql.ResultSet
@@ -92,5 +90,3 @@ internal class ChatEventRepository(private val jdbc: JdbcClient) {
 
     private fun ResultSet.event() = ChatMessageEvent(getLong("message_id"), getLong("driver_id"), ChatSide.valueOf(getString("sender")), getBoolean("read"))
 }
-
-internal enum class PushDeliveryStatus { PENDING, PROVIDER_ACCEPTED, FAILED, SKIPPED }

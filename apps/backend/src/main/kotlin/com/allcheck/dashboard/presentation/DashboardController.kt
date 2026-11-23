@@ -2,6 +2,7 @@ package com.allcheck.dashboard.presentation
 
 import com.allcheck.dashboard.application.DashboardCriteria
 import com.allcheck.dashboard.application.DashboardService
+import com.allcheck.dashboard.presentation.api.DashboardApi
 import com.allcheck.dashboard.presentation.dto.request.DashboardParameters
 import com.allcheck.dashboard.presentation.dto.response.DashboardPage
 import com.allcheck.dashboard.presentation.dto.response.DashboardStatistics

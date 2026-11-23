@@ -1,10 +1,10 @@
 package com.allcheck.chat
 
-import com.allcheck.chat.application.ChatActor
 import com.allcheck.chat.application.ChatDeliveryWorker
-import com.allcheck.chat.application.ChatError
 import com.allcheck.chat.application.ChatService
-import com.allcheck.chat.application.ChatSide
+import com.allcheck.chat.domain.vo.ChatActor
+import com.allcheck.chat.domain.vo.ChatSide
+import com.allcheck.chat.exception.ChatErrorCode
 import com.allcheck.driver.application.withdrawal.DriverWithdrawalService
 import com.allcheck.driver.application.withdrawal.WithdrawDriverCommand
 import com.allcheck.global.exception.BusinessException
@@ -190,9 +190,9 @@ class ChatIntegrationTest {
         val expectedMessages = if (sent.isSuccess) 1L else 0L
         assertThat(count("chat_messages")).isEqualTo(expectedMessages)
         assertThat(count("chat_message_events")).isEqualTo(expectedMessages)
-        sent.exceptionOrNull()?.let { assertThat((it as BusinessException).errorCode).isEqualTo(ChatError.CHAT_NOT_ALLOWED) }
+        sent.exceptionOrNull()?.let { assertThat((it as BusinessException).errorCode).isEqualTo(ChatErrorCode.CHAT_NOT_ALLOWED) }
         val rejected = assertThrows<BusinessException> { chat.send(ChatActor(1, ChatSide.ADMIN), 10, "after", "탈퇴 후 전송") }
-        assertThat(rejected.errorCode).isEqualTo(ChatError.CHAT_NOT_ALLOWED)
+        assertThat(rejected.errorCode).isEqualTo(ChatErrorCode.CHAT_NOT_ALLOWED)
     }
 
     @Test
