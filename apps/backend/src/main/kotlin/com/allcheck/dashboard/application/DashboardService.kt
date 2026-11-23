@@ -1,14 +1,15 @@
 package com.allcheck.dashboard.application
 
-import com.allcheck.dashboard.presentation.DashboardFollowUpTarget
-import com.allcheck.dashboard.presentation.DashboardMetrics
-import com.allcheck.dashboard.presentation.DashboardPage
-import com.allcheck.dashboard.presentation.DashboardParameters
-import com.allcheck.dashboard.presentation.DashboardRequestItem
-import com.allcheck.dashboard.presentation.DashboardStatistics
-import com.allcheck.dashboard.presentation.RequestTypeCount
-import com.allcheck.dashboard.presentation.StatisticsPeriod
-import com.allcheck.dashboard.presentation.WeeklyRequestCount
+import com.allcheck.dashboard.presentation.dto.response.DashboardFollowUpTarget
+import com.allcheck.dashboard.presentation.dto.response.DashboardMetrics
+import com.allcheck.dashboard.presentation.dto.response.DashboardPage
+import com.allcheck.dashboard.presentation.dto.response.DashboardRequestItem
+import com.allcheck.dashboard.presentation.dto.response.DashboardStatistics
+import com.allcheck.dashboard.presentation.dto.response.RequestTypeCount
+import com.allcheck.dashboard.presentation.dto.response.StatisticsPeriod
+import com.allcheck.dashboard.presentation.dto.response.WeeklyRequestCount
+import com.allcheck.global.exception.BusinessException
+import com.allcheck.global.exception.GlobalErrorCode
 import com.allcheck.operations.DashboardFilter
 import com.allcheck.operations.DashboardOperations
 import com.allcheck.operations.DashboardRequest
@@ -19,21 +20,21 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
 import java.math.RoundingMode
-import java.time.LocalDate
 import java.time.ZoneId
 
 @Service
 @Transactional(readOnly = true)
 internal class DashboardService(private val operations: DashboardOperations) {
 
-    fun requests(filter: DashboardParameters, from: LocalDate?, to: LocalDate?, page: Int, size: Int): DashboardPage {
-        val rows = operations.requestPage(filter.toQuery(from, to), (page - 1) * size, size + 1)
+    fun requests(criteria: DashboardCriteria, page: Int, size: Int): DashboardPage {
+        val rows = operations.requestPage(criteria.toFilter(), (page - 1) * size, size + 1)
         return DashboardPage(rows.take(size).map { it.toItem() }, page, size, rows.size > size)
     }
 
-    fun statistics(filter: DashboardParameters, from: LocalDate, to: LocalDate): DashboardStatistics {
-        val query = filter.toQuery(from, to)
-        val period = StatisticsPeriod(from, to)
+    fun statistics(criteria: DashboardCriteria): DashboardStatistics {
+        if (criteria.from == null || criteria.to == null) throw BusinessException(GlobalErrorCode.INVALID_INPUT_VALUE)
+        val query = criteria.toFilter()
+        val period = StatisticsPeriod(criteria.from, criteria.to)
         val groups = operations.statistics(query, period.from)
         val metrics = if (groups.isEmpty()) {
             null
@@ -65,22 +66,21 @@ internal class DashboardService(private val operations: DashboardOperations) {
         return DashboardStatistics(period, metrics != null, metrics)
     }
 
-    private fun DashboardParameters.toQuery(from: LocalDate?, to: LocalDate?): DashboardFilter {
+    private fun DashboardCriteria.toFilter(): DashboardFilter {
         validInput(from == null || from.year in 1..9999)
         validInput(to == null || to.year in 1..9999)
         validInput(from == null || to == null || from <= to)
-        validInput(status == null || requestStatus == null || status == requestStatus)
-        validInput(region?.isNotBlank() != false && q?.isNotBlank() != false)
+        validInput(region?.isNotBlank() != false && query?.isNotBlank() != false)
         return DashboardFilter(
-            from?.atStartOfDay(SEOUL)?.toInstant(),
-            to?.plusDays(1)?.atStartOfDay(SEOUL)?.toInstant(),
-            requestStatus ?: status,
-            workStatus,
-            workType,
-            driverId,
-            region?.trim(),
-            needsAdminAction,
-            q?.trim(),
+            from = from?.atStartOfDay(SEOUL)?.toInstant(),
+            until = to?.plusDays(1)?.atStartOfDay(SEOUL)?.toInstant(),
+            requestStatus = requestStatus,
+            workStatus = workStatus,
+            workType = workType,
+            driverId = driverId,
+            region = region?.trim(),
+            needsAdminAction = needsAdminAction,
+            query = query?.trim(),
         )
     }
 

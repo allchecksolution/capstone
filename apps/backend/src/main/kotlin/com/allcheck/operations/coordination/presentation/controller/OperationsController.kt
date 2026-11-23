@@ -8,18 +8,19 @@ import com.allcheck.operations.coordination.application.OperationsQueries
 import com.allcheck.operations.coordination.application.OperationsReportTransactions
 import com.allcheck.operations.coordination.application.OperationsService
 import com.allcheck.operations.coordination.application.OperationsTransactions
+import com.allcheck.operations.coordination.presentation.OperationsId
 import com.allcheck.operations.coordination.presentation.api.OperationsApi
-import com.allcheck.operations.coordination.presentation.dto.CancelWorkRequest
-import com.allcheck.operations.coordination.presentation.dto.FollowUpDecisionRequest
-import com.allcheck.operations.coordination.presentation.dto.OperationResponse
-import com.allcheck.operations.coordination.presentation.dto.OperationsId
-import com.allcheck.operations.coordination.presentation.dto.RegisterServiceRequest
-import com.allcheck.operations.coordination.presentation.dto.RespondOfferRequest
-import com.allcheck.operations.coordination.presentation.dto.ReviseReportRequest
-import com.allcheck.operations.coordination.presentation.dto.RevisitPlanRequest
-import com.allcheck.operations.coordination.presentation.dto.SubmitReportRequest
-import com.allcheck.operations.coordination.presentation.dto.TransitionWorkRequest
-import com.allcheck.operations.coordination.presentation.dto.WorkPhotoUploadRequest
+import com.allcheck.operations.coordination.presentation.dto.request.CancelWorkRequest
+import com.allcheck.operations.coordination.presentation.dto.request.FollowUpDecisionRequest
+import com.allcheck.operations.coordination.presentation.dto.request.RegisterServiceRequest
+import com.allcheck.operations.coordination.presentation.dto.request.RespondOfferRequest
+import com.allcheck.operations.coordination.presentation.dto.request.ReviseReportRequest
+import com.allcheck.operations.coordination.presentation.dto.request.RevisitPlanRequest
+import com.allcheck.operations.coordination.presentation.dto.request.SubmitReportRequest
+import com.allcheck.operations.coordination.presentation.dto.request.TransitionWorkRequest
+import com.allcheck.operations.coordination.presentation.dto.request.WorkPhotoUploadRequest
+import com.allcheck.operations.coordination.presentation.dto.response.OperationResponse
+import com.allcheck.operations.coordination.presentation.dto.response.PhotoUploadResponse
 import com.allcheck.operations.coordination.presentation.security.OperationsActorResolver
 import org.springframework.http.CacheControl
 import org.springframework.http.ResponseEntity
@@ -78,7 +79,7 @@ class OperationsController(
     override fun revise(principal: AuthPrincipal?, reportId: String, key: String, body: ReviseReportRequest) = command(reports.revise(actors.resolve(principal), OperationsId.REPORT.parse(reportId), key, body.expectedVersion, body.reason, body.changes.workDescription, body.changes.diagnosis, body.changes.totalCost), OperationsId.REPORT, OperationsId.WORK, "/api/v1/reports")
 
     @PreAuthorize("hasRole('DRIVER')")
-    override fun reservePhoto(principal: AuthPrincipal?, workId: String, key: String, body: WorkPhotoUploadRequest): ResponseEntity<com.allcheck.operations.coordination.presentation.dto.PhotoUploadResponse> {
+    override fun reservePhoto(principal: AuthPrincipal?, workId: String, key: String, body: WorkPhotoUploadRequest): ResponseEntity<PhotoUploadResponse> {
         val (grant, replay) = photos.reserve(actors.resolve(principal), OperationsId.WORK.parse(workId), key, body.metadata())
         return ResponseEntity.status(201).cacheControl(CacheControl.noStore()).header("Idempotency-Replayed", replay.toString()).body(grant)
     }

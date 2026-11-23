@@ -2,11 +2,11 @@ package com.allcheck.chat.presentation.controller
 
 import com.allcheck.chat.application.ChatService
 import com.allcheck.chat.presentation.api.ChatApi
-import com.allcheck.chat.presentation.dto.ChatRoomPageResponse
-import com.allcheck.chat.presentation.dto.MarkChatRead
-import com.allcheck.chat.presentation.dto.SendChatMessage
-import com.allcheck.chat.presentation.dto.parseChatMessageId
-import com.allcheck.chat.presentation.dto.response
+import com.allcheck.chat.presentation.dto.request.MarkChatRead
+import com.allcheck.chat.presentation.dto.request.SendChatMessage
+import com.allcheck.chat.presentation.dto.response.ChatRoomPageResponse
+import com.allcheck.chat.presentation.dto.response.response
+import com.allcheck.chat.presentation.parseChatMessageId
 import com.allcheck.global.security.principal.AuthPrincipal
 import org.springframework.http.CacheControl
 import org.springframework.http.HttpStatus

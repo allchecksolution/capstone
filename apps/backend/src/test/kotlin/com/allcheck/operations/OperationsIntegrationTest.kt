@@ -420,6 +420,10 @@ class OperationsIntegrationTest @Autowired constructor(
         ).andExpect(status().isOk).andExpect(jsonPath("$.hasData").value(false)).andExpect(jsonPath("$.metrics").isEmpty)
         mvc.perform(get("/api/v1/service-requests").param("status", "OPEN").with(authenticated(1, UserType.ADMIN)))
             .andExpect(status().isOk).andExpect(jsonPath("$.items.length()").value(1))
+        mvc.perform(
+            get("/api/v1/service-requests").param("status", "OPEN").param("requestStatus", "COMPLETED")
+                .with(authenticated(1, UserType.ADMIN)),
+        ).andExpect(status().isBadRequest).andExpect(jsonPath("$.code").value("INVALID_INPUT_VALUE"))
         mvc.perform(get("/api/v1/work-statistics").with(authenticated(10, UserType.DRIVER))).andExpect(status().isForbidden)
         mvc.perform(get("/api/v1/work-statistics").param("from", "2026-11-01").param("to", "2026-10-31").with(authenticated(1, UserType.ADMIN)))
             .andExpect(status().isBadRequest)

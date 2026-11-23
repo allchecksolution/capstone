@@ -1,11 +1,11 @@
 package com.allcheck.chat.presentation.api
 
-import com.allcheck.chat.presentation.dto.ChatMessagePageResponse
-import com.allcheck.chat.presentation.dto.ChatMessageResponse
-import com.allcheck.chat.presentation.dto.ChatReadResponse
-import com.allcheck.chat.presentation.dto.ChatRoomPageResponse
-import com.allcheck.chat.presentation.dto.MarkChatRead
-import com.allcheck.chat.presentation.dto.SendChatMessage
+import com.allcheck.chat.presentation.dto.request.MarkChatRead
+import com.allcheck.chat.presentation.dto.request.SendChatMessage
+import com.allcheck.chat.presentation.dto.response.ChatMessagePageResponse
+import com.allcheck.chat.presentation.dto.response.ChatMessageResponse
+import com.allcheck.chat.presentation.dto.response.ChatReadResponse
+import com.allcheck.chat.presentation.dto.response.ChatRoomPageResponse
 import com.allcheck.global.security.principal.AuthPrincipal
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter

@@ -4,8 +4,8 @@ import com.allcheck.global.exception.BusinessException
 import com.allcheck.global.exception.GlobalErrorCode
 import com.allcheck.operations.ActorRole
 import com.allcheck.operations.OperationsActor
-import com.allcheck.operations.coordination.presentation.dto.PhotoAccessResponse
-import com.allcheck.operations.coordination.presentation.dto.PhotoUploadResponse
+import com.allcheck.operations.coordination.presentation.dto.response.PhotoAccessResponse
+import com.allcheck.operations.coordination.presentation.dto.response.PhotoUploadResponse
 import com.allcheck.operations.work.PhotoMetadata
 import com.allcheck.operations.work.PhotoStorageOperations
 import org.springframework.stereotype.Service

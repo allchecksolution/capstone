@@ -1,5 +1,8 @@
 package com.allcheck.dashboard.presentation
 
+import com.allcheck.dashboard.presentation.dto.request.DashboardParameters
+import com.allcheck.dashboard.presentation.dto.response.DashboardPage
+import com.allcheck.dashboard.presentation.dto.response.DashboardStatistics
 import com.allcheck.global.security.principal.AuthPrincipal
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter

@@ -5,7 +5,7 @@ import com.allcheck.chat.application.ChatMessageEvent
 import com.allcheck.chat.application.ChatRealtimeDelivery
 import com.allcheck.chat.application.ChatService
 import com.allcheck.chat.application.ChatSide
-import com.allcheck.chat.presentation.dto.chatMessageId
+import com.allcheck.chat.presentation.chatMessageId
 import com.allcheck.identity.IdentityOperations
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
