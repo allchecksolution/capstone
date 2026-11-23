@@ -205,7 +205,8 @@ REST owns message creation and history under `/api/v1/chat-rooms/{driverId}` and
 for new messages in ascending order. Both take a message ID from the same conversation. Follow
 `nextCursor` in the requested direction until it is null. Update read state via `PUT .../read`.
 
-Connect to `/api/v1/chat/ws` over WSS in production. Native clients can present the bearer token
+Connect to `/api/v1/chat/ws` over WSS in production. The upgrade requires an authenticated
+administrator or active driver. Each room subscription is authorized separately. Native clients can present the bearer token
 in the Authorization header. Browser clients offer WebSocket subprotocols `allcheck-chat.v1`
 and `bearer.<access-token>`. The server negotiates `allcheck-chat.v1` and treats the token
 offer as a credential. Use the same origin by default. Configure comma-separated explicit browser
@@ -218,6 +219,7 @@ origins through the `chat.websocket.allowed-origins` property when needed.
 | `{"type":"PING"}` | `PONG` |
 
 Send a ping within each 60-second inactivity window and unsubscribe when leaving the conversation.
+The server checks idle connections every 15 seconds and clears an expired connection's subscription.
 An invalid or unauthorized frame produces `ERROR` with a code. The same connection can change
 rooms by subscribing again. An expired token or revoked session closes the connection with code
 1008. Reconnect with a current access token, subscribe, and fetch history after the last known message.

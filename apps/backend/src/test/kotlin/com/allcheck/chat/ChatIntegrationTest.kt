@@ -229,6 +229,39 @@ class ChatIntegrationTest {
     }
 
     @Test
+    fun `승인 대기와 반려 기사는 채팅 소켓 업그레이드가 금지되고 관리자는 연결할 수 있다`() {
+        // given
+        val uri = URI("ws://127.0.0.1:$port/api/v1/chat/ws")
+        jdbc.update("UPDATE drivers SET account_status = 'PENDING_APPROVAL' WHERE driver_id = 20")
+
+        // when & then
+        HttpClient.newHttpClient().use { client ->
+            val driverToken = tokens.createAccessToken(20, 20)
+            fun assertUpgradeForbidden() {
+                val rejected = assertThrows<CompletionException> {
+                    client.newWebSocketBuilder().connectTimeout(Duration.ofSeconds(5))
+                        .subprotocols("allcheck-chat.v1", "bearer.$driverToken").buildAsync(uri, Collector()).join()
+                }
+                assertThat((rejected.cause as WebSocketHandshakeException).response.statusCode()).isEqualTo(403)
+            }
+            assertUpgradeForbidden()
+            jdbc.update(
+                "UPDATE drivers SET account_status = 'REJECTED', rejected_at = now(), rejection_reason = '반려 테스트' WHERE driver_id = 20",
+            )
+            assertUpgradeForbidden()
+
+            val adminToken = tokens.createAccessToken(1, 1)
+            val socket = client.newWebSocketBuilder().connectTimeout(Duration.ofSeconds(5))
+                .subprotocols("allcheck-chat.v1", "bearer.$adminToken").buildAsync(uri, Collector()).join()
+            try {
+                assertThat(socket.subprotocol).isEqualTo("allcheck-chat.v1")
+            } finally {
+                socket.abort()
+            }
+        }
+    }
+
+    @Test
     fun `채팅 구독은 본인과 유효 세션만 허용하고 연결이 없으면 등록 기기에 식별자 푸시를 보낸다`() {
         // given
         jdbc.update(
