@@ -128,7 +128,8 @@ class _WorkflowShellState extends State<WorkflowShell> with WidgetsBindingObserv
       if(!mounted)return;for(final c in fields.values){c.dispose();}fields.clear();selections.clear();history.clear();
       if(account==null){registrationStep=1;go('register',replace:true);}
       else{signedIn=true;go('home',replace:true);}if(response?['state'] is Json)await applyServerState(response!);
-    }catch(_){message('로그인에 실패했습니다. 잠시 후 다시 시도해 주세요.');}
+    }on ServiceFailure catch(error){message(error.message);}
+    catch(_){message('로그인에 실패했습니다. 잠시 후 다시 시도해 주세요.');}
     finally{if(mounted){setState(()=>busy=false);if(signedIn)unawaited(afterAuthentication());}}
   }
 

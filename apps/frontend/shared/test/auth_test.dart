@@ -36,6 +36,14 @@ Future<void> tapText(WidgetTester tester, String label) async {
   await tester.pumpAndSettle();
 }
 
+Future<void> tapChoice(WidgetTester tester, String label) async {
+  final chip = find.widgetWithText(FilterChip, label);
+  await Scrollable.ensureVisible(tester.element(chip), alignment: 0.5);
+  await tester.pumpAndSettle();
+  await tester.tap(chip);
+  await tester.pumpAndSettle();
+}
+
 class RegistrationBackend implements FrontendBackend {
   final operations=<String>[];
   final businessChecks=<Json>[];
@@ -55,6 +63,22 @@ class RegistrationBackend implements FrontendBackend {
 }
 
 void main() {
+  testWidgets('backend login failure preserves the safe error and allows retry', (tester) async {
+    final auth = FakeAuth();
+    const safeMessage = '서버에서 카카오 인증을 확인할 수 없습니다. 잠시 후 다시 시도해 주세요.';
+    await tester.pumpWidget(AllcheckApp(role: AppRole.driver,
+      store: AppStore(AppRole.driver), driverAuth: auth,
+      onKakaoAuthenticated: (_) async => throw const ServiceFailure(503, safeMessage)));
+    await tapLogin(tester);
+    auth.result.complete(identity);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('계속'));
+    await tester.pumpAndSettle();
+    expect(find.text(safeMessage), findsOneWidget);
+    expect(find.byType(NavigationBar), findsNothing);
+    expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, '계속')).onPressed, isNotNull);
+    await tester.pumpWidget(const SizedBox());
+  });
   testWidgets('registration prefills Kakao nickname and remembers the edited name on next login', (tester) async {
     final store=AppStore(AppRole.driver);
     const namedIdentity=KakaoIdentity(userId:'nickname-user',accessToken:'private-token',nickname:'카카오별명');
@@ -141,6 +165,15 @@ void main() {
       await tapText(tester,'사업자 정보 확인');
       await tapText(tester,'다음');
       await tapText(tester,'막힘');await tapText(tester,'서울 강남구');
+      if(!rejected){
+        for(final extra in ['내벽 누수','외벽 누수','방수']){await tapChoice(tester,extra);}
+        await tapText(tester,'다음');
+        expect(find.text('가입 정보 등록 · 3 / 4'),findsOneWidget);
+        expect(find.text('전문 분야는 1~3개만 선택해 주세요.'),findsOneWidget);
+        ScaffoldMessenger.of(tester.element(find.byType(Form))).clearSnackBars();
+        await tester.pumpAndSettle();
+        for(final extra in ['내벽 누수','외벽 누수','방수']){await tapChoice(tester,extra);}
+      }
       await tapText(tester,'다음');
       await fillRegistration(tester,{'bank':'테스트 은행','bankAccount':'123456789','bankOwner':'신청 기사','taxEmail':'tax@example.com'});
       await tapText(tester,'입력 정보 확인 및 가입 신청에 동의합니다.');

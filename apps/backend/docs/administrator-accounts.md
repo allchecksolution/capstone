@@ -11,7 +11,32 @@ Initial passwords do not require a change at first login.
 Use Java 21 and run `./gradlew.bat bootJar` from `apps/backend`. The artifact is `build/libs/app.jar`.
 The CLI does not start an HTTP server and does not require the backend server to be running.
 It connects to PostgreSQL and runs configured Flyway migrations, so select the intended database first.
-Plain Java execution does not automatically import `.env`.
+Both ordinary server startup and administrator CLI commands automatically load `.env` from the current
+working directory. Run them from `apps/backend` to load `apps/backend/.env`. The file is optional;
+command-line arguments, JVM properties, and existing environment variables take precedence over it.
+The loader runs before Spring profile/configuration selection, so file settings also apply to CLI startup.
+
+Use UTF-8 `KEY=VALUE` entries, one per line. Blank lines, full-line comments, single/double quoted values,
+and optional `export` prefixes are supported. Double quoted values support escapes for newline, carriage
+return, tab, quotes, and backslashes. Unquoted values preserve backslashes and Base64 padding.
+Duplicate keys, unterminated quotes, and multiline
+assignments fail with a line number without disclosing values. No shell commands are executed.
+The file is excluded from Docker build context and is never bundled into the JAR.
+
+For a different working directory, select the file explicitly with
+`java -Dallcheck.env-file=D:/path/to/backend/.env -jar D:/path/to/app.jar`.
+To test edits to the file, use a fresh terminal or remove previously set environment overrides.
+
+For local server startup, put `JWT_SECRET`, `KAKAO_APP_ID` (numeric application ID, not the native app key),
+and `NTS_SERVICE_KEY` in the backend `.env`, then run:
+
+```powershell
+cd D:\4-2\allcheckclone\capstone\apps\backend
+java -jar build/libs/app.jar
+```
+
+The default server profile remains `local`. A changed file requires a server restart; no rebuild is needed
+after the loader has been included in the JAR. File changes do not change administrator passwords or records.
 
 PowerShell, for the repository's running local PostgreSQL:
 
@@ -103,6 +128,8 @@ No raw credentials or password hashes are included in history.
 ## Verification
 
 Backend tests use `PostgresTestSchema` and migrate only UUID-named test schemas:
+Gradle also redirects the dotenv path away from the developer's `.env`; configuration tests create
+their own synthetic files and do not inspect local credentials.
 
 ```powershell
 ./gradlew.bat ktlintCheck test --tests 'com.allcheck.identity.*'
