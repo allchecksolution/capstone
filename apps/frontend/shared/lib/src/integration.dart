@@ -3,12 +3,18 @@ part of '../allcheck_ui.dart';
 extension BackendScreens on _WorkflowShellState {
   FrontendBackend get api => widget.backend ?? (throw const ServiceFailure(0, '서버 연결 설정을 확인해 주세요.'));
 
+  Json businessIdentityInput()=>{'businessNumber':value('businessNumber').replaceAll('-',''),'openedOn':value('openedOn'),'owner':value('owner')};
+
   Future<void> checkBusiness(List<String> keys)async{
     if(!RegExp(r'^\d{3}-?\d{2}-?\d{5}$').hasMatch(value('businessNumber'))){message('사업자등록번호 10자리를 입력해 주세요.');return;}
+    if(!validOpeningDate(value('openedOn'))){message('사업자등록증의 개업일자를 YYYY-MM-DD 형식으로 입력해 주세요.');return;}
+    if(value('owner').isEmpty){message('대표자명을 입력해 주세요.');return;}
+    if(widget.backend==null&&!developmentSession){message('서버 연결 후 사업자 정보를 확인할 수 있습니다.');return;}
+    final identity=businessIdentityInput();final profile=values(keys);
     await platformTask(()async{
-      final response=developmentSession?<String,dynamic>{'verified':true}:await api.call('drivers/business-check',{'businessNumber':value('businessNumber')});
+      final response=developmentSession?<String,dynamic>{'verified':true}:await api.call('drivers/business-check',identity);
       if(response['verified']!=true)throw const ServiceFailure(0,'사업자 정보를 확인하지 못했습니다. 입력 내용을 확인해 주세요.');
-      await s.change(()=>s.draft.addAll({...values(keys),'businessChecked':true,'checkedNumber':value('businessNumber'),'businessVerificationId':response['verificationId']}));
+      await s.change(()=>s.draft.addAll({...profile,...identity,'businessChecked':true,'checkedIdentity':jsonEncode(identity)}));
       message('사업자 정보를 확인했습니다.');
     });
   }
@@ -92,7 +98,7 @@ extension BackendScreens on _WorkflowShellState {
   }
 
   Future<void> refreshState()async{
-    if(!signedIn||developmentSession||widget.backend==null||busy||refreshingState)return;
+    if(!signedIn||developmentSession||page=='register'||widget.backend==null||busy||refreshingState)return;
     if (springReceptions) {
       if (['receptions', 'reception'].contains(page)) await loadReceptions();
       return;

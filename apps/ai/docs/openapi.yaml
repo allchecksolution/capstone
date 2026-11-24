@@ -2,9 +2,9 @@ openapi: 3.1.1
 info:
   title: Capstone AI 내부 API 초안
   version: 1.3.0
-  description: S3 URL 기반 동기 STT 및 별도 구조화 계약. /health 외 미구현. 앱 계약은 docs/api/openapi.yaml,
+  description: S3 URL 기반 동기 STT 및 별도 구조화 계약. /health, /internal/v1/transcribe, /internal/v1/analyze 구현. 앱 계약은 docs/api/openapi.yaml,
     업무 상태·버전·재분석·푸시 정책은 apps/backend/docs/business-specification.md의 BR-09를 따른다.
-    STT 제공자·구조화 모델·모델 입력 한도는 후속 결정 사항이다.
+    STT는 CLOVA Speech 장문 동기 인식을 사용한다.
 servers:
 - url: http://127.0.0.1:8000
   description: 로컬 origin. 배포 주소 TODO. Backend /api/v1을 상속하지 않는다.
@@ -49,9 +49,9 @@ paths:
               receptionVersion: 3
               recordingFileId: file_rec_01
               recording:
-                downloadUrl: https://example-bucket.s3.ap-northeast-2.amazonaws.com/example?X-Amz-Signature=example
+                downloadUrl: https://example-bucket.s3.ap-northeast-2.amazonaws.com/recordings/12/b97cd7ee-db24-4d02-a3e5-3a3844ab3123?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=EXAMPLE%2F20261113%2Fap-northeast-2%2Fs3%2Faws4_request&X-Amz-Date=20261113T050500Z&X-Amz-Expires=600&X-Amz-SignedHeaders=host&X-Amz-Signature=0000000000000000000000000000000000000000000000000000000000000000
                 expiresAt: '2026-11-13T14:15:00+09:00'
-                contentType: audio/mp4
+                contentType: audio/wav
                 sizeBytes: 1048576
                 checksum:
                   algorithm: SHA256
@@ -95,7 +95,7 @@ paths:
                 message: 녹음 제한을 초과했습니다.
                 traceId: trace_example_01
         '415':
-          description: 지원하지 않는 녹음 형식. 허용 목록 TODO.
+          description: WAV 형식 오류 또는 디코딩할 수 없는 오디오. audio/wav, audio/x-wav, audio/wave, audio/vnd.wave 지원.
           content:
             application/json:
               schema:

@@ -10,11 +10,13 @@ info:
     `apps/backend/docs/business-specification.md`를 따르고, 경로와 입출력 계약은 이 문서에서 정의한다. 모든 변경 요청은 인증 주체+method+정규화 경로+Idempotency-Key 범위에서
     처리한다. 동일 키/본문 성공 재시도는 최초 응답 재현, 다른 본문은 409 IDEMPOTENCY_KEY_REUSED, 처리 중은 409 OPERATION_IN_PROGRESS. DB 업무
     유일성 제약은 키 보존 기간과 무관하게 유지한다. 키 보존 기간은 미확정. 녹음 업로드 URL 발급·재발급은 예약만 재사용하고 URL은 요청마다 새로 발급하는 예외이며 URL을 DB에 저장하지 않는다.
-    인증 API(로그인·MFA·토큰 갱신·로그아웃)와, 같은 값을 다시 보내도 결과가 같은 상태 설정 API(작업 가능 상태·위치·채팅 읽음·푸시 기기 등록/해제)는 Idempotency-Key를 받지 않는다.
+    인증 업무 정책은 apps/backend/docs/business-specification.md의 BR-02를 따른다. 기본 Access Token은 15분, 세션은 로그인부터 14일이며 갱신해도 세션 만료를 연장하지 않는다.
+    여러 기기 세션을 허용하며 로그아웃 세션의 기존 Access Token도 즉시 차단한다.
+    인증 API(로그인·토큰 갱신·로그아웃)와, 같은 값을 다시 보내도 결과가 같은 상태 설정 API(작업 가능 상태·위치·채팅 읽음·푸시 기기 등록/해제)는 Idempotency-Key를 받지 않는다.
     UC-01~16의 관리자 앱·기사 앱 흐름을 대상으로 한다. 세부 미확정 사항은 해당 계약 설명에 표시한다.
     녹음·STT·AI·분석 완료 푸시의 업무 정책은 BR-09, Backend→AI 계약은 apps/ai/docs/openapi.yaml을 따른다.
     녹음 업로드 완료를 검증하면 최초 분석을 자동 접수하고 앱에 202로 응답한다. Backend는 백그라운드에서 STT 동기 호출→원문 DB 저장→구조화 동기 호출→FCM 완료/실패 알림 순서로 처리한다.
-    기존 /files multipart·공통 접근 경로는 녹음·사진의 종류별 S3 경로로 교체했다. STT 원문은 DB에서 접수 상세로 제공하며 STT용 S3 접근 URL은 사용하지 않는다. 실시간 채팅(WebSocket)·배차/채팅 푸시의 상세 연동과 보고서 임시 저장·조회 내보내기는 별도 검토한다.
+    기존 /files multipart·공통 접근 경로는 녹음·사진의 종류별 S3 경로로 교체했다. STT 원문은 DB에서 접수 상세로 제공하며 STT용 S3 접근 URL은 사용하지 않는다. 배차 푸시는 BR-04의 활성 기기 전체 전송·기사 단위 결과 집계를 따른다. 서버 보고서 임시 저장은 MVP에서 제공하지 않는다. 실시간 채팅과 푸시 연동은 BR-10 및 백엔드 API 컨벤션의 Chat Integration을 따른다. 조회 내보내기는 별도 검토한다.
     실제 녹음의 단계별 소요 시간과 p95/p99·타임아웃을 측정해 제한·동시 실행 수를 정한다. 필요 시 WebClient 또는 AI 비동기 작업/웹훅 전환은 후속 검토한다.
     의뢰 현황·기간 통계·상세·회차 조회는 아래 x-uc04-inquiry-scope와 BR-08을 따른다.
 x-uc04-inquiry-scope:
@@ -27,7 +29,7 @@ x-uc04-inquiry-scope:
     - UC-15
   businessRules:
     - BR-08
-  status: 조회 계약 초안. 통계 지표·계산 기준과 필터 세부 정책은 미결정이다.
+  status: 목록·통계의 집계 및 필터 기준은 BR-08을 따르며, 현재 계약은 springdoc 생성 명세를 참조한다.
   plannedApis:
     - GET /service-requests
     - GET /work-statistics?from=&to=
@@ -36,7 +38,7 @@ x-uc04-inquiry-scope:
   description: >-
     로그인한 관리자가 하나의 화면에서 진행 중·과거 완료/취소 의뢰를 조회한다. 조회 기간과 검색·상태·작업 유형·기사·지역 조건을 조합하며,
     목록과 해당 기간의 통계를 함께 표시한다. 기간 변경은 두 조회에 함께 반영한다. 상세에는 접수 정보·작업 유형·현재 배차 상태·배정 기사·최신 작업 상태가 필요하다.
-    현재 상태와 과거 배차/재배차 이력은 구분하며 최신 배차·작업 상태를 실시간 반영한다. 조회는 기존 의뢰 데이터를 변경하지 않는다.
+    현재 상태와 과거 배차/재배차 이력은 구분하며 최신 배차·작업 상태는 REST 조회와 푸시 수신 후 재조회로 반영한다. 진행 중 화면이 활성 상태일 때 5초 간격 조회를 초기 연동 기준으로 삼고 화면 진입·재진입·푸시 수신·수락 및 취소 동작 후에는 최신 상태를 바로 조회한다. 조회는 기존 의뢰 데이터를 변경하지 않는다.
     보고서 기반 조회·통계에는 최신 유효 수정 내용과 중복 방지 기준을, 기사 탈퇴 관련 데이터에는 UC-15 정책을 적용한다.
   emptyAndErrorHandling: >-
     데이터가 없어도 화면에 접근할 수 있다. 목록 결과 없음(E2), 기간 통계 데이터 없음(E3), 의뢰 없음(E1), 목록·통계·상세 조회 실패(E4)를 구분한다.
@@ -44,8 +46,8 @@ x-uc04-inquiry-scope:
   dispatchDelivery: >-
     후보 미확보·전체 전달 실패를 정상 배차 진행과 구분하고 일부 전달 실패는 기사별 결과와 정상 전달된 기사의 진행 상황을 함께 제공한다.
     푸시 발행·전달 서비스 접수 성공은 실제 수신·확인 성공을 의미하지 않는다.
+    회차가 담당 기사 없이 종료되거나 담당 기사가 작업을 취소해 FOLLOW_UP_REQUIRED로 전환되면 모든 현재 권한 있는 관리자의 활성 기기에 알린다. 정상 진행·완료는 조회 API로 확인하며 관리자 푸시를 발행하지 않는다. 상세 기준은 BR-06을 따른다.
   undecided: >-
-    필터 UI·API 방식, 검색 기준, 지역 분류, 통계 지표·계산 방식·집계 주기·집계 기준, 목록 필터의 통계 연동, 실시간 전송 방식은 미정.
     내보내기(UC-04 A2)는 선택 기능으로 정책 결정 후 명세한다.
 x-reception-analysis-push:
   transport: FCM
@@ -68,7 +70,7 @@ security:
   - bearerAuth: []
 tags:
   - name: Authentication
-    description: 관리자 로그인·MFA, 기사 카카오 로그인, 토큰 갱신·로그아웃 (UC-01, UC-08)
+    description: 관리자 ID/PW 로그인, 기사 카카오 로그인, 토큰 갱신·로그아웃 (UC-01, UC-08)
   - name: Drivers
     description: 기사 가입·재신청·승인·반려, 프로필·가용 상태·위치·탈퇴 (UC-06, UC-08, UC-09, UC-14, UC-15)
   - name: Receptions
@@ -230,8 +232,8 @@ paths:
       summary: 의뢰 현황 목록 조회(진행 중·과거 통합)
       description: >-
         진행 중·완료·취소 의뢰를 조회 기간(from, to), 의뢰 상태, 작업 상태, 유형, 기사, 지역, 검색어로 조회한다. driverId·workStatus는 현재·과거 작업을 모두 대상으로 하며 함께 지정하면 같은
-        작업 기록이 두 조건을 만족해야 한다. 응답의 담당 기사·작업 상태는 현재 작업 기준이므로 과거 작업 필터와 다를 수 있다. 과거 작업은 dispatch-history에서 확인한다. 같은 기간으로
-        getWorkStatistics를 호출해 목록·통계를 갱신한다. 빈 결과는 200과 빈 items, 조회 실패는 503이다. 검색 대상·일치 방식과 지역 분류는 미결정이며 조회는 의뢰 데이터를 변경하지 않는다.
+        작업 기록이 두 조건을 만족해야 한다. 응답의 담당 기사·작업 상태는 현재 작업 기준이므로 과거 작업 필터와 다를 수 있다. 과거 작업은 dispatch-history에서 확인한다.
+        같은 필터로 getWorkStatistics를 호출해 목록·통계를 갱신한다. 빈 결과는 200과 빈 items이며 조회 실패는 오류로 응답한다.
       tags:
         - Service Requests
       x-business-rules:
@@ -250,7 +252,7 @@ paths:
       parameters:
         - name: from
           in: query
-          description: 접수일 기준 조회 시작일(포함). 생략하면 기간 제한 없음.
+          description: 한국시간 의뢰 등록일 기준 조회 시작일(포함). 생략하면 하한 없음.
           schema: {type: string, format: date}
         - name: to
           in: query
@@ -271,10 +273,10 @@ paths:
         - name: driverId
           in: query
           description: 현재·과거 담당 기사 필터. workStatus와 함께 사용하면 같은 작업 기록에 두 조건을 적용한다.
-          schema: {$ref: "#/components/schemas/Id"}
+          schema: {$ref: "#/components/schemas/DatabaseId"}
         - name: region
           in: query
-          description: 지역 필터. 지역 분류 체계는 미정이라 자유 문자열.
+          description: 저장된 현장 행정구역의 계층 접두 조건.
           schema: {type: string, minLength: 1, maxLength: 100}
         - name: needsAdminAction
           in: query
@@ -282,7 +284,7 @@ paths:
           schema: {type: boolean}
         - name: q
           in: query
-          description: 검색어. 검색 대상은 미정.
+          description: 의뢰번호·현장 주소·증상의 대소문자 무시 부분 검색.
           schema: {type: string, minLength: 1, maxLength: 100}
         - $ref: "#/components/parameters/PageNumber"
         - $ref: "#/components/parameters/PageSize"
@@ -304,7 +306,7 @@ paths:
                         address: 서울시 강남구 예시로 10
                         dispatchStatus: ASSIGNED
                         workStatus: IN_PROGRESS
-                        assignedDriver: {driverId: drv_01, workerName: 홍길동}
+                        assignedDriver: {driverId: 1, workerName: 홍길동}
                         needsAdminAction: false
                         createdAt: "2026-10-31T09:00:00+09:00"
                         updatedAt: "2026-10-31T14:20:00+09:00"
@@ -340,6 +342,7 @@ paths:
       summary: 확정 접수로 의뢰와 최초 배차 회차 생성
       description: >-
         본인이 생성한 CONFIRMED 접수와 receptionVersion을 검증하고 정확한 방문 시작/종료 시각·연락처를 포함한 확정 데이터를 스냅샷으로 보존한다.
+        확정 주소의 현장 좌표를 확보해야 생성한다. 주소 미일치·복수 후보 미해결·제공자 장애로 좌표를 확정하지 못하면 의뢰·최초 회차·접수 등록 연결을 생성하지 않고 접수의 확정 데이터·상태·버전을 유지한다. 복수 후보를 임의로 선택하지 않는다.
         종료 시각의 미래 여부는 검토 완료 시에만 검사한다. 의뢰 등록 시에는 종료가 이미 지났더라도 이를 재검사하여 거부하거나 재확정을 요구하지 않고 확정된 스냅샷으로 등록한다.
         확정 취소와 경합하면 같은 이전 확정으로 두 작업이 함께 성공하지 않도록 최신 접수 상태·버전·등록 관계를 원자적으로 확인한다.
         의뢰, 최초 회차, 탐색 outbox를 원자적으로 저장한다. 후보 탐색과 전달은 비동기. 201은 생성 성공이며 기사 수신 확인을 의미하지 않는다. 접수당 의뢰 하나는 초안 정책.
@@ -461,7 +464,7 @@ paths:
       description: >-
         본인 요청이 PENDING이고 만료 전이며 의뢰 OPEN·회차 OFFERING인지 확인한다. ACCEPT는 계정 ACTIVATED·availability READY·미완료 작업 미점유와 나머지 후보 조건을 재검증하고
         작업 생성, 의뢰 ACCEPTED, 회차 ASSIGNED, 배차 요청 ACCEPTED, 나머지 대기 요청 마감을 함께 확정한다. REJECT는 본인 유효 요청만 종료하며 READY·미점유 조건을 요구하지 않는다. 동시 수락은
-        의뢰별 미완료 작업 하나·기사별 점유 하나를 보장한다(BR-01·04).
+        의뢰별 미완료 작업 하나·기사별 점유 하나를 보장한다(BR-01·04). 여러 기기는 같은 기사 배차 요청을 공유하며, 먼저 커밋된 유효 수락·거절을 모든 기기에 공통 적용한다.
       tags:
         - Dispatch
       x-requirements:
@@ -728,8 +731,9 @@ paths:
         - BR-06
       summary: 작업 취소와 의뢰 후속 처리 전환
       description: >-
-        현재 담당 기사는 NOT_STARTED·EN_ROUTE·ARRIVED·IN_PROGRESS·REVISIT_REQUIRED 작업을 취소할 수 있다. expectedVersion은 작업 버전이다. 취소 기록, 작업
-        CANCELLED, 의뢰 FOLLOW_UP_REQUIRED를 함께 확정하고 사유·시각·취소 직전 상태를 보존한다. 응답의 version은 갱신된 작업 버전이다. WORK_DONE·CANCELLED 작업의 신규 취소는
+        현재 담당 기사는 NOT_STARTED·EN_ROUTE·ARRIVED·IN_PROGRESS·REVISIT_REQUIRED 작업을 취소할 수 있다. expectedVersion은 작업 버전이다.
+        취소에는 다섯 분류 중 하나와 공백뿐이지 않은 1~1000자의 상세 사유가 모두 필수이며 기타 이외의 분류에도 동일하게 적용한다. 입력 오류이면 취소·배정 해제·알림을 처리하지 않는다.
+        취소 기록, 작업 CANCELLED, 의뢰 FOLLOW_UP_REQUIRED와 관리자 후속 처리 알림 발행 의도를 함께 확정하고 사유·시각·취소 직전 상태를 보존한다. 푸시는 커밋 후 전송하며 알림 실패로 취소 결과를 변경하지 않는다. 응답의 version은 갱신된 작업 버전이다. WORK_DONE·CANCELLED 작업의 신규 취소는
         제한한다. 같은 키의 성공 재시도는 기존 201을 재현하고, 다른 키의 중복 취소는 409와 기존 cancellationId를 반환한다(BR-06).
       tags:
         - Work
@@ -862,8 +866,8 @@ paths:
         FOLLOW_UP_REQUIRED 의뢰의 최신 작업 취소 또는 담당자 없이 종료된 최신 회차에 대해 관리자가 재배차·의뢰 취소 중 하나를 결정한다. target에는 해당 의뢰의 cancellationId 또는
         dispatchRoundId 중 하나만 지정한다. expectedVersion은 최신 의뢰 버전이다. 최신 상태·대상·기존 결정을 재검증하고 대상별 한 번만 확정한다. REDISPATCH는 결정 이력·의뢰 OPEN·새
         SEARCHING 회차를, CANCEL_REQUEST는 결정 이력·의뢰 CANCELLED를 함께 저장한다. 배차 실패 회차는
-        NO_CANDIDATES·DELIVERY_FAILED·NO_ACCEPT·ROUND_CLOSED만 허용하고, 진행 중인 회차나 미완료 작업이 있으면 거부한다. 재배차가 다시 실패하면 새 종료 회차를 대상으로 새 결정을
-        남긴다. 기존 결정은 재실행하거나 덮어쓰지 않는다(BR-06).
+        NO_CANDIDATES·SEARCH_FAILED·DELIVERY_FAILED·NO_ACCEPT·ROUND_CLOSED만 허용하고, 진행 중인 회차나 미완료 작업이 있으면 거부한다. 재배차가 다시 실패하면 새 종료 회차를 대상으로 새 결정을
+        남긴다. 기존 결정은 재실행하거나 덮어쓰지 않는다(BR-06). 새 회차에서는 동일 의뢰의 작업 취소 이력이 있는 기사를 후보 선정과 수락 재검증에서 제외한다. 수락 전 거절·무응답·전달 실패 이력만으로는 제외하지 않는다(BR-04).
       tags:
         - Service Requests
       x-requirements:
@@ -1013,7 +1017,7 @@ paths:
         - BR-07
       summary: 작업 보고서 최초 제출
       description: >-
-        의뢰의 현재 담당자가 IN_PROGRESS 작업의 최초 보고서를 제출한다. expectedVersion은 작업 버전이다. 사진 소유권·작업 연결·업로드 완료·BEFORE/DURING/AFTER 분류와 배열 간 중복을 검증하고 최초 보고서, 작업 WORK_DONE, 의뢰
+        의뢰의 현재 담당자가 IN_PROGRESS 작업의 최초 보고서를 제출한다. expectedVersion은 작업 버전이다. 사진 소유권·작업 연결·업로드 완료·BEFORE/AFTER 분류·전후 각각 3~5장 및 배열 간 중복을 검증하고 최초 보고서, 작업 WORK_DONE, 의뢰
         COMPLETED를 함께 저장한다. 저장 실패 시 일부만 완료하지 않는다. 원본·전후 사진은 보존하며 비용은 단일 totalCost(KRW 정수)를 사용한다. 작업당 최초 보고서는 한 건이고 수정은 새 제출이나 추가
         완료 집계가 아니다. 완료된 작업은 신규 배차 점유에서 제외한다(BR-01·07).
       tags:
@@ -1047,8 +1051,12 @@ paths:
               diagnosis: 배관 이물질 누적
               beforePhotoIds:
                 - file_before_01
+                - file_before_02
+                - file_before_03
               afterPhotoIds:
                 - file_after_01
+                - file_after_02
+                - file_after_03
               totalCost: 100000
       responses:
         "201":
@@ -1072,8 +1080,12 @@ paths:
                   diagnosis: 배관 이물질 누적
                   beforePhotoIds:
                     - file_before_01
+                    - file_before_02
+                    - file_before_03
                   afterPhotoIds:
                     - file_after_01
+                    - file_after_02
+                    - file_after_03
                   totalCost: 100000
         "401":
           description: 인증이 필요합니다.
@@ -1150,7 +1162,7 @@ paths:
         - BR-07
       summary: 원본을 유지하며 관리자 수정 이력 추가
       description: >-
-        허용 필드만 수정. 사진/원본/기사 ID 수정은 400. 서버가 이전 유효값과 새 값, 수정자, 시각을 revision으로 기록하고 effective를 갱신한다.
+        모든 현재 권한 있는 관리자가 진단 결과·작업 내용·총비용만 수정할 수 있으며 공백뿐이지 않은 수정 사유가 필수다. 사진/원본/기사 ID 수정은 400. 서버가 이전 유효값과 새 값, 사유, 수정자, 시각을 revision으로 기록하고 effective를 갱신한다.
         승인/반려 단계 없음. 집계 금액은 갱신하되 완료 건수 증가 금지. 동시 수정은 report version으로 제어. 원본과 파일의 보존/파기는 UC-15 정책을 따른다.
       tags:
         - Reports
@@ -1162,7 +1174,7 @@ paths:
         - "2250:6715"
         - "2250:6749"
       x-roles:
-        - ADMIN_WITH_REPORT_EDIT
+        - ADMIN
       parameters:
         - name: reportId
           in: path
@@ -1179,6 +1191,7 @@ paths:
               $ref: "#/components/schemas/CreateRevision"
             example:
               expectedVersion: 1
+              reason: 현장 정산 내역에 맞춰 비용 정정
               changes:
                 totalCost: 105000
       responses:
@@ -1200,6 +1213,7 @@ paths:
                   revisionId: rev_01
                   editedBy: admin_01
                   editedAt: "2026-10-31T17:30:00+09:00"
+                  reason: 현장 정산 내역에 맞춰 비용 정정
                   changes:
                     - field: totalCost
                       before: 100000
@@ -1209,8 +1223,12 @@ paths:
                   diagnosis: 배관 이물질 누적
                   beforePhotoIds:
                     - file_before_01
+                    - file_before_02
+                    - file_before_03
                   afterPhotoIds:
                     - file_after_01
+                    - file_after_02
+                    - file_after_03
                   totalCost: 105000
         "401":
           description: 인증이 필요합니다.
@@ -1286,6 +1304,7 @@ paths:
         - BR-07
       summary: 원본·최신 유효본·전체 수정 이력 조회
       description: >-
+        권한 있는 관리자 또는 해당 작업의 조회 권한이 있는 기사만 조회한다. 기사는 본인 완료·취소 작업과 현재 담당 의뢰의 인계 대상인 이전 작업을 읽을 수 있으며, 취소 후 다른 기사의 이후 작업에 대한 접근 권한은 얻지 않는다.
         original은 최초 제출 내용과 사진 ID, effective는 최신 수정 반영 내용이다. 전체 revision은 수정 전후/수정자/시각을 제공한다. 파일 ID는 공개 URL이
         아니며 GET /works/{workId}/photos/{photoFileId}/access에서 별도로 인가한다. 탈퇴 기사 관련 데이터 접근/보존은 UC-15를 따른다.
       tags:
@@ -1298,6 +1317,7 @@ paths:
         - "2250:6715"
       x-roles:
         - ADMIN
+        - DRIVER
       parameters:
         - name: reportId
           in: path
@@ -1322,21 +1342,30 @@ paths:
                   diagnosis: 배관 이물질 누적
                   beforePhotoIds:
                     - file_before_01
+                    - file_before_02
+                    - file_before_03
                   afterPhotoIds:
                     - file_after_01
+                    - file_after_02
+                    - file_after_03
                   totalCost: 100000
                 effective:
                   workDescription: 배수구 고압 세척
                   diagnosis: 배관 이물질 누적
                   beforePhotoIds:
                     - file_before_01
+                    - file_before_02
+                    - file_before_03
                   afterPhotoIds:
                     - file_after_01
+                    - file_after_02
+                    - file_after_03
                   totalCost: 105000
                 revisions:
                   - revisionId: rev_01
                     editedBy: admin_01
                     editedAt: "2026-10-31T17:30:00+09:00"
+                    reason: 현장 정산 내역에 맞춰 비용 정정
                     changes:
                       - field: totalCost
                         before: 100000
@@ -1422,7 +1451,7 @@ paths:
                 requestId: req_01
                 currentWork:
                   workId: work_02
-                  driverId: drv_02
+                  driverId: 2
                   workStatus: NOT_STARTED
                   previousWorkId: work_01
                   assignedAt: "2026-10-31T10:20:00+09:00"
@@ -1442,7 +1471,7 @@ paths:
                     status: ASSIGNED
                     works:
                       - workId: work_01
-                        driverId: drv_01
+                        driverId: 1
                         workStatus: CANCELLED
                         previousWorkId: null
                         assignedAt: "2026-10-31T09:30:00+09:00"
@@ -1472,7 +1501,7 @@ paths:
                     status: ASSIGNED
                     works:
                       - workId: work_02
-                        driverId: drv_02
+                        driverId: 2
                         workStatus: NOT_STARTED
                         previousWorkId: work_01
                         assignedAt: "2026-10-31T10:20:00+09:00"
@@ -1525,14 +1554,13 @@ paths:
                 code: TEMPORARILY_UNAVAILABLE
                 message: 일시 장애입니다. 잠시 후 다시 조회해 주세요.
                 traceId: trace_example_01
-  /admin/auth/login:
+  /auth/sessions/admin:
     post:
       operationId: adminLogin
-      summary: 관리자 1차 인증(아이디·비밀번호)
+      summary: 관리자 로그인(아이디·비밀번호)
       description: >-
-        관리자 로그인의 첫 단계다. 성공해도 관리자 기능에 접근할 수 없고, 응답의 nextStep에 따라 MFA 인증 코드 입력(/admin/auth/mfa/verify) 또는
-        최초 TOTP 등록(/admin/auth/mfa/enrollment)을 진행한다. 공개 관리자 회원가입은 제공하지 않는다. 아이디와 비밀번호 중 어느 쪽이 틀렸는지는 알려주지 않는다.
-        인증 API는 업무 변경 요청이 아니므로 Idempotency-Key를 받지 않는다.
+        사전에 등록한 관리자 ID/PW를 검증하고 성공하면 서비스 액세스·리프레시 토큰을 발급한다. MFA 및 최초 TOTP 등록·검증은 제공하지 않는다. 공개 관리자 회원가입도 제공하지 않는다. 아이디와
+        비밀번호 중 어느 쪽이 틀렸는지는 알려주지 않는다. 인증 API는 업무 변경 요청이 아니므로 Idempotency-Key를 받지 않는다.
       security: []
       tags:
         - Authentication
@@ -1545,177 +1573,69 @@ paths:
         required: true
         content:
           application/json:
-            schema: {$ref: "#/components/schemas/AdminLogin"}
-            example: {loginId: admin01, password: example-password}
+            schema:
+              $ref: "#/components/schemas/AdminLogin"
+            example:
+              loginId: admin01
+              password: example-password
       responses:
         "200":
-          description: 1차 인증 성공. 다음 단계를 안내한다.
+          description: ID/PW 인증 완료. 서비스 토큰을 발급한다.
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/AdminLoginResult"}
-              examples:
-                mfaRequired:
-                  summary: 이미 MFA가 등록된 계정
-                  value: {nextStep: MFA_REQUIRED, challengeToken: challenge_example_01, challengeExpiresIn: 300}
-                enrollmentRequired:
-                  summary: 최초 로그인(TOTP 미등록)
-                  value: {nextStep: MFA_ENROLLMENT_REQUIRED, challengeToken: challenge_example_02, challengeExpiresIn: 300}
+              schema:
+                $ref: "#/components/schemas/TokenPair"
+              example:
+                accessToken: access_token_example
+                refreshToken: refresh_token_example
+                tokenType: Bearer
+                expiresIn: 900
+                refreshExpiresIn: 1209600
+                user:
+                  accountId: 1
+                  userType: ADMIN
+                  role: MASTER
+        "400":
+          description: 입력 필드 형식·범위가 올바르지 않거나 필수 필드가 누락되었다.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityError"
         "401":
           description: 아이디 또는 비밀번호가 일치하지 않는다(UC-01 E1).
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/Error"}
-              example: {code: INVALID_CREDENTIALS, message: 아이디 또는 비밀번호를 확인해 주세요., traceId: trace_example_01}
-        "400": {$ref: "#/components/responses/ValidationFailed"}
-        "429": {$ref: "#/components/responses/TooManyRequests"}
-        "503": {$ref: "#/components/responses/ServiceUnavailable"}
-  /admin/auth/mfa/verify:
-    post:
-      operationId: adminVerifyMfa
-      summary: 관리자 MFA(TOTP) 인증 코드 확인
-      description: >-
-        1차 인증에서 받은 challengeToken과 인증 앱의 6자리 코드를 보낸다. 성공하면 액세스·리프레시 토큰을 발급하며 이때부터 관리자 기능에 접근할 수 있다.
-        코드가 틀리면 재입력을 요청하고, 코드 유효시간이 지났으면 새 코드를 입력하도록 안내한다.
-      security: []
-      tags:
-        - Authentication
-      x-business-rules:
-        - BR-02
-      x-requirements:
-        - FR-01
-        - UC-01
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: {$ref: "#/components/schemas/MfaVerify"}
-            example: {challengeToken: challenge_example_01, code: "123456"}
-      responses:
-        "200":
-          description: 인증 완료. 관리자 로그인이 끝났다.
-          content:
-            application/json:
-              schema: {$ref: "#/components/schemas/TokenPair"}
+              schema:
+                $ref: "#/components/schemas/IdentityError"
               example:
-                accessToken: access_token_example
-                refreshToken: refresh_token_example
-                tokenType: Bearer
-                expiresIn: 900
-                refreshExpiresIn: 1209600
-                user: {userId: adm_01, userType: ADMIN, role: MASTER}
-        "401":
-          description: MFA 코드 오류(E2), 코드 유효시간 만료(E3), 또는 challengeToken 만료.
+                code: INVALID_CREDENTIALS
+                message: 아이디 또는 비밀번호를 확인해 주세요.
+        "403":
+          description: 인증 계정이 비활성화되어 있다.
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/Error"}
-              examples:
-                codeInvalid:
-                  summary: 코드가 올바르지 않음(E2)
-                  value: {code: MFA_CODE_INVALID, message: 인증 코드가 올바르지 않습니다. 다시 입력해 주세요., traceId: trace_example_01}
-                codeExpired:
-                  summary: 코드 유효시간 만료(E3)
-                  value: {code: MFA_CODE_EXPIRED, message: 인증 코드가 만료되었습니다. 새 코드를 입력해 주세요., traceId: trace_example_01}
-                challengeExpired:
-                  summary: 1차 인증 만료. 처음부터 다시 로그인
-                  value: {code: CHALLENGE_EXPIRED, message: 로그인 시간이 만료되었습니다. 다시 로그인해 주세요., traceId: trace_example_01}
-        "400": {$ref: "#/components/responses/ValidationFailed"}
-        "429": {$ref: "#/components/responses/TooManyRequests"}
-        "503": {$ref: "#/components/responses/ServiceUnavailable"}
-  /admin/auth/mfa/enrollment:
-    post:
-      operationId: adminStartMfaEnrollment
-      summary: 최초 로그인 TOTP 등록 시작
-      description: >-
-        nextStep이 MFA_ENROLLMENT_REQUIRED일 때만 호출한다(UC-01 A1). 인증 앱 등록용 시크릿과 QR 코드로 만들 otpauth URI를 돌려준다. 시크릿은 이 응답에서만
-        제공하며, 같은 계정에 이미 등록된 TOTP가 있으면 409다. 등록은 /admin/auth/mfa/enrollment/confirm에서 코드를 확인해야 완료된다.
-      security: []
-      tags:
-        - Authentication
-      x-business-rules:
-        - BR-02
-      x-requirements:
-        - FR-01
-        - UC-01
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: {$ref: "#/components/schemas/MfaEnrollmentStart"}
-            example: {challengeToken: challenge_example_02}
-      responses:
-        "200":
-          description: 등록 정보.
+              schema:
+                $ref: "#/components/schemas/IdentityError"
+        "429":
+          description: 로그인·갱신 요청이 제한되었다. 임계값과 운영 적용 방식은 별도 확정한다.
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/MfaEnrollment"}
-              example:
-                secret: JBSWY3DPEHPK3PXP
-                otpauthUri: "otpauth://totp/AllCheck:admin01?secret=JBSWY3DPEHPK3PXP&issuer=AllCheck"
-                expiresIn: 600
-        "401":
-          description: challengeToken이 없거나 만료되었다.
+              schema:
+                $ref: "#/components/schemas/IdentityError"
+        "503":
+          description: 카카오 또는 인증 처리에 필요한 서비스가 일시적으로 응답하지 않는다.
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/Error"}
-              example: {code: CHALLENGE_EXPIRED, message: 로그인 시간이 만료되었습니다. 다시 로그인해 주세요., traceId: trace_example_01}
-        "409":
-          description: 이미 TOTP가 등록된 계정이다.
-          content:
-            application/json:
-              schema: {$ref: "#/components/schemas/Error"}
-              example: {code: MFA_ALREADY_ENROLLED, message: 이미 MFA가 등록되어 있습니다., traceId: trace_example_01}
-        "400": {$ref: "#/components/responses/ValidationFailed"}
-        "429": {$ref: "#/components/responses/TooManyRequests"}
-        "503": {$ref: "#/components/responses/ServiceUnavailable"}
-  /admin/auth/mfa/enrollment/confirm:
-    post:
-      operationId: adminConfirmMfaEnrollment
-      summary: TOTP 등록 완료 확인 및 로그인
-      description: >-
-        인증 앱에 등록한 뒤 표시된 6자리 코드를 보내 등록을 완료한다. 성공하면 TOTP가 활성화되고, 이어서 로그인이 완료되어 토큰을 발급한다.
-      security: []
-      tags:
-        - Authentication
-      x-business-rules:
-        - BR-02
-      x-requirements:
-        - FR-01
-        - UC-01
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: {$ref: "#/components/schemas/MfaEnrollmentConfirm"}
-            example: {challengeToken: challenge_example_02, code: "654321"}
-      responses:
-        "200":
-          description: 등록과 로그인이 완료되었다.
-          content:
-            application/json:
-              schema: {$ref: "#/components/schemas/TokenPair"}
-              example:
-                accessToken: access_token_example
-                refreshToken: refresh_token_example
-                tokenType: Bearer
-                expiresIn: 900
-                refreshExpiresIn: 1209600
-                user: {userId: adm_02, userType: ADMIN, role: SUB}
-        "401":
-          description: 코드 오류·만료 또는 challengeToken 만료.
-          content:
-            application/json:
-              schema: {$ref: "#/components/schemas/Error"}
-              example: {code: MFA_CODE_INVALID, message: 인증 코드가 올바르지 않습니다. 다시 입력해 주세요., traceId: trace_example_01}
-        "400": {$ref: "#/components/responses/ValidationFailed"}
-        "429": {$ref: "#/components/responses/TooManyRequests"}
-        "503": {$ref: "#/components/responses/ServiceUnavailable"}
-  /auth/token/refresh:
+              schema:
+                $ref: "#/components/schemas/IdentityError"
+  /auth/tokens/refresh:
     post:
       operationId: refreshToken
       summary: 액세스 토큰 갱신
       description: >-
-        관리자와 기사가 공통으로 사용한다. 리프레시 토큰이 유효하면 새 토큰 쌍을 발급하고 이전 리프레시 토큰은 폐기한다(재사용 방지). 폐기되었거나 만료된 토큰이면 401이며
-        다시 로그인해야 한다. 기사는 갱신 시점의 계정 상태를 다시 확인한다.
+        관리자와 기사가 공통으로 사용한다. 현재 인증 계정·세션 상태와 Refresh Token을 확인하고 새 토큰 쌍을 발급한다. 사용한 Refresh Token은 즉시 무효화한다. 세션은 최초 로그인부터
+        기본 14일이며 갱신해도 절대 만료 시각을 연장하지 않는다. 동일 토큰의 동시 갱신은 하나만 성공하고 나머지는 401이다. 이전 토큰 재사용만으로 교체된 토큰이나 다른 세션을 자동 폐기하지 않는다.
+        관리자·기사 계정별 모든 기기를 합산하여 첫 집계부터 60초 동안 최대 30회다. 초과 시 429와 Retry-After를 반환하고 구간 종료 후 자동 해제한다.
       security: []
       tags:
         - Authentication
@@ -1728,43 +1648,63 @@ paths:
         required: true
         content:
           application/json:
-            schema: {$ref: "#/components/schemas/RefreshRequest"}
-            example: {refreshToken: refresh_token_example}
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+            example:
+              refreshToken: refresh_token_example
       responses:
         "200":
-          description: 새 토큰 쌍.
+          description: 새 토큰 쌍. refreshExpiresIn은 세션 절대 만료까지 남은 초다.
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/TokenPair"}
+              schema:
+                $ref: "#/components/schemas/TokenPair"
               example:
-                accessToken: access_token_example_2
-                refreshToken: refresh_token_example_2
+                accessToken: access_token_example
+                refreshToken: refresh_token_example
                 tokenType: Bearer
                 expiresIn: 900
-                refreshExpiresIn: 1209600
-                user: {userId: adm_01, userType: ADMIN, role: MASTER}
+                refreshExpiresIn: 1208700
+                user:
+                  accountId: 1
+                  userType: ADMIN
+                  role: MASTER
+        "400":
+          description: 입력 필드 형식·범위가 올바르지 않거나 필수 필드가 누락되었다.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityError"
         "401":
           description: 리프레시 토큰이 폐기되었거나 만료되었다.
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/Error"}
-              example: {code: REFRESH_TOKEN_INVALID, message: 다시 로그인해 주세요., traceId: trace_example_01}
+              schema:
+                $ref: "#/components/schemas/IdentityError"
+              example:
+                code: REFRESH_TOKEN_INVALID
+                message: 유효하지 않은 Refresh Token입니다.
         "403":
-          description: 기사 계정이 탈퇴 상태라 갱신할 수 없다.
+          description: 유효한 자격 증명에 연결된 인증 계정이 비활성 상태다.
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/Error"}
-              example: {code: ACCOUNT_WITHDRAWN, message: 탈퇴한 계정입니다., traceId: trace_example_01}
-        "400": {$ref: "#/components/responses/ValidationFailed"}
-        "429": {$ref: "#/components/responses/TooManyRequests"}
-        "503": {$ref: "#/components/responses/ServiceUnavailable"}
-  /auth/logout:
+              schema:
+                $ref: "#/components/schemas/IdentityError"
+        "429":
+          $ref: "#/components/responses/AccountRequestLimitExceeded"
+        "503":
+          description: 카카오 또는 인증 처리에 필요한 서비스가 일시적으로 응답하지 않는다.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityError"
+  /auth/sessions/logout:
     post:
       operationId: logout
-      summary: 로그아웃(리프레시 토큰 폐기)
+      summary: 현재 로그인 세션 종료
       description: >-
-        관리자와 기사가 공통으로 사용한다. 보낸 리프레시 토큰을 폐기한다. 이미 폐기된 토큰이어도 204로 응답한다(멱등). 반려 안내 화면의 로그아웃(UC-08 A5)에도 사용한다.
-        이미 발급된 액세스 토큰은 만료될 때까지 유효할 수 있다.
+        본문의 유효한 Refresh Token이 식별하는 세션만 폐기하고 해당 세션의 기존 Access Token도 즉시 차단한다. 다른 기기 세션은 유지한다. 기존 Access Token은 요구하지 않는다.
+        무효·만료·이미 폐기된 Refresh Token은 204로 응답하며 다른 세션에 영향을 주지 않는다. 인증 API는 Idempotency-Key를 받지 않는다.
       tags:
         - Authentication
       x-business-rules:
@@ -1772,30 +1712,39 @@ paths:
       x-requirements:
         - FR-01
         - FR-13
-      x-roles:
-        - ADMIN
-        - DRIVER_ANY_STATUS
       requestBody:
         required: true
         content:
           application/json:
-            schema: {$ref: "#/components/schemas/LogoutRequest"}
-            example: {refreshToken: refresh_token_example}
+            schema:
+              $ref: "#/components/schemas/LogoutRequest"
+            example:
+              refreshToken: refresh_token_example
       responses:
         "204":
-          description: 로그아웃되었다.
-        "401": {$ref: "#/components/responses/Unauthorized"}
-        "400": {$ref: "#/components/responses/ValidationFailed"}
-        "503": {$ref: "#/components/responses/ServiceUnavailable"}
-  /driver/auth/kakao:
+          description: 세션 종료 요청 처리 완료. 응답 본문 없음.
+        "400":
+          description: 입력 필드 형식·범위가 올바르지 않거나 필수 필드가 누락되었다.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityError"
+        "503":
+          description: 카카오 또는 인증 처리에 필요한 서비스가 일시적으로 응답하지 않는다.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityError"
+      security: []
+  /auth/sessions/kakao:
     post:
       operationId: driverKakaoLogin
       summary: 기사 카카오 로그인
       description: >-
-        기사 앱이 카카오 SDK로 받은 액세스 토큰을 서버에 보내 로그인한다. 서버가 카카오에 토큰을 검증하고 기존 기사 계정과 연결한다.
-        로그인 인증 성공과 정상 서비스 접근 권한은 구분한다. 계정 상태가 ACTIVATED가 아니면(NOT_REGISTERED, PENDING_APPROVAL, REJECTED) 토큰은 발급되지만
-        fullAccess=false이며 가입 신청·상태 확인·재신청·로그아웃 같은 제한된 API에서만 쓸 수 있다. 탈퇴한 계정은 403으로 로그인을 막는다.
-        인증 API는 Idempotency-Key를 받지 않는다.
+        기사 앱이 SDK로 받은 카카오 Access Token을 서버에 보낸다. 서버는 토큰의 유효성·남은 유효시간과 app_id가 설정된 카카오 앱과 일치하는지 확인한다. 서버가 확인한 카카오 회원번호로
+        인증 계정을 조회하거나 생성하며 프론트의 회원번호를 신뢰하지 않는다. 응답에는 인증 정보만 포함한다. 앱은 GET /drivers/me/registration으로 가입 상태를 별도 조회하고 신청 이력이
+        없으면 해당 조회는 404다. 업무 권한은 driver의 현재 상태로 검사한다. 탈퇴로 비활성화된 인증 계정은 403으로 로그인을 막는다. 카카오 장애·타임아웃은 503으로 구분한다. 인증 API는
+        Idempotency-Key를 받지 않는다.
       security: []
       tags:
         - Authentication
@@ -1809,82 +1758,106 @@ paths:
         required: true
         content:
           application/json:
-            schema: {$ref: "#/components/schemas/DriverKakaoLogin"}
-            example: {kakaoAccessToken: kakao_access_token_example}
+            schema:
+              $ref: "#/components/schemas/DriverKakaoLogin"
+            example:
+              kakaoAccessToken: kakao_access_token_example
       responses:
         "200":
-          description: 인증 성공. accountStatus에 따라 앱이 다음 화면을 결정한다.
+          description: 인증 성공. 가입 상태는 후속 driver API에서 조회한다.
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/DriverLoginResult"}
-              examples:
-                approved:
-                  summary: 활성 기사(A1). 정상 서비스 이용
-                  value:
-                    accountStatus: ACTIVATED
-                    fullAccess: true
-                    rejectionReason: null
-                    tokens:
-                      accessToken: access_token_example
-                      refreshToken: refresh_token_example
-                      tokenType: Bearer
-                      expiresIn: 900
-                      refreshExpiresIn: 1209600
-                      user: {userId: drv_01, userType: DRIVER, role: null}
-                newUser:
-                  summary: 신규 사용자. 기사정보 입력 화면으로 이동
-                  value:
-                    accountStatus: NOT_REGISTERED
-                    fullAccess: false
-                    rejectionReason: null
-                    tokens:
-                      accessToken: access_token_limited_example
-                      refreshToken: refresh_token_limited_example
-                      tokenType: Bearer
-                      expiresIn: 900
-                      refreshExpiresIn: 1209600
-                      user: {userId: drv_02, userType: DRIVER, role: null}
-                pending:
-                  summary: 승인 대기 기사(A2). 승인 대기 안내 화면으로 이동
-                  value:
-                    accountStatus: PENDING_APPROVAL
-                    fullAccess: false
-                    rejectionReason: null
-                    tokens:
-                      accessToken: access_token_limited_example
-                      refreshToken: refresh_token_limited_example
-                      tokenType: Bearer
-                      expiresIn: 900
-                      refreshExpiresIn: 1209600
-                      user: {userId: drv_04, userType: DRIVER, role: null}
-                rejected:
-                  summary: 반려 기사(A3). 반려 사유 화면으로 이동
-                  value:
-                    accountStatus: REJECTED
-                    fullAccess: false
-                    rejectionReason: 사업자 정보를 다시 확인해 주세요.
-                    tokens:
-                      accessToken: access_token_limited_example
-                      refreshToken: refresh_token_limited_example
-                      tokenType: Bearer
-                      expiresIn: 900
-                      refreshExpiresIn: 1209600
-                      user: {userId: drv_03, userType: DRIVER, role: null}
+              schema:
+                $ref: "#/components/schemas/TokenPair"
+              example:
+                accessToken: access_token_example
+                refreshToken: refresh_token_example
+                tokenType: Bearer
+                expiresIn: 900
+                refreshExpiresIn: 1209600
+                user:
+                  accountId: 1
+                  userType: DRIVER
+                  role: null
+        "400":
+          description: 입력 필드 형식·범위가 올바르지 않거나 필수 필드가 누락되었다.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityError"
         "401":
           description: 카카오 인증에 실패했다(UC-08 E1).
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/Error"}
-              example: {code: KAKAO_AUTH_FAILED, message: 카카오 로그인에 실패했습니다., traceId: trace_example_01}
+              schema:
+                $ref: "#/components/schemas/IdentityError"
+              example:
+                code: KAKAO_AUTH_FAILED
+                message: 카카오 로그인에 실패했습니다.
         "403":
-          description: 탈퇴한 계정이다(UC-08 E6).
+          description: 인증 계정이 비활성 상태다. 탈퇴한 계정도 포함한다(UC-08 E6).
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/Error"}
-              example: {code: ACCOUNT_WITHDRAWN, message: 탈퇴한 계정으로는 로그인할 수 없습니다., traceId: trace_example_01}
-        "400": {$ref: "#/components/responses/ValidationFailed"}
-        "429": {$ref: "#/components/responses/TooManyRequests"}
-        "503": {$ref: "#/components/responses/ServiceUnavailable"}
+              schema:
+                $ref: "#/components/schemas/IdentityError"
+              example:
+                code: ACCOUNT_DISABLED
+                message: 비활성화된 계정입니다.
+        "429":
+          description: 로그인·갱신 요청이 제한되었다. 임계값과 운영 적용 방식은 별도 확정한다.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityError"
+        "503":
+          description: 카카오 또는 인증 처리에 필요한 서비스가 일시적으로 응답하지 않는다.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityError"
+              example:
+                code: KAKAO_SERVICE_UNAVAILABLE
+                message: 카카오 인증을 확인할 수 없습니다. 잠시 후 다시 시도해 주세요.
+  /auth/accounts/me:
+    get:
+      operationId: getMyAuthAccount
+      summary: 현재 인증 계정 조회
+      description: >-
+        JWT 검증 후 현재 계정·세션의 사용 가능 여부를 확인하고 identity 내부 계정 식별자·유형·관리자 역할을 반환한다. 기사 개인정보·가입 상태는 포함하지 않으며 이 API의 성공만으로 기사 업무
+        권한을 부여하지 않는다.
+      tags:
+        - Authentication
+      x-business-rules:
+        - BR-02
+      x-requirements:
+        - FR-01
+        - FR-13
+      x-roles:
+        - ADMIN
+        - DRIVER_ANY_STATUS
+      responses:
+        "200":
+          description: 현재 인증 계정 정보.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthUser"
+              example:
+                accountId: 1
+                userType: DRIVER
+                role: null
+        "401":
+          description: 인증이 없거나 JWT·계정·세션을 사용할 수 없다.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityError"
+        "503":
+          description: 현재 계정·세션 상태를 확인할 수 없다.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityError"
   /drivers/me/registration:
     get:
       operationId: getMyRegistration
@@ -1913,7 +1886,7 @@ paths:
                 pending:
                   summary: 승인 대기(A2). 대기 안내 화면
                   value:
-                    driverId: drv_03
+                    driverId: 3
                     accountStatus: PENDING_APPROVAL
                     version: 1
                     submittedAt: "2026-11-01T10:00:00+09:00"
@@ -1942,7 +1915,7 @@ paths:
                 approved:
                   summary: 승인됨. 정상 이용 가능
                   value:
-                    driverId: drv_03
+                    driverId: 3
                     accountStatus: ACTIVATED
                     version: 2
                     submittedAt: "2026-11-01T10:00:00+09:00"
@@ -1971,7 +1944,7 @@ paths:
                 rejected:
                   summary: 반려(A3). 반려 사유 안내 화면
                   value:
-                    driverId: drv_03
+                    driverId: 3
                     accountStatus: REJECTED
                     version: 3
                     submittedAt: "2026-11-01T10:00:00+09:00"
@@ -2004,9 +1977,10 @@ paths:
       operationId: submitDriverRegistration
       summary: 기사 가입 신청(신규)
       description: >-
-        카카오 로그인 후 신규 사용자가 기사 개인정보와 사업자 정보를 제출한다. 서버가 외부 사업자등록정보 서비스로 사업자 정보를 검증하고, 검증에 성공하면 계정을
+        카카오 로그인 후 신규 사용자가 기사 개인정보와 사업자 정보를 제출한다. 서버가 국세청에서 사업자등록번호·개업일자·대표자명을 진위확인하고 계속사업자인 경우에만 계정을
         PENDING_APPROVAL로 등록하며 관리자에게 승인 요청을 알린다. 승인 전에는 배차·채팅 등 주요 기능을 쓸 수 없다. 사업자 정보가 유효하지 않으면 400(BUSINESS_INFO_INVALID),
         외부 서비스 장애로 검증할 수 없으면 503(BUSINESS_VERIFICATION_UNAVAILABLE)으로 구분한다. 이미 가입 신청이 있으면 409다.
+        가입·재신청을 합산하여 계정별 첫 집계부터 60초 동안 최대 5회다. 업무 실패와 완료 결과 재전송도 집계하며 초과 시 429와 Retry-After를 반환한다.
       tags:
         - Drivers
       x-business-rules:
@@ -2056,7 +2030,7 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/DriverRegistrationResult"}
-              example: {driverId: drv_02, accountStatus: PENDING_APPROVAL, submittedAt: "2026-11-02T10:00:00+09:00", version: 1}
+              example: {driverId: 2, accountStatus: PENDING_APPROVAL, submittedAt: "2026-11-02T10:00:00+09:00", version: 1}
         "401": {$ref: "#/components/responses/Unauthorized"}
         "403": {$ref: "#/components/responses/Forbidden"}
         "409":
@@ -2085,6 +2059,7 @@ paths:
                     message: 사업자 정보를 확인해 주세요.
                     traceId: trace_example_01
                     fieldErrors: [{field: business.businessRegistrationNumber, message: 유효하지 않은 사업자등록번호입니다.}]
+        "429": {$ref: "#/components/responses/AccountRequestLimitExceeded"}
         "503":
           description: 외부 사업자등록정보 서비스 장애로 지금은 검증할 수 없다(E4). 입력 오류와 다르다.
           content:
@@ -2096,8 +2071,9 @@ paths:
       operationId: resubmitDriverRegistration
       summary: 반려 후 가입 재신청
       description: >-
-        반려(REJECTED) 상태의 기사가 같은 계정으로 신청 정보를 수정해 다시 제출한다. 사업자 정보를 다시 검증하고 성공하면 계정을 PENDING_APPROVAL로 되돌리며
+        반려(REJECTED) 상태의 기사가 같은 계정으로 신청 정보를 수정해 다시 제출한다. 국세청 진위확인에 일치하는 계속사업자만 계정을 PENDING_APPROVAL로 되돌리며
         관리자에게 알린다. 새 계정을 만들지 않고 기존 반려 사유와 신청·심사 이력을 보존한다. 반려 상태가 아니면 409다.
+        가입·재신청을 합산하여 계정별 첫 집계부터 60초 동안 최대 5회다. 업무 실패와 완료 결과 재전송도 집계하며 초과 시 429와 Retry-After를 반환한다.
       tags:
         - Drivers
       x-business-rules:
@@ -2149,7 +2125,7 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/DriverRegistrationResult"}
-              example: {driverId: drv_03, accountStatus: PENDING_APPROVAL, submittedAt: "2026-11-02T11:00:00+09:00", version: 4}
+              example: {driverId: 3, accountStatus: PENDING_APPROVAL, submittedAt: "2026-11-02T11:00:00+09:00", version: 4}
         "401": {$ref: "#/components/responses/Unauthorized"}
         "403": {$ref: "#/components/responses/Forbidden"}
         "404": {$ref: "#/components/responses/NotFound"}
@@ -2165,6 +2141,7 @@ paths:
             application/json:
               schema: {$ref: "#/components/schemas/Error"}
               example: {code: BUSINESS_INFO_INVALID, message: 사업자 정보를 확인해 주세요., traceId: trace_example_01}
+        "429": {$ref: "#/components/responses/AccountRequestLimitExceeded"}
         "503":
           description: 외부 사업자등록정보 서비스 장애.
           content:
@@ -2196,7 +2173,7 @@ paths:
           schema: {$ref: "#/components/schemas/DriverAccountStatus"}
         - name: q
           in: query
-          description: 이름 또는 사업체명 검색어. 검색 일치 방식은 미정.
+          description: 이름 또는 사업체명 부분 일치 검색어. 대소문자를 구분하지 않고 와일드카드 문자는 문자 그대로 검색한다.
           schema: {type: string, minLength: 1, maxLength: 100}
         - $ref: "#/components/parameters/PageNumber"
         - $ref: "#/components/parameters/PageSize"
@@ -2208,7 +2185,7 @@ paths:
               schema: {$ref: "#/components/schemas/DriverList"}
               example:
                 items:
-                  - {driverId: drv_02, workerName: 홍길동, businessName: 길동설비, accountStatus: PENDING_APPROVAL, submittedAt: "2026-11-02T10:00:00+09:00", version: 1}
+                  - {driverId: 2, workerName: 홍길동, businessName: 길동설비, accountStatus: PENDING_APPROVAL, submittedAt: "2026-11-02T10:00:00+09:00", version: 1}
                 page: {page: 1, size: 20, totalElements: 1, totalPages: 1}
         "401": {$ref: "#/components/responses/Unauthorized"}
         "403": {$ref: "#/components/responses/Forbidden"}
@@ -2241,7 +2218,7 @@ paths:
             application/json:
               schema: {$ref: "#/components/schemas/DriverDetail"}
               example:
-                driverId: drv_02
+                driverId: 2
                 accountStatus: PENDING_APPROVAL
                 version: 1
                 submittedAt: "2026-11-02T10:00:00+09:00"
@@ -2316,7 +2293,7 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/DriverApprovalResult"}
-              example: {driverId: drv_02, accountStatus: ACTIVATED, version: 2, decidedAt: "2026-11-02T14:00:00+09:00"}
+              example: {driverId: 2, accountStatus: ACTIVATED, version: 2, decidedAt: "2026-11-02T14:00:00+09:00"}
         "401": {$ref: "#/components/responses/Unauthorized"}
         "403": {$ref: "#/components/responses/Forbidden"}
         "404": {$ref: "#/components/responses/NotFound"}
@@ -2422,8 +2399,6 @@ paths:
           $ref: '#/components/responses/ReceptionHttpForbidden'
         '400':
           $ref: '#/components/responses/ReceptionHttpValidationFailed'
-        '503':
-          $ref: '#/components/responses/ReceptionHttpServiceUnavailable'
     post:
       operationId: createReception
       x-access-scope: RECEPTION_OWNER
@@ -2487,8 +2462,6 @@ paths:
           $ref: '#/components/responses/ReceptionHttpForbidden'
         '409':
           $ref: '#/components/responses/ReceptionHttpVersionConflict'
-        '503':
-          $ref: '#/components/responses/ReceptionHttpServiceUnavailable'
   /receptions/{receptionId}:
     get:
       operationId: getReception
@@ -2611,8 +2584,6 @@ paths:
           $ref: '#/components/responses/ReceptionHttpForbidden'
         '404':
           $ref: '#/components/responses/ReceptionHttpNotFound'
-        '503':
-          $ref: '#/components/responses/ReceptionHttpServiceUnavailable'
     patch:
       operationId: updateReception
       x-access-scope: RECEPTION_OWNER
@@ -2770,8 +2741,6 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/ReceptionHttpError'}
               example: {code: RECEPTION_ALREADY_REGISTERED, message: 의뢰로 등록된 접수는 변경할 수 없습니다.}
-        '503':
-          $ref: '#/components/responses/ReceptionHttpServiceUnavailable'
   /receptions/{receptionId}/recordings/upload-requests:
     post:
       operationId: createRecordingUploadRequest
@@ -3188,9 +3157,9 @@ paths:
   /works/{workId}/photos/upload-requests:
     post:
       operationId: createWorkPhotoUploadRequest
-      summary: 작업 전·중·후 사진 업로드 URL 발급
-      description: 현재 유효 담당 기사가 해당 작업의 사진을 예약한다. phase는 BEFORE/DURING/AFTER이며 S3에 직접 PUT한다. 응답 photoFileId를 완료 확인
-        후 보고서의 해당 사진 ID 배열에 넣는다. 원본 사진 객체 덮어쓰기를 금지한다. 허용 MIME·최대 크기·사진 수 상한은 TODO다.
+      summary: 작업 전·후 사진 업로드 URL 발급
+      description: 현재 유효 담당 기사가 해당 작업의 사진을 예약한다. phase는 BEFORE/AFTER이며 S3에 직접 PUT한다. 작업 중 사진은 MVP에서 지원하지 않는다. 응답 photoFileId를 완료 확인
+        후 보고서의 해당 사진 ID 배열에 넣는다. 원본 사진 객체 덮어쓰기를 금지한다. 보고서 제출 시 전·후 사진은 각각 3~5장이 필요하다. JPEG(image/jpeg)·PNG(image/png)만 허용하고 파일당 최대 크기는 10MB(10,000,000바이트, 포함)다. 완료 확인 시 실제 형식·용량·체크섬과 선언 MIME 일치를 검증한다.
       tags:
       - Files
       x-roles:
@@ -3255,7 +3224,7 @@ paths:
     post:
       operationId: completeWorkPhotoUpload
       summary: 작업 사진 업로드 완료 확인
-      description: 현재 유효 담당자·파일 업로더·작업 연결과 S3 객체의 크기·MIME·체크섬을 확인해 UPLOADED로 바꾼다. 같은 사진의 완료 재통보는 동일 파일을 반환한다. 검증 실패는
+      description: 현재 유효 담당자·파일 업로더·작업 연결과 S3 객체의 실제 JPEG/PNG 형식·크기·MIME·체크섬을 확인해 UPLOADED로 바꾼다. 선언 MIME과 실제 형식이 일치하고 파일당 최대 10MB(10,000,000바이트, 포함) 이하여야 한다. 같은 사진의 완료 재통보는 동일 파일을 반환한다. 검증 실패는
         400 FILE_UPLOAD_NOT_VERIFIED. 완료 확인은 보고서 제출이나 작업 완료를 의미하지 않으며 제출 시 권한·작업 상태·사진 연결을 다시 검증한다.
       tags:
       - Files
@@ -3556,19 +3525,18 @@ paths:
           $ref: '#/components/responses/ReceptionHttpForbidden'
         '404':
           $ref: '#/components/responses/ReceptionHttpNotFound'
-        '503':
-          $ref: '#/components/responses/ReceptionHttpServiceUnavailable'
   /push-devices/{installationId}:
     put:
       operationId: registerPushDevice
-      summary: 관리자 앱 푸시 기기 등록·토큰 갱신
-      description: 로그인한 관리자의 설치 ID와 FCM 토큰을 연결한다. 사용자 ID는 JWT로 결정한다. 같은 값을 반복 설정해도 결과가 같으므로 Idempotency-Key를 받지 않는다.
-        토큰 갱신 시 같은 설치 ID로 재등록하고 토큰을 응답·로그에 노출하지 않는다. 다른 계정으로 이전할 때 이전 연결을 해제하며 소유권 충돌은 409. 현재 계약은 관리자 분석 알림용이며 기사
-        앱 기기 정책은 별도 검토한다.
+      summary: 관리자·기사 앱 푸시 기기 등록·토큰 갱신
+      description: 로그인한 본인의 현재 세션·설치 ID와 FCM 등록 토큰을 연결한다. 사용자 ID는 JWT로 결정한다. 같은 값을 반복 설정해도 결과가 같으므로 Idempotency-Key를 받지 않는다.
+        토큰 갱신 시 같은 설치 ID로 재등록하고 토큰을 응답·로그에 노출하지 않는다. 다른 계정으로 이전할 때 이전 연결을 해제하며 소유권 충돌은 409다. 승인 대기·반려 기사도 가입 알림을 위해 등록할 수 있다.
+        배차 제안은 대상 기사의 활성 설치 전체에 전송한다.
       tags:
       - Push Devices
       x-roles:
       - ADMIN
+      - DRIVER
       x-business-rules:
       - BR-02
       - BR-09
@@ -3606,13 +3574,13 @@ paths:
           $ref: '#/components/responses/ServiceUnavailable'
     delete:
       operationId: unregisterPushDevice
-      summary: 관리자 앱 푸시 기기 연결 해제
-      description: 본인 기기 연결을 멱등하게 해제한다. 이미 해제된 본인 연결도 204다. 다른 사용자의 연결은 변경할 수 없다. 로그아웃 시 해당 설치 연결 해제도 수행하도록 앱 계약에
-        포함한다.
+      summary: 관리자·기사 앱 푸시 기기 연결 해제
+      description: 본인 기기 연결을 멱등하게 해제한다. 이미 해제된 본인 연결도 204다. 다른 사용자의 연결은 변경할 수 없다. 서버는 로그아웃 시 해당 세션의 연결을 해제하고 탈퇴 시 계정 전체 연결을 해제한다.
       tags:
       - Push Devices
       x-roles:
       - ADMIN
+      - DRIVER
       x-business-rules:
       - BR-02
       - BR-09
@@ -3688,7 +3656,7 @@ paths:
                       closedAt: "2026-10-31T09:03:00+09:00"
                       offers:
                         - offerId: ofr_01
-                          driver: {driverId: drv_01, workerName: 홍길동}
+                          driver: {driverId: 1, workerName: 홍길동}
                           offerStatus: ACCEPTED
                           deliveryStatus: PROVIDER_ACCEPTED
                           providerAcceptedAt: "2026-10-31T09:00:03+09:00"
@@ -3699,7 +3667,7 @@ paths:
                     currentWork:
                       workId: work_01
                       previousWorkId: null
-                      driver: {driverId: drv_01, workerName: 홍길동}
+                      driver: {driverId: 1, workerName: 홍길동}
                       workStatus: IN_PROGRESS
                       workUpdatedAt: "2026-10-31T14:20:00+09:00"
                     reportId: null
@@ -3744,8 +3712,10 @@ paths:
       description: >-
         의뢰의 모든 배차 회차를 순서대로 돌려주고, 회차마다 기사별 요청의 응답 상태(수락·거절·만료)와 전달 상태를 보여준다. 후보 미확보(NO_CANDIDATES)와 전체 전달 실패
         (DELIVERY_FAILED)는 정상 진행과 구분된 회차 상태다. 일부 기사만 전달에 실패하면 회차는 OFFERING으로 유지되고 실패한 기사만 deliveryStatus가 FAILED다.
-        PROVIDER_ACCEPTED는 푸시 서비스 접수일 뿐 기사의 실제 수신이 아니며 receivedAt·viewedAt이 있을 때만 수신·확인으로 본다. 현재 상태를 "실시간으로" 반영해야 하는 화면은
-        이 API를 다시 조회한다. 실시간 전송 방식은 미정이다.
+        후보 조회 자체가 실패한 SEARCH_FAILED는 정상 조회 후 후보가 없었던 NO_CANDIDATES와 구분하며, 요청·회차·이력에 보존하고 관리자 후속 결정과 알림의 대상으로 제공한다. 일시적 조회 오류는 동일 조건으로 최초 포함 총 3회까지 시도하며 첫 실패 후 5초, 두 번째 실패 후 10초를 대기한다.
+        기기 수와 관계없이 기사당 요청은 한 건이다. 하나 이상의 활성 기기에서 푸시 서비스 접수에 성공하면 기사 단위 PROVIDER_ACCEPTED이며, 활성 기기가 없거나 모든 대상 기기의 전송이 최종 실패하면 FAILED다. 다른 기기의 실패로 접수 성공을 덮어쓰지 않는다.
+        PROVIDER_ACCEPTED는 푸시 서비스 접수일 뿐 기사의 실제 수신이 아니며 receivedAt·viewedAt이 있을 때만 수신·확인으로 본다. 진행 중 화면은 활성 상태에서 초기 5초 간격으로
+        이 API를 다시 조회하고 화면 재진입·푸시 수신 및 상태 변경 동작 후에는 최신 상태를 바로 조회한다. operations 상태 구독용 SSE·WebSocket은 MVP 범위에 포함하지 않는다.
       tags:
         - Dispatch
       x-business-rules:
@@ -3784,7 +3754,7 @@ paths:
                     closedAt: null
                     offers:
                       - offerId: ofr_01
-                        driver: {driverId: drv_01, workerName: 홍길동}
+                        driver: {driverId: 1, workerName: 홍길동}
                         offerStatus: PENDING
                         deliveryStatus: PROVIDER_ACCEPTED
                         providerAcceptedAt: "2026-10-31T09:00:03+09:00"
@@ -3793,7 +3763,7 @@ paths:
                         respondedAt: null
                         expiresAt: "2026-10-31T09:10:00+09:00"
                       - offerId: ofr_02
-                        driver: {driverId: drv_04, workerName: 김철수}
+                        driver: {driverId: 4, workerName: 김철수}
                         offerStatus: PENDING
                         deliveryStatus: FAILED
                         providerAcceptedAt: null
@@ -3810,9 +3780,8 @@ paths:
       operationId: getWorkStatistics
       summary: 조회 기간 통계
       description: >-
-        관리자가 설정한 기간의 통계를 돌려준다. 같은 기간을 목록 조회(listServiceRequests)의 from·to에도 넣어 목록과 통계가 함께 바뀌게 한다. 기간에 데이터가 없으면
-        200이고 hasData가 false이며 metrics는 0으로 채우지 않고 null이다(UC-04 E3). 조회 실패는 빈 결과가 아니라 오류로 응답한다. 통계 지표, 계산 방식, 집계 주기, 목록 필터와의
-        연동 여부는 미결정이라 지표는 최소 집계만 제안한다. 보고서의 최신 유효 수정 비용을 반영하고 완료 건수를 중복 집계하지 않는다.
+        한국시간 의뢰 등록일로 기간을 적용하고, 목록과 같은 검색·상태·유형·기사·지역 조건을 적용한다. 일치하는 의뢰가 없으면 200과 hasData=false, metrics=null을 반환한다.
+        보고서의 최신 유효 수정 비용을 반영하고 의뢰당 한 번 집계한다. 주별 추이는 시작일부터 7일 단위로 묶는다. 세부 계약은 springdoc 생성 명세를 참조한다.
       tags:
         - Statistics
       x-business-rules:
@@ -3835,7 +3804,7 @@ paths:
         - name: to
           in: query
           required: true
-          description: 조회 종료일(포함). from 이후여야 한다.
+          description: 조회 종료일(포함). from과 같은 날짜를 허용한다.
           schema: {type: string, format: date}
           example: "2026-10-31"
       responses:
@@ -3850,7 +3819,19 @@ paths:
                   value:
                     period: {from: "2026-10-01", to: "2026-10-31"}
                     hasData: true
-                    metrics: {totalRequests: 42, openRequests: 5, completedRequests: 33, cancelledRequests: 4, totalCostKrw: 3150000}
+                    metrics:
+                      totalRequests: 3
+                      openRequests: 0
+                      completedRequests: 2
+                      cancelledRequests: 1
+                      completionRate: 0.6666666667
+                      cancellationRate: 0.3333333333
+                      totalCostKrw: 180000
+                      averageCostKrw: 90000
+                      weeklyCounts:
+                        - {from: "2026-10-01", to: "2026-10-07", count: 3}
+                      workTypes:
+                        - {workType: BOILER, count: 3, ratio: 1}
                 noData:
                   summary: 데이터 없음(E3)
                   value:
@@ -3899,7 +3880,7 @@ paths:
                   - cancellationId: can_01
                     requestId: req_01
                     workId: work_01
-                    driver: {driverId: drv_01, workerName: 홍길동}
+                    driver: {driverId: 1, workerName: 홍길동}
                     reasonCode: SCHEDULE_CONFLICT
                     workStatusBeforeCancellation: IN_PROGRESS
                     requestStatus: FOLLOW_UP_REQUIRED
@@ -3943,7 +3924,7 @@ paths:
                 cancellationId: can_01
                 requestId: req_01
                 workId: work_01
-                driver: {driverId: drv_01, workerName: 홍길동}
+                driver: {driverId: 1, workerName: 홍길동}
                 reasonCode: SCHEDULE_CONFLICT
                 workStatusBeforeCancellation: IN_PROGRESS
                 reasonDetail: 앞선 작업이 길어져 방문이 어렵습니다.
@@ -3981,7 +3962,7 @@ paths:
         - name: driverId
           in: query
           description: 특정 기사의 보고서만 조회.
-          schema: {$ref: "#/components/schemas/Id"}
+          schema: {$ref: "#/components/schemas/DatabaseId"}
         - name: from
           in: query
           description: 제출일 시작(포함).
@@ -4003,7 +3984,7 @@ paths:
                   - reportId: rpt_01
                     requestId: req_01
                     workId: work_01
-                    driver: {driverId: drv_01, workerName: 홍길동}
+                    driver: {driverId: 1, workerName: 홍길동}
                     submittedAt: "2026-10-31T16:40:00+09:00"
                     totalCost: 105000
                     revised: true
@@ -4017,7 +3998,7 @@ paths:
     get:
       operationId: getMyAvailability
       summary: 내 작업 가능 상태 조회
-      description: 기사가 현재 대기(READY)인지 휴식(UNAVAILABLE)인지 확인한다(UC-09 기본 흐름 1). 계정이 ACTIVATED가 아니면 저장된 값과 무관하게 신규 배차 대상이 아니다.
+      description: 기사가 현재 대기(READY)인지 휴식(UNAVAILABLE)인지 확인한다(UC-09 기본 흐름 1). 활성 기사가 처음 조회할 때 기본값은 UNAVAILABLE이다. 활성 계정만 조회할 수 있다.
       tags:
         - Drivers
       x-business-rules:
@@ -4083,7 +4064,7 @@ paths:
         작업 가능(READY) 상태의 기사 앱이 주기적으로 현재 위치를 보낸다. 서버는 최신 위치와 마지막 갱신 시각을 관리해 VALID, STALE(유효시간 초과), MISSING(위치 없음)을 구분하며
         VALID인 위치만 거리 기반 후보 선별에 쓴다. 위치 권한이 없거나 위치를 얻지 못하면 좌표 대신 issue를 보내 서버가 이 상태를 식별하게 한다(FR-06 7). 휴식(UNAVAILABLE) 중에는
         앱이 전송을 멈출 수 있다. 같은 요청을 반복해도 결과가 같으므로 Idempotency-Key를 요구하지 않는다. 위치정보는 업무상 필요한 사용자만 접근할 수 있고 로그에 남기지 않는다.
-        갱신 주기와 유효시간 수치는 미결정이다.
+        위치 유효시간은 기본 5분이다. 더 오래되거나 같은 시각의 보고는 최신 상태를 덮어쓰지 않는다. 서버 시각보다 미래인 보고는 거부한다.
       tags:
         - Drivers
       x-business-rules:
@@ -4121,7 +4102,6 @@ paths:
         "401": {$ref: "#/components/responses/Unauthorized"}
         "403": {$ref: "#/components/responses/Forbidden"}
         "400": {$ref: "#/components/responses/ValidationFailed"}
-        "429": {$ref: "#/components/responses/TooManyRequests"}
         "503": {$ref: "#/components/responses/ServiceUnavailable"}
   /drivers/me/dispatch-offers:
     get:
@@ -4129,7 +4109,7 @@ paths:
       summary: 내게 온 배차 요청 목록
       description: >-
         본인에게 전달된 배차 요청만 돌려준다. 마감(RESPONSE_CLOSED)·만료(EXPIRED)된 요청도 상태와 함께 조회할 수 있어 안내 화면을 만들 수 있다. 수락 전이므로 상세 주소 대신
-        대략적인 지역만 보여준다. 푸시 알림을 못 받았거나 앱을 껐다 켠 경우에도 이 API로 요청을 확인할 수 있다.
+        시·군·구와 읍·면·동 수준의 지역 및 직선거리만 보여준다. 도로명·건물번호·동호수와 현장 좌표는 포함하지 않는다. 전체 확정 주소는 수락 후 권한 있는 작업 조회에서 제공한다. 푸시 알림을 못 받았거나 앱을 껐다 켠 경우에도 이 API로 요청을 확인할 수 있다.
       tags:
         - Dispatch
       x-business-rules:
@@ -4160,7 +4140,7 @@ paths:
                   - offerId: ofr_01
                     requestId: req_01
                     workType: BLOCKAGE
-                    approximateAddress: 서울 강남구
+                    approximateAddress: 서울특별시 강남구 역삼동
                     distanceKm: 3.2
                     offerStatus: PENDING
                     expiresAt: "2026-10-31T09:10:00+09:00"
@@ -4175,7 +4155,7 @@ paths:
       operationId: getDispatchOffer
       summary: 배차 요청 상세 조회
       description: >-
-        증상, 희망 방문 시간, 대략적인 주소, 거리, 남은 시간(expiresAt)을 돌려준다. 본인에게 온 요청만 조회할 수 있고 다른 기사의 요청은 404다. 이미 마감되거나 만료된 요청도 200으로
+        증상, 희망 방문 시간, 시·군·구와 읍·면·동 수준의 지역, 직선거리, 남은 시간(expiresAt)을 돌려준다. 도로명·건물번호·동호수와 현장 좌표는 포함하지 않으며 전체 확정 주소는 수락 후 권한 있는 작업 조회에서 제공한다. 본인에게 온 요청만 조회할 수 있고 다른 기사의 요청은 404다. 이미 마감되거나 만료된 요청도 200으로
         상태를 알려주며(offerStatus), 수락 가능 여부의 최종 판단은 respondToDispatchOffer 시점에 서버가 한다.
       tags:
         - Dispatch
@@ -4205,7 +4185,7 @@ paths:
                 requestId: req_01
                 workType: BLOCKAGE
                 symptoms: 싱크대 물이 내려가지 않음
-                approximateAddress: 서울 강남구
+                approximateAddress: 서울특별시 강남구 역삼동
                 desiredVisitFrom: "2026-10-31T14:00:00+09:00"
                 desiredVisitTo: "2026-10-31T16:00:00+09:00"
                 distanceKm: 3.2
@@ -4223,7 +4203,8 @@ paths:
       summary: 내 작업 목록
       description: >-
         본인의 작업을 조회한다. scope=CURRENT는 WORK_DONE·CANCELLED를 제외한 미완료 작업, HISTORY는 WORK_DONE·CANCELLED 작업이다. 재방문 대기와 보고서 미제출은 CURRENT에
-        포함한다. 취소·완료 작업의 신규 변경은 허용하지 않는다(BR-01).
+        포함한다. HISTORY에서는 본인 작업 상세·취소 사유·권한 있는 보고서와 사진의 읽기 전용 조회를 지원하며 고객 연락처는 null이다. 취소·완료 작업의 신규 변경과 재배차 후 다른 기사의 이후 작업 조회는 허용하지 않는다(BR-01·02).
+        HISTORY의 month 필터는 Asia/Seoul 기준 완료 작업의 최초 보고서 제출 성공 시각 또는 취소 작업의 취소 확정 시각을 사용한다. 해당 월 시작은 포함하고 다음 월 시작은 제외한다. 배정일·방문 예정일·보고서 수정일은 월별 내역의 기준이 아니다. month를 생략하면 전체 과거 이력을 조회하며 CURRENT와 month의 조합은 입력 오류다.
       tags:
         - Work
       x-business-rules:
@@ -4234,6 +4215,8 @@ paths:
       x-requirements:
         - FR-09
         - UC-11
+      x-figma-node-ids:
+        - "2103:238"
       x-roles:
         - DRIVER
       parameters:
@@ -4241,6 +4224,14 @@ paths:
           in: query
           description: CURRENT(기본) 또는 HISTORY.
           schema: {type: string, enum: [CURRENT, HISTORY], default: CURRENT}
+        - name: month
+          in: query
+          required: false
+          description: HISTORY 전용 조회 월(YYYY-MM). 한국 시간 기준 완료·취소 월이며 생략 시 전체 이력. CURRENT와 함께 사용하면 400.
+          schema:
+            type: string
+            pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$'
+          example: '2026-10'
         - $ref: "#/components/parameters/PageNumber"
         - $ref: "#/components/parameters/PageSize"
       responses:
@@ -4253,7 +4244,7 @@ paths:
                 items:
                   - workId: work_01
                     requestId: req_01
-                    driverId: drv_01
+                    driverId: 1
                     previousWorkId: null
                     workType: BLOCKAGE
                     symptoms: 싱크대 물이 내려가지 않음
@@ -4280,7 +4271,7 @@ paths:
       operationId: getWork
       summary: 작업 상세 조회
       description: >-
-        본인 작업 또는 현재 담당 의뢰에 연결된 이전 작업을 조회한다. 인계된 이전 작업은 읽기 전용이며 수정 권한을 부여하지 않는다. previousWorkId로 이전 작업을 연결한다. version은 현재 작업
+        본인의 진행·완료·취소 작업 또는 현재 담당 의뢰에 연결된 이전 작업을 조회한다. 완료·취소 이력과 인계된 이전 작업에서는 고객 연락처를 null로 반환하고 읽기 전용이며 수정 권한을 부여하지 않는다. 취소 후 다른 기사의 이후 작업에는 접근할 수 없다. previousWorkId로 이전 작업을 연결한다. version은 현재 작업
         변경·취소·최초 보고서 제출의 expectedVersion이다. allowedTransitions·canCancel·canSubmitReport는 표시용 힌트이며 서버가 요청 시점에 다시 검증한다. 취소·완료 작업과
         이전 작업은 변경할 수 없고, 접근 관계가 없는 작업은 404다(BR-01·02).
       tags:
@@ -4311,7 +4302,7 @@ paths:
               example:
                 workId: work_01
                 requestId: req_01
-                driverId: drv_01
+                driverId: 1
                 previousWorkId: null
                 workType: BLOCKAGE
                 symptoms: 싱크대 물이 내려가지 않음
@@ -4353,7 +4344,7 @@ paths:
             application/json:
               schema: {$ref: "#/components/schemas/DriverProfileView"}
               example:
-                driverId: drv_01
+                driverId: 1
                 accountStatus: ACTIVATED
                 version: 3
                 profile:
@@ -4418,7 +4409,7 @@ paths:
             application/json:
               schema: {$ref: "#/components/schemas/ProfileUpdated"}
               example:
-                driverId: drv_01
+                driverId: 1
                 version: 4
                 updatedAt: "2026-10-31T18:00:00+09:00"
                 profile:
@@ -4474,7 +4465,7 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/WithdrawalResult"}
-              example: {driverId: drv_01, accountStatus: WITHDRAWN, withdrawnAt: "2026-11-02T18:00:00+09:00"}
+              example: {driverId: 1, accountStatus: WITHDRAWN, withdrawnAt: "2026-11-02T18:00:00+09:00"}
         "401": {$ref: "#/components/responses/Unauthorized"}
         "403": {$ref: "#/components/responses/Forbidden"}
         "409":
@@ -4513,6 +4504,7 @@ paths:
         - DRIVER
       parameters:
         - $ref: "#/components/parameters/ChatBefore"
+        - $ref: "#/components/parameters/ChatAfter"
         - $ref: "#/components/parameters/ChatLimit"
       responses:
         "200":
@@ -4522,8 +4514,8 @@ paths:
               schema: {$ref: "#/components/schemas/ChatMessagePage"}
               example:
                 items:
-                  - {messageId: msg_02, driverId: drv_01, sender: ADMIN, body: 현장 상황을 알려 주세요., sentAt: "2026-10-31T14:30:00+09:00", readAt: null}
-                  - {messageId: msg_01, driverId: drv_01, sender: DRIVER, body: 도착했습니다., sentAt: "2026-10-31T14:10:00+09:00", readAt: "2026-10-31T14:11:00+09:00"}
+                  - {messageId: msg_02, driverId: 1, sender: ADMIN, body: 현장 상황을 알려 주세요., sentAt: "2026-10-31T14:30:00+09:00", readAt: null}
+                  - {messageId: msg_01, driverId: 1, sender: DRIVER, body: 도착했습니다., sentAt: "2026-10-31T14:10:00+09:00", readAt: "2026-10-31T14:11:00+09:00"}
                 nextCursor: null
                 readOnly: false
         "401": {$ref: "#/components/responses/Unauthorized"}
@@ -4535,8 +4527,7 @@ paths:
       summary: 관리자에게 메시지 전송(기사)
       description: >-
         기사가 관리자에게 텍스트 메시지를 보낸다. Idempotency-Key는 클라이언트가 만든 메시지 전송 식별자로 쓴다. 전송 결과를 확인하지 못했을 때 같은 키로 재전송해도 메시지가 중복
-        저장되지 않고 최초 응답이 재현된다(UC-16 E1). 전송 시점에 계정이 ACTIVATED가 아니면 403(CHAT_NOT_ALLOWED)이다(E3). 실시간 전송(WebSocket) 계약은 미결정이며 이 REST API가
-        저장과 이력의 기준이다.
+        저장되지 않고 최초 응답이 재현된다(UC-16 E1). 전송 시점에 기사 계정이 활성이 아니면 접근이 차단된다(E3). 이 REST API가 저장과 이력의 기준이며, WebSocket으로 메시지 도착을 알린다.
       tags:
         - Chat
       x-business-rules:
@@ -4564,7 +4555,7 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/ChatMessage"}
-              example: {messageId: msg_01, driverId: drv_01, sender: DRIVER, body: 도착했습니다., sentAt: "2026-10-31T14:10:00+09:00", readAt: null}
+              example: {messageId: msg_01, driverId: 1, sender: DRIVER, body: 도착했습니다., sentAt: "2026-10-31T14:10:00+09:00", readAt: null}
         "401": {$ref: "#/components/responses/Unauthorized"}
         "403":
           description: 계정 상태가 활성이 아니거나 채팅 권한이 없다.
@@ -4613,7 +4604,7 @@ paths:
       summary: 기사별 채팅방 목록(관리자)
       description: >-
         관리자가 기사별 1:1 채팅방과 마지막 메시지, 읽지 않은 수를 확인한다. 승인 대기·반려·탈퇴 기사의 방은 readOnly=true이며 권한 있는 관리자가 과거 이력만 읽을 수 있고 새 메시지는 보낼 수 없다.
-        보존 정책과 열람 권한은 UC-15를 따른다.
+        대화를 시작한 기사만 포함하고 최근 메시지 순으로 반환한다. 보존 정책과 열람 권한은 UC-15를 따른다.
       tags:
         - Chat
       x-business-rules:
@@ -4624,6 +4615,10 @@ paths:
       x-roles:
         - ADMIN
       parameters:
+        - name: q
+          in: query
+          description: 기사명 부분 검색.
+          schema: {type: string, minLength: 1, maxLength: 100}
         - $ref: "#/components/parameters/PageNumber"
         - $ref: "#/components/parameters/PageSize"
       responses:
@@ -4634,9 +4629,9 @@ paths:
               schema: {$ref: "#/components/schemas/ChatRoomList"}
               example:
                 items:
-                  - driver: {driverId: drv_01, workerName: 홍길동}
+                  - driver: {driverId: 1, workerName: 홍길동}
                     driverAccountStatus: ACTIVATED
-                    lastMessage: {messageId: msg_01, driverId: drv_01, sender: DRIVER, body: 도착했습니다., sentAt: "2026-10-31T14:10:00+09:00", readAt: null}
+                    lastMessage: {messageId: msg_01, driverId: 1, sender: DRIVER, body: 도착했습니다., sentAt: "2026-10-31T14:10:00+09:00", readAt: null}
                     unreadCount: 1
                     readOnly: false
                 page: {page: 1, size: 20, totalElements: 1, totalPages: 1}
@@ -4662,6 +4657,7 @@ paths:
       parameters:
         - $ref: "#/components/parameters/DriverIdPath"
         - $ref: "#/components/parameters/ChatBefore"
+        - $ref: "#/components/parameters/ChatAfter"
         - $ref: "#/components/parameters/ChatLimit"
       responses:
         "200":
@@ -4671,7 +4667,7 @@ paths:
               schema: {$ref: "#/components/schemas/ChatMessagePage"}
               example:
                 items:
-                  - {messageId: msg_01, driverId: drv_01, sender: DRIVER, body: 도착했습니다., sentAt: "2026-10-31T14:10:00+09:00", readAt: null}
+                  - {messageId: msg_01, driverId: 1, sender: DRIVER, body: 도착했습니다., sentAt: "2026-10-31T14:10:00+09:00", readAt: null}
                 nextCursor: null
                 readOnly: false
         "401": {$ref: "#/components/responses/Unauthorized"}
@@ -4713,7 +4709,7 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/ChatMessage"}
-              example: {messageId: msg_02, driverId: drv_01, sender: ADMIN, body: 현장 상황을 알려 주세요., sentAt: "2026-10-31T14:30:00+09:00", readAt: null}
+              example: {messageId: msg_02, driverId: 1, sender: ADMIN, body: 현장 상황을 알려 주세요., sentAt: "2026-10-31T14:30:00+09:00", readAt: null}
         "401": {$ref: "#/components/responses/Unauthorized"}
         "403":
           description: 기사 계정이 활성이 아니거나 채팅 권한이 없다.
@@ -4766,7 +4762,7 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: >-
-        액세스 토큰(Bearer)으로 API를 인증하고 리프레시 토큰으로 갱신한다(FR-01). 관리자는 아이디·비밀번호와 MFA(TOTP)를 모두 통과해야 토큰을 받는다. x-roles의 ADMIN은 관리자, DRIVER는 계정이 ACTIVATED인 기사, DRIVER_ANY_STATUS는 승인 대기·반려·미가입 기사를 포함한 모든 기사 토큰을 뜻한다. 역할과 리소스 관계, 기사 계정 상태는 요청 시점에 서버가 최신 상태로 다시 검증하며 토큰의 과거 권한만 신뢰하지 않는다. 토큰 검증·수명·갱신 정책은 백엔드 보안 컨벤션을 따른다. 기사의 일반 서비스 API는 ACTIVATED 계정에만 허용한다. PENDING_APPROVAL은 본인 신청·상태 조회·로그아웃, REJECTED는 본인 반려 사유·재신청·로그아웃으로 제한하고 WITHDRAWN은 로그인과 일반 접근을 거부한다(BR-02). ADMIN_WITH_REPORT_EDIT는 보고서 수정 권한이 있는 관리자를 뜻하며 별도 계정 역할이 아니다. 마스터/부 관리자별 권한 차등은 미확정이다. 로그인 전 API는 security: []로 표시했다.
+        액세스 토큰(Bearer)으로 API를 인증하고 리프레시 토큰으로 갱신한다(FR-01). 관리자는 사전 등록한 아이디·비밀번호 인증에 성공하면 토큰을 받으며 MFA는 구현하지 않는다. x-roles의 ADMIN은 관리자, DRIVER는 계정이 ACTIVATED인 기사, DRIVER_ANY_STATUS는 승인 대기·반려·미가입 기사를 포함한 모든 기사 토큰을 뜻한다. 역할과 리소스 관계, 기사 계정 상태는 요청 시점에 서버가 최신 상태로 다시 검증하며 토큰의 과거 권한만 신뢰하지 않는다. 토큰 검증·수명·갱신 정책은 백엔드 보안 컨벤션을 따른다. 기사의 일반 서비스 API는 ACTIVATED 계정에만 허용한다. PENDING_APPROVAL은 본인 신청·상태 조회·로그아웃, REJECTED는 본인 반려 사유·재신청·로그아웃으로 제한하고 WITHDRAWN은 로그인과 일반 접근을 거부한다(BR-02). ADMIN_WITH_REPORT_EDIT는 보고서 수정 권한이 있는 관리자를 뜻하며 별도 계정 역할이 아니다. MASTER와 SUB는 동일한 업무 권한을 가지며 역할 값만 구분하여 보존한다. MVP의 operations 조회·후속 결정·보고서 정정은 모든 권한 있는 관리자에게 해당 업무 규칙에 따라 허용한다. 로그인 전 API는 security: []로 표시했다.
   parameters:
     IdempotencyKey:
       name: Idempotency-Key
@@ -4804,8 +4800,8 @@ components:
       name: driverId
       in: path
       required: true
-      schema: {$ref: "#/components/schemas/Id"}
-      example: drv_01
+      schema: {$ref: "#/components/schemas/DatabaseId"}
+      example: 1
     OfferIdPath:
       name: offerId
       in: path
@@ -4864,6 +4860,11 @@ components:
       in: query
       description: 이 메시지 ID보다 오래된 메시지를 조회하는 커서. 생략하면 최신 메시지부터 조회.
       schema: {$ref: "#/components/schemas/Id"}
+    ChatAfter:
+      name: after
+      in: query
+      description: 재접속 후 이 메시지 ID보다 새로운 메시지를 오래된 순서부터 조회한다. before와 동시에 지정할 수 없다.
+      schema: {$ref: "#/components/schemas/Id"}
     ChatLimit:
       name: limit
       in: query
@@ -4916,14 +4917,14 @@ components:
             code: VERSION_CONFLICT
             message: 접수 버전 또는 처리 상태 충돌. 현재 상태를 조회한 뒤 다시 요청한다.
     ReceptionHttpServiceUnavailable:
-      description: 접수 HTTP 503 응답. 검토·중복·처리 충돌은 code로 구분한다.
+      description: 녹음 저장소를 사용할 수 없습니다.
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ReceptionHttpError'
           example:
-            code: RECEPTION_IDENTITY_UNAVAILABLE
-            message: 관리자 인증 연동이 준비되지 않았습니다.
+            code: RECORDING_STORAGE_UNAVAILABLE
+            message: 녹음 저장소를 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.
     Unauthorized:
       description: 인증이 필요하거나 토큰이 만료·무효입니다.
       content:
@@ -4980,6 +4981,18 @@ components:
             traceId: trace_example_01
             fieldErrors:
               - {field: address, message: 필수 항목입니다.}
+    AccountRequestLimitExceeded:
+      description: 계정별 요청 한도 초과. 토큰 갱신은 60초 30회, 기사 가입·재신청은 합산하여 60초 5회. 구간 종료 후 자동 해제하며 차단 중 재요청으로 연장하지 않는다.
+      headers:
+        Retry-After:
+          description: 재시도까지 남은 초.
+          schema: {type: integer, format: int64, minimum: 1}
+        Cache-Control:
+          schema: {type: string, example: no-store}
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/IdentityError"}
+          example: {code: TOO_MANY_REQUESTS, message: 요청이 많습니다. 안내된 시간 후 다시 시도해 주세요.}
     TooManyRequests:
       description: 요청이 너무 많습니다. Retry-After 이후 다시 시도합니다. 제한 수치는 미정.
       headers:
@@ -5267,6 +5280,8 @@ components:
           type: string
           minLength: 1
           maxLength: 1000
+          pattern: '\S'
+          description: 모든 사유 분류에서 필수인 상세 사유. 1~1000자이며 공백뿐인 값은 허용하지 않는다.
     CancellationCreated:
       type: object
       additionalProperties: false
@@ -5389,24 +5404,20 @@ components:
           items:
             type: string
             minLength: 1
-          minItems: 1
+          minItems: 3
+          maxItems: 5
           uniqueItems: true
         afterPhotoIds:
           type: array
           items:
             type: string
             minLength: 1
-          minItems: 1
+          minItems: 3
+          maxItems: 5
           uniqueItems: true
         totalCost:
           type: integer
           minimum: 0
-        duringPhotoIds:
-          type: array
-          items:
-            $ref: '#/components/schemas/Id'
-          uniqueItems: true
-          description: 선택적인 작업 중 사진 ID. 생략 또는 빈 배열 허용. 업로드 완료·작업 연결·DURING 분류를 검증한다.
     SubmitReport:
       type: object
       additionalProperties: false
@@ -5435,21 +5446,17 @@ components:
           items:
             type: string
             minLength: 1
-          minItems: 1
+          minItems: 3
+          maxItems: 5
           uniqueItems: true
         afterPhotoIds:
           type: array
           items:
             type: string
             minLength: 1
-          minItems: 1
+          minItems: 3
+          maxItems: 5
           uniqueItems: true
-        duringPhotoIds:
-          type: array
-          items:
-            $ref: '#/components/schemas/Id'
-          uniqueItems: true
-          description: 선택적인 작업 중 사진 ID. 생략 또는 빈 배열 허용. 업로드 완료·작업 연결·DURING 분류를 검증한다.
     ReportCreated:
       type: object
       additionalProperties: false
@@ -5494,11 +5501,17 @@ components:
       additionalProperties: false
       required:
         - expectedVersion
+        - reason
         - changes
       properties:
         expectedVersion:
           type: integer
           minimum: 1
+        reason:
+          type: string
+          minLength: 1
+          pattern: '\S'
+          description: 원본과 별도 이력에 기록할 필수 수정 사유.
         changes:
           $ref: "#/components/schemas/ReportChanges"
     FieldChange:
@@ -5530,6 +5543,7 @@ components:
         - revisionId
         - editedBy
         - editedAt
+        - reason
         - changes
       properties:
         revisionId:
@@ -5541,6 +5555,9 @@ components:
         editedAt:
           type: string
           format: date-time
+        reason:
+          type: string
+          minLength: 1
         changes:
           type: array
           items:
@@ -5613,8 +5630,7 @@ components:
           type: string
           minLength: 1
         driverId:
-          type: string
-          minLength: 1
+          $ref: "#/components/schemas/DatabaseId"
         workStatus:
           $ref: "#/components/schemas/WorkStatus"
         previousWorkId:
@@ -5685,15 +5701,7 @@ components:
           type: integer
           minimum: 1
         status:
-          type: string
-          enum:
-            - SEARCHING
-            - OFFERING
-            - ASSIGNED
-            - NO_CANDIDATES
-            - DELIVERY_FAILED
-            - NO_ACCEPT
-            - ROUND_CLOSED
+          $ref: "#/components/schemas/RoundStatus"
         works:
           type: array
           items:
@@ -5770,6 +5778,11 @@ components:
       minLength: 1
       maxLength: 64
       description: 불투명 식별자. 형식은 서버가 정하며 클라이언트는 해석하지 않는다. 접수·녹음·분석·원문 ID는 Backend의 숫자 PK를 rec_·file_rec_·anl_·file_stt_ 접두어가 있는 문자열로 변환한다. AI는 받은 식별자를 변경 없이 반환한다.
+    DatabaseId:
+      type: integer
+      format: int64
+      minimum: 1
+      description: Backend가 IDENTITY로 생성하는 내부 BIGINT 식별자.
     NullableId:
       type: [string, "null"]
       minLength: 1
@@ -5796,10 +5809,10 @@ components:
       description: 외벽 누수(EXTERIOR_LEAK), 내벽 누수(INTERIOR_LEAK), 막힘(BLOCKAGE), 보일러(BOILER), 방수(WATERPROOFING). 기사 전문 분야와 같은 값을 쓴다.
     RoundStatus:
       type: string
-      enum: [SEARCHING, OFFERING, ASSIGNED, NO_CANDIDATES, DELIVERY_FAILED, NO_ACCEPT, ROUND_CLOSED]
+      enum: [SEARCHING, OFFERING, ASSIGNED, NO_CANDIDATES, SEARCH_FAILED, DELIVERY_FAILED, NO_ACCEPT, ROUND_CLOSED]
       description: >-
-        NO_CANDIDATES(후보 없음), DELIVERY_FAILED(전체 전달 실패), NO_ACCEPT(전체 거절), ROUND_CLOSED(수락 없는 만료 등)는 배정 없이 종료된 회차로서
-        의뢰가 OPEN으로 남고 관리자 후속 처리 대상이 된다.
+        NO_CANDIDATES(정상 조회 후 후보 없음), SEARCH_FAILED(후보 조회 실패), DELIVERY_FAILED(전체 전달 최종 실패), NO_ACCEPT(거절을 포함한 거절·전달 최종 실패 조합이며 무응답 만료 없음), ROUND_CLOSED(무응답 만료를 포함한 수락 없는 종료)는 배정 없이 종료된 회차다.
+        회차 종료와 의뢰 FOLLOW_UP_REQUIRED 전환을 함께 확정하고 관리자 후속 결정·알림의 대상으로 삼는다. 이후 작업이 취소되어도 과거 ASSIGNED 회차 결과를 바꾸지 않는다.
     OfferStatus:
       type: string
       enum: [PENDING, ACCEPTED, REJECTED, EXPIRED, RESPONSE_CLOSED]
@@ -5823,107 +5836,146 @@ components:
       additionalProperties: false
       required: [driverId, workerName]
       properties:
-        driverId: {$ref: "#/components/schemas/Id"}
+        driverId: {$ref: "#/components/schemas/DatabaseId"}
         workerName: {type: string, minLength: 1, maxLength: 100}
     # ---------- 인증 ----------
+    IdentityError:
+      type: object
+      additionalProperties: false
+      description: 현재 백엔드 ErrorResponse 형식. 전체 업무 API 초안의 Error 스키마와 구분한다.
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - field
+              - reason
+            properties:
+              field:
+                type: string
+              reason:
+                type: string
     AdminLogin:
       type: object
       additionalProperties: false
-      required: [loginId, password]
+      required:
+        - loginId
+        - password
       properties:
-        loginId: {type: string, minLength: 1, maxLength: 100}
-        password: {type: string, format: password, writeOnly: true, minLength: 1, maxLength: 200}
-    AdminLoginResult:
-      type: object
-      additionalProperties: false
-      required: [nextStep, challengeToken, challengeExpiresIn]
-      properties:
-        nextStep:
+        loginId:
           type: string
-          enum: [MFA_REQUIRED, MFA_ENROLLMENT_REQUIRED]
-          description: MFA_REQUIRED는 인증 코드 입력, MFA_ENROLLMENT_REQUIRED는 최초 로그인으로 TOTP 등록 필요(UC-01 A1).
-        challengeToken: {type: string, minLength: 1, maxLength: 2000, description: 1차 인증 통과를 증명하는 단기 토큰. API 호출용 액세스 토큰이 아니다.}
-        challengeExpiresIn: {type: integer, minimum: 1, description: 초 단위.}
-    MfaVerify:
-      type: object
-      additionalProperties: false
-      required: [challengeToken, code]
-      properties:
-        challengeToken: {type: string, minLength: 1, maxLength: 2000}
-        code: {type: string, pattern: "^[0-9]{6}$", description: 인증 앱의 TOTP 6자리.}
-    MfaEnrollmentStart:
-      type: object
-      additionalProperties: false
-      required: [challengeToken]
-      properties:
-        challengeToken: {type: string, minLength: 1, maxLength: 2000}
-    MfaEnrollment:
-      type: object
-      additionalProperties: false
-      required: [secret, otpauthUri, expiresIn]
-      properties:
-        secret: {type: string, minLength: 1, maxLength: 128, description: TOTP 시크릿. 이 응답에서만 제공하며 로그와 저장소에 남기지 않는다.}
-        otpauthUri: {type: string, format: uri, maxLength: 500, description: QR 코드로 변환해 인증 앱에 등록하는 otpauth URI.}
-        expiresIn: {type: integer, minimum: 1, description: 등록 완료까지 허용되는 초.}
-    MfaEnrollmentConfirm:
-      type: object
-      additionalProperties: false
-      required: [challengeToken, code]
-      properties:
-        challengeToken: {type: string, minLength: 1, maxLength: 2000}
-        code: {type: string, pattern: "^[0-9]{6}$"}
+          minLength: 1
+          maxLength: 100
+          description: 사전 발급된 관리자 아이디. 대소문자·공백을 자동 변환하지 않는다.
+        password:
+          type: string
+          format: password
+          writeOnly: true
+          minLength: 1
+          maxLength: 200
+          description: 관리자 비밀번호. 입력 전체를 검증하며 자동으로 자르거나 공백을 제거하지 않는다.
     AuthUser:
       type: object
       additionalProperties: false
-      required: [userId, userType, role]
+      required:
+        - accountId
+        - userType
+        - role
       properties:
-        userId: {$ref: "#/components/schemas/Id"}
-        userType: {type: string, enum: [ADMIN, DRIVER]}
+        accountId:
+          allOf:
+            - $ref: "#/components/schemas/DatabaseId"
+          description: identity 내부 계정 ID. 카카오 회원번호 및 driverId와 구분한다.
+        userType:
+          type: string
+          enum:
+            - ADMIN
+            - DRIVER
         role:
-          type: [string, "null"]
-          enum: [MASTER, SUB, null]
-          description: 관리자 역할(마스터/부). 기사는 null. 역할별 권한 차등은 미확정.
+          type:
+            - string
+            - "null"
+          enum:
+            - MASTER
+            - SUB
+            - null
+          description: 관리자 역할(마스터/부). MASTER와 SUB의 업무 권한은 동일하며 기사는 null.
     TokenPair:
       type: object
       additionalProperties: false
-      required: [accessToken, refreshToken, tokenType, expiresIn, refreshExpiresIn, user]
+      required:
+        - accessToken
+        - refreshToken
+        - tokenType
+        - expiresIn
+        - refreshExpiresIn
+        - user
       properties:
-        accessToken: {type: string, minLength: 1, maxLength: 4000}
-        refreshToken: {type: string, minLength: 1, maxLength: 4000}
-        tokenType: {type: string, const: Bearer}
-        expiresIn: {type: integer, minimum: 1, description: 액세스 토큰 유효 초. 수치는 미정.}
-        refreshExpiresIn: {type: integer, minimum: 1}
-        user: {$ref: "#/components/schemas/AuthUser"}
+        accessToken:
+          type: string
+          minLength: 1
+          maxLength: 4000
+        refreshToken:
+          type: string
+          minLength: 1
+          maxLength: 4000
+        tokenType:
+          type: string
+          const: Bearer
+        expiresIn:
+          type: integer
+          minimum: 1
+          description: 액세스 토큰 유효 초. 기본 900초이며 설정 가능.
+        refreshExpiresIn:
+          type: integer
+          minimum: 1
+          description: 응답 시점부터 세션 절대 만료까지 남은 초. 기본 최초 로그인부터 14일이며 갱신해도 연장하지 않는다.
+        user:
+          $ref: "#/components/schemas/AuthUser"
     RefreshRequest:
       type: object
       additionalProperties: false
-      required: [refreshToken]
+      required:
+        - refreshToken
       properties:
-        refreshToken: {type: string, minLength: 1, maxLength: 4000}
+        refreshToken:
+          type: string
+          minLength: 1
+          maxLength: 4000
+          pattern: "^[!-~]+$"
     LogoutRequest:
       type: object
       additionalProperties: false
-      required: [refreshToken]
+      required:
+        - refreshToken
       properties:
-        refreshToken: {type: string, minLength: 1, maxLength: 4000, description: 폐기할 리프레시 토큰.}
+        refreshToken:
+          type: string
+          minLength: 1
+          maxLength: 4000
+          pattern: "^[!-~]+$"
+          description: 폐기할 세션을 식별하는 리프레시 토큰.
     DriverKakaoLogin:
       type: object
       additionalProperties: false
-      required: [kakaoAccessToken]
+      required:
+        - kakaoAccessToken
       properties:
-        kakaoAccessToken: {type: string, minLength: 1, maxLength: 4000, description: 앱이 카카오 SDK로 받은 액세스 토큰. 서버가 카카오에 검증한다.}
-    DriverLoginResult:
-      type: object
-      additionalProperties: false
-      required: [accountStatus, fullAccess, rejectionReason, tokens]
-      properties:
-        accountStatus:
+        kakaoAccessToken:
           type: string
-          enum: [NOT_REGISTERED, PENDING_APPROVAL, ACTIVATED, REJECTED]
-          description: 탈퇴(WITHDRAWN) 계정은 로그인 자체를 403으로 거부한다.
-        fullAccess: {type: boolean, description: ACTIVATED일 때만 true. false이면 발급된 토큰은 가입 신청·상태 확인 등 제한된 API에만 사용할 수 있다.}
-        rejectionReason: {type: [string, "null"], maxLength: 1000, description: REJECTED일 때만 관리자가 입력한 반려 사유.}
-        tokens: {$ref: "#/components/schemas/TokenPair"}
+          minLength: 1
+          maxLength: 4000
+          pattern: "^[!-~]+$"
+          description: 앱이 카카오 SDK로 받은 액세스 토큰. 서버가 카카오에 검증한다.
     # ---------- 기사 가입·프로필 ----------
     SettlementAccount:
       type: object
@@ -5931,8 +5983,47 @@ components:
       required: [bankName, accountNumber, holderName]
       properties:
         bankName: {type: string, minLength: 1, maxLength: 50}
-        accountNumber: {type: string, pattern: "^[0-9*-]{6,30}$", description: 조회 응답에서는 일부가 *로 마스킹되어 반환될 수 있다.}
+        accountNumber: {type: string, minLength: 6, maxLength: 30, description: 조회 응답에서는 일부가 *로 마스킹되어 반환될 수 있다.}
         holderName: {type: string, minLength: 1, maxLength: 50}
+    SettlementAccountInput:
+      type: object
+      additionalProperties: false
+      required: [bankName, accountNumber, holderName]
+      properties:
+        bankName: {type: string, minLength: 1, maxLength: 50}
+        accountNumber: {type: string, minLength: 6, maxLength: 30, pattern: "^[0-9]+(-[0-9]+)*$", description: 숫자 그룹으로 구성된 원본 계좌번호. 별표 마스킹 입력은 거부한다.}
+        holderName: {type: string, minLength: 1, maxLength: 50}
+    DriverProfileInput:
+      type: object
+      additionalProperties: false
+      description: 기사 개인정보와 배차 조건. 정산계좌와 세금계산서 이메일은 사업자가 아닌 기사 개인 명의.
+      required: [workerName, phone, email, residence, vehicleNumber, settlementAccount, taxInvoiceEmail, specialties, activityRegions, equipment]
+      properties:
+        workerName: {type: string, minLength: 1, maxLength: 100}
+        phone: {type: string, pattern: "^[0-9+-]{9,20}$"}
+        email: {type: string, format: email, maxLength: 254}
+        residence: {type: string, minLength: 1, maxLength: 200}
+        vehicleNumber: {type: string, minLength: 1, maxLength: 20}
+        settlementAccount: {$ref: "#/components/schemas/SettlementAccountInput"}
+        taxInvoiceEmail: {type: string, format: email, maxLength: 254}
+        specialties:
+          type: array
+          items: {$ref: "#/components/schemas/WorkType"}
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+        activityRegions:
+          type: array
+          items: {type: string, minLength: 1, maxLength: 100}
+          minItems: 1
+          maxItems: 20
+          uniqueItems: true
+          description: 활동지. 지역 세부 분류 체계는 미정이라 자유 문자열로 둔 제안.
+        equipment:
+          type: array
+          items: {type: string, minLength: 1, maxLength: 100}
+          maxItems: 50
+          uniqueItems: true
     DriverProfileFields:
       type: object
       additionalProperties: false
@@ -5967,7 +6058,7 @@ components:
     BusinessInfo:
       type: object
       additionalProperties: false
-      description: 사업자 정보. businessRegistrationNumber와 openedOn은 외부 사업자등록정보 검증에 필요해 추가한 설계 제안.
+      description: 사업자 정보. businessRegistrationNumber·openedOn·representativeName으로 국세청 진위확인 후 계속사업자인 경우에만 가입·재신청한다.
       required: [businessName, businessRegistrationNumber, openedOn, businessType, businessItem, representativeName, companyPhone, companyAddress]
       properties:
         businessName: {type: string, minLength: 1, maxLength: 100}
@@ -5993,14 +6084,14 @@ components:
       additionalProperties: false
       required: [profile, business]
       properties:
-        profile: {$ref: "#/components/schemas/DriverProfileFields"}
+        profile: {$ref: "#/components/schemas/DriverProfileInput"}
         business: {$ref: "#/components/schemas/BusinessInfo"}
     DriverRegistrationResult:
       type: object
       additionalProperties: false
       required: [driverId, accountStatus, submittedAt, version]
       properties:
-        driverId: {$ref: "#/components/schemas/Id"}
+        driverId: {$ref: "#/components/schemas/DatabaseId"}
         accountStatus: {type: string, const: PENDING_APPROVAL}
         submittedAt: {$ref: "#/components/schemas/DateTime"}
         version: {type: integer, minimum: 1}
@@ -6016,7 +6107,7 @@ components:
       additionalProperties: false
       required: [driverId, accountStatus, version, submittedAt, rejection, profile, business, businessVerification]
       properties:
-        driverId: {$ref: "#/components/schemas/Id"}
+        driverId: {$ref: "#/components/schemas/DatabaseId"}
         accountStatus: {$ref: "#/components/schemas/DriverAccountStatus"}
         version: {type: integer, minimum: 1}
         submittedAt: {$ref: "#/components/schemas/DateTime"}
@@ -6039,7 +6130,7 @@ components:
       additionalProperties: false
       required: [driverId, workerName, businessName, accountStatus, submittedAt, version]
       properties:
-        driverId: {$ref: "#/components/schemas/Id"}
+        driverId: {$ref: "#/components/schemas/DatabaseId"}
         workerName: {type: string, minLength: 1, maxLength: 100}
         businessName: {type: string, minLength: 1, maxLength: 100}
         accountStatus: {$ref: "#/components/schemas/DriverAccountStatus"}
@@ -6059,7 +6150,7 @@ components:
       additionalProperties: false
       required: [driverId, accountStatus, version, submittedAt, profile, business, businessVerification, rejectionHistory, availability]
       properties:
-        driverId: {$ref: "#/components/schemas/Id"}
+        driverId: {$ref: "#/components/schemas/DatabaseId"}
         accountStatus: {$ref: "#/components/schemas/DriverAccountStatus"}
         version: {type: integer, minimum: 1, description: 승인·반려 요청의 expectedVersion.}
         submittedAt: {$ref: "#/components/schemas/DateTime"}
@@ -6092,7 +6183,7 @@ components:
       additionalProperties: false
       required: [driverId, accountStatus, version, decidedAt]
       properties:
-        driverId: {$ref: "#/components/schemas/Id"}
+        driverId: {$ref: "#/components/schemas/DatabaseId"}
         accountStatus: {type: string, enum: [ACTIVATED, REJECTED]}
         version: {type: integer, minimum: 1}
         decidedAt: {$ref: "#/components/schemas/DateTime"}
@@ -6148,7 +6239,7 @@ components:
       additionalProperties: false
       required: [driverId, accountStatus, version, profile, business, notificationSettings]
       properties:
-        driverId: {$ref: "#/components/schemas/Id"}
+        driverId: {$ref: "#/components/schemas/DatabaseId"}
         accountStatus: {$ref: "#/components/schemas/DriverAccountStatus"}
         version: {type: integer, minimum: 1}
         profile: {$ref: "#/components/schemas/DriverProfileFields"}
@@ -6197,7 +6288,7 @@ components:
       additionalProperties: false
       required: [driverId, version, updatedAt, profile, notificationSettings]
       properties:
-        driverId: {$ref: "#/components/schemas/Id"}
+        driverId: {$ref: "#/components/schemas/DatabaseId"}
         version: {type: integer, minimum: 1}
         updatedAt: {$ref: "#/components/schemas/DateTime"}
         profile: {$ref: "#/components/schemas/DriverProfileFields"}
@@ -6214,7 +6305,7 @@ components:
       additionalProperties: false
       required: [driverId, accountStatus, withdrawnAt]
       properties:
-        driverId: {$ref: "#/components/schemas/Id"}
+        driverId: {$ref: "#/components/schemas/DatabaseId"}
         accountStatus: {type: string, const: WITHDRAWN}
         withdrawnAt: {$ref: "#/components/schemas/DateTime"}
     # ---------- 접수 ----------
@@ -6570,19 +6661,40 @@ components:
         needsAdminAction: {type: boolean, description: 의뢰가 FOLLOW_UP_REQUIRED이면 true.}
         followUpReason:
           type: [string, "null"]
-          enum: [WORK_CANCELLED, NO_CANDIDATES, DELIVERY_FAILED, NO_ACCEPT, ROUND_CLOSED, null]
+          enum: [WORK_CANCELLED, NO_CANDIDATES, SEARCH_FAILED, DELIVERY_FAILED, NO_ACCEPT, ROUND_CLOSED, null]
           description: needsAdminAction이 true인 이유.
     StatisticsMetrics:
       type: object
       additionalProperties: false
-      description: 통계 지표는 미정이므로 최소 집계만 제안한다. 보고서의 최신 유효 수정 비용을 반영하고 완료 건수를 중복 집계하지 않는다.
-      required: [totalRequests, openRequests, completedRequests, cancelledRequests, totalCostKrw]
+      description: 보고서의 최신 유효 수정 비용을 반영하고 완료 건수를 중복 집계하지 않는다.
+      required: [totalRequests, openRequests, completedRequests, cancelledRequests, completionRate, cancellationRate, totalCostKrw, averageCostKrw, weeklyCounts, workTypes]
       properties:
         totalRequests: {type: integer, minimum: 0}
         openRequests: {type: integer, minimum: 0, description: OPEN·ACCEPTED·FOLLOW_UP_REQUIRED인 미종결 의뢰 수.}
         completedRequests: {type: integer, minimum: 0}
         cancelledRequests: {type: integer, minimum: 0}
+        completionRate: {type: number, minimum: 0, maximum: 1}
+        cancellationRate: {type: number, minimum: 0, maximum: 1}
         totalCostKrw: {type: integer, minimum: 0}
+        averageCostKrw: {type: [integer, "null"], minimum: 0, description: 완료 보고서가 없으면 null.}
+        weeklyCounts:
+          type: array
+          items:
+            type: object
+            required: [from, to, count]
+            properties:
+              from: {type: string, format: date}
+              to: {type: string, format: date}
+              count: {type: integer, minimum: 0}
+        workTypes:
+          type: array
+          items:
+            type: object
+            required: [workType, count, ratio]
+            properties:
+              workType: {$ref: "#/components/schemas/WorkType"}
+              count: {type: integer, minimum: 0}
+              ratio: {type: number, minimum: 0, maximum: 1}
     WorkStatistics:
       type: object
       additionalProperties: false
@@ -6695,7 +6807,7 @@ components:
         offerId: {$ref: "#/components/schemas/Id"}
         requestId: {$ref: "#/components/schemas/Id"}
         workType: {$ref: "#/components/schemas/WorkType"}
-        approximateAddress: {type: string, minLength: 1, maxLength: 100, description: 수락 전에는 상세 주소 대신 대략적인 지역만 보여준다.}
+        approximateAddress: {type: string, minLength: 1, maxLength: 100, description: 시·군·구와 읍·면·동 수준의 지역. 도로명·건물번호·동호수는 포함하지 않는다.}
         distanceKm: {type: [number, "null"], minimum: 0, description: 위치가 유효하지 않으면 null.}
         offerStatus: {$ref: "#/components/schemas/OfferStatus"}
         expiresAt: {$ref: "#/components/schemas/DateTime"}
@@ -6718,7 +6830,7 @@ components:
         requestId: {$ref: "#/components/schemas/Id"}
         workType: {$ref: "#/components/schemas/WorkType"}
         symptoms: {type: string, minLength: 1, maxLength: 2000}
-        approximateAddress: {type: string, minLength: 1, maxLength: 100}
+        approximateAddress: {type: string, minLength: 1, maxLength: 100, description: 시·군·구와 읍·면·동 수준의 지역. 도로명·건물번호·동호수는 포함하지 않는다.}
         desiredVisitFrom: {$ref: "#/components/schemas/DateTime"}
         desiredVisitTo: {$ref: "#/components/schemas/DateTime"}
         notes: {type: [string, "null"], maxLength: 2000, description: 관리자 검토 후 의뢰 스냅샷에 보존한 부가정보. 본인에게 전달된 배차 요청에서 조회한다.}
@@ -6736,7 +6848,7 @@ components:
       properties:
         workId: {$ref: "#/components/schemas/Id"}
         requestId: {$ref: "#/components/schemas/Id"}
-        driverId: {$ref: "#/components/schemas/Id"}
+        driverId: {$ref: "#/components/schemas/DatabaseId"}
         previousWorkId: {$ref: "#/components/schemas/NullableId"}
         workType: {$ref: "#/components/schemas/WorkType"}
         symptoms: {type: string, minLength: 1, maxLength: 2000}
@@ -6747,7 +6859,7 @@ components:
         contactPhone:
           type: [string, "null"]
           pattern: ^[0-9+-]{9,20}$
-          description: 수락 후 해당 의뢰의 담당자로 인가된 기사에게만 제공하는 고객 연락처. 이전 담당 관계나 이력 조회 권한만 있는 경우 null이다.
+          description: 수락 후 해당 의뢰의 현재 미완료 작업 담당자로 인가된 기사에게만 제공하는 고객 연락처. 완료·취소 이력, 이전 담당 관계 또는 인계 조회 권한만 있는 경우 null이다.
         workStatus: {$ref: "#/components/schemas/WorkStatus"}
         version: {type: integer, minimum: 1, description: 작업 상태 변경·취소·보고서 제출의 expectedVersion.}
         updatedAt: {$ref: "#/components/schemas/DateTime"}
@@ -6776,7 +6888,7 @@ components:
       required: [messageId, driverId, sender, body, sentAt, readAt]
       properties:
         messageId: {$ref: "#/components/schemas/Id"}
-        driverId: {$ref: "#/components/schemas/Id"}
+        driverId: {$ref: "#/components/schemas/DatabaseId"}
         sender: {type: string, enum: [ADMIN, DRIVER]}
         body: {type: string, minLength: 1, maxLength: 2000}
         sentAt: {$ref: "#/components/schemas/DateTime"}
@@ -6797,7 +6909,7 @@ components:
           items: {$ref: "#/components/schemas/ChatMessage"}
         nextCursor:
           $ref: "#/components/schemas/NullableId"
-          description: 더 오래된 메시지가 있으면 다음 요청의 before 값. 없으면 null.
+          description: 조회한 방향에 메시지가 더 있으면 다음 before 또는 after 값. 없으면 null.
         readOnly: {type: boolean, description: 기사 계정이 활성이 아니어서 과거 이력만 읽을 수 있으면 true. 이때 메시지 전송은 거부된다.}
     ChatRoomSummary:
       type: object
@@ -6897,7 +7009,6 @@ components:
       type: string
       enum:
       - BEFORE
-      - DURING
       - AFTER
     WorkPhotoUploadRequest:
       type: object
@@ -6920,11 +7031,13 @@ components:
           type: string
           minLength: 1
           maxLength: 100
-          description: 허용 MIME 목록은 TODO. 실제 파일 형식은 별도 검증한다.
+          enum: [image/jpeg, image/png]
+          description: JPEG 또는 PNG. 완료 시 실제 파일 형식과 MIME 일치를 검증한다.
         sizeBytes:
           type: integer
           minimum: 1
-          description: 예상 바이트 수. 유형별 상한은 TODO이며 완료 시 실제 값과 비교한다.
+          maximum: 10000000
+          description: 예상 바이트 수. 최대 10MB(10,000,000바이트, 포함)이며 완료 시 실제 값과 비교한다.
         checksum:
           $ref: '#/components/schemas/FileChecksum'
     RecordingUploadGrant:
@@ -7141,9 +7254,11 @@ components:
           type: string
           minLength: 1
           maxLength: 100
+          enum: [image/jpeg, image/png]
         sizeBytes:
           type: integer
           minimum: 1
+          maximum: 10000000
         checksum:
           $ref: '#/components/schemas/FileChecksum'
         uploadedAt:
@@ -7401,6 +7516,8 @@ components:
           type: string
           minLength: 1
           description: FCM 등록 토큰. 로그·응답에 노출하지 않는다. 갱신 시 같은 installationId로 다시 등록한다.
+          maxLength: 4000
+          pattern: "^[!-~]+$"
     PushDevice:
       type: object
       additionalProperties: false

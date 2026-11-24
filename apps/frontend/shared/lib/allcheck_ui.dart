@@ -32,11 +32,19 @@ part 'src/location.dart';
 enum AppRole { admin, driver }
 const developmentAccessEnabled = kDebugMode &&
     bool.fromEnvironment('ALLCHECK_DEV_ACCESS', defaultValue: true);
+// Temporary review preview also works in installed release/profile builds.
+const temporaryReviewAccessEnabled =
+    bool.fromEnvironment('ALLCHECK_TEMP_REVIEW_ACCESS', defaultValue: true);
 typedef Json = Map<String, dynamic>;
 String text(Json row, String key, [String fallback = '']) => row[key]?.toString() ?? fallback;
 List<Json> records(dynamic value) => value is List ? value.cast<Json>() : <Json>[];
 List<String> strings(dynamic value) => value is List ? value.map((e) => e.toString()).toList() : <String>[];
 String nowIso() => DateTime.now().toUtc().toIso8601String();
+bool validOpeningDate(String value){
+  if(!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(value))return false;
+  final date=DateTime.tryParse(value);
+  return date!=null&&date.year>0&&date.toIso8601String().substring(0,10)==value;
+}
 String uid() => '${DateTime.now().microsecondsSinceEpoch}-${math.Random.secure().nextInt(0x7fffffff)}';
 Future<void> launchAllcheck(AppRole role, {
   FrontendBackend? backend,
@@ -46,9 +54,9 @@ Future<void> launchAllcheck(AppRole role, {
 }) async {
   WidgetsFlutterBinding.ensureInitialized();
   const baseUrl=String.fromEnvironment('API_BASE_URL');
-  // main currently contains reception APIs only. Keep the driver's existing
-  // SDK-only sign-in until its service authentication/driver API is merged.
-  backend??=baseUrl.isEmpty||role==AppRole.driver?null:SpringFrontendBackend(baseUrl);
+  // Driver uses the merged onboarding contract. Admin uses the reception APIs;
+  // its service session is supplied by the admin authentication adapter.
+  backend??=baseUrl.isEmpty?null:role==AppRole.driver?DriverOnboardingBackend(baseUrl):SpringFrontendBackend(baseUrl);
   push??=pushEnabled?FirebaseAppPush():null;
   if (role == AppRole.driver) KakaoDriverAuth.initialize();
   if(backend!=null){runApp(AllcheckApp(role:role,store:AppStore(role),backend:backend,push:push,driverAuth:driverAuth,onKakaoAuthenticated:onKakaoAuthenticated));return;}

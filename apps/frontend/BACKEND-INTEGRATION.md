@@ -131,7 +131,7 @@ main `4bf2148`을 ACK-22 브랜치에 반영했다. 백엔드 상담 접수 구�
 
 추후 인증 어댑터가 발급받은 **올체크 서비스 토큰**을 `SpringFrontendBackend.setServiceSession`에 전달하고 이 인스턴스를 `launchAllcheck`에 주입하면 관리자앱은 접수 목록으로 진입한다. 카카오 SDK 공급자 토큰을 대신 넣으면 안 된다. 테스트에서는 HTTP mock과 서비스 세션 주입으로 이 화면 연결을 확인한다.
 
-기사앱은 `API_BASE_URL`만으로 접수 전용 어댑터를 활성화하지 않으며 기존 SDK 로그인 흐름을 유지한다. 기사 도메인이 main에 반영되면 실제 Controller·DTO로 연결해야 한다. 기업체 결정 대기 중인 가입 필수·선택 항목은 변경하지 않았다. 기존 `HttpFrontendBackend`는 과거 API 초안용이며 기본 연결에는 사용하지 않는다.
+기사앱은 접수 전용 어댑터(`SpringFrontendBackend`)를 사용하지 않는다. `API_BASE_URL`이 지정되면 main에 반영된 기사 인증·가입 계약(`DriverOnboardingBackend`)으로 연결하고, 미지정 시 기존 SDK 로그인 흐름을 유지한다. 의뢰·배차 등 나머지 기사 도메인은 반영되는 순서로 연결해야 한다. 기업체 결정 대기 중인 가입 필수·선택 항목은 변경하지 않았다. 기존 `HttpFrontendBackend`는 과거 API 초안용이며 기본 연결에는 사용하지 않는다.
 
 ## 실행과 검수
 

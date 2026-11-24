@@ -338,10 +338,22 @@ for mime in ["audio/wav", "audio/x-wav", "audio/wave", "audio/vnd.wave"]:
 case(backend, "RecordingUploadRequest", dict(upload, objectKey="attacker-selected-key"), False)
 case(backend, "RecordingUploadRequest", dict(upload, file="binary"), False)
 case(backend, "RecordingUploadRequest", dict(upload, sizeBytes=-1), False)
-case(backend, "WorkPhotoUploadRequest", dict(
-    phase="DURING", **{key: value for key, value in upload.items() if key != "expectedVersion"}))
-case(backend, "WorkPhotoUploadRequest", dict(
-    phase="UNKNOWN", **{key: value for key, value in upload.items() if key != "expectedVersion"}), False)
+photo_upload = dict(originalFilename="before.jpg", contentType="image/jpeg",
+                    sizeBytes=1048576, checksum=checksum)
+for phase in ["BEFORE", "AFTER"]:
+    case(backend, "WorkPhotoUploadRequest", dict(photo_upload, phase=phase))
+for phase in ["DURING", "UNKNOWN"]:
+    case(backend, "WorkPhotoUploadRequest", dict(photo_upload, phase=phase), False)
+photo_uploaded = backend["paths"][photo_base + "/{photoFileId}/completion"]["post"]["responses"]["200"]["content"]["application/json"]["example"]
+for name, value in [("WorkPhotoUploadRequest", dict(photo_upload, phase="BEFORE")),
+                    ("WorkPhotoUploaded", photo_uploaded)]:
+    for mime in ["image/jpeg", "image/png"]:
+        case(backend, name, dict(value, contentType=mime))
+    for mime in ["image/heic", "image/heif", "image/gif", "image/webp", "audio/wav", "image/jpg"]:
+        case(backend, name, dict(value, contentType=mime), False)
+    for size in [0, 1, 9999999, 10000000, 10000001]:
+        case(backend, name, dict(value, sizeBytes=size), 1 <= size <= 10000000,
+             name + " size " + str(size))
 grant = backend["paths"][recording_base + "/upload-requests"]["post"]["responses"]["201"]["content"]["application/json"]["example"]
 case(backend, "RecordingUploadGrant", grant)
 for header in ["Content-Type", "Content-Length", "If-None-Match", "x-amz-checksum-sha256"]:
@@ -407,21 +419,65 @@ case(backend, "DriverWork", driver_work)
 case(backend, "DriverWork", dict(driver_work, contactPhone=None))
 
 report = {"workDescription": "배관 세척", "diagnosis": "이물질", "totalCost": 100000,
-          "beforePhotoIds": ["before_01"], "afterPhotoIds": ["after_01"]}
+          "beforePhotoIds": ["before_01", "before_02", "before_03"],
+          "afterPhotoIds": ["after_01", "after_02", "after_03"]}
 for name in ["ReportData", "SubmitReport"]:
     value = dict(report, expectedVersion=5) if name == "SubmitReport" else report
     case(backend, name, value)
-    case(backend, name, dict(value, duringPhotoIds=[]))
-    case(backend, name, dict(value, duringPhotoIds=["during_01"]))
-    case(backend, name, dict(value, duringPhotoIds=["during_01", "during_01"]), False)
-    case(backend, name, dict(value, duringPhotoIds=None), False)
-    case(backend, name, dict(value, beforePhotoIds=[]), False)
-    case(backend, name, dict(value, afterPhotoIds=[]), False)
+    for during_photos in [[], ["during_01"], None]:
+        case(backend, name, dict(value, duringPhotoIds=during_photos), False)
+    for field in ["beforePhotoIds", "afterPhotoIds"]:
+        for count in [0, 1, 2, 3, 4, 5, 6]:
+            photos = [field + "_" + str(index) for index in range(count)]
+            case(backend, name, dict(value, **{field: photos}), 3 <= count <= 5,
+                 name + " " + field + " count " + str(count))
+        case(backend, name, dict(value, **{field: ["duplicate", "duplicate", "unique"]}), False)
+
+revision_input = {"expectedVersion": 1, "reason": "현장 정산 내역 정정", "changes": {"totalCost": 105000}}
+case(backend, "CreateRevision", revision_input)
+missing_revision_reason = dict(revision_input)
+del missing_revision_reason["reason"]
+case(backend, "CreateRevision", missing_revision_reason, False)
+case(backend, "CreateRevision", dict(revision_input, reason=" \t\n"), False)
+case(backend, "CreateRevision", dict(revision_input, changes={"beforePhotoIds": ["replacement"]}), False)
+
+cancellation_input = {"expectedVersion": 1, "reasonCode": "OTHER", "reasonDetail": "현장 상황으로 작업을 진행할 수 없습니다."}
+for cancellation_code in ["SCHEDULE_CONFLICT", "EQUIPMENT_UNAVAILABLE", "TRAVEL_ISSUE", "CUSTOMER_UNREACHABLE", "OTHER"]:
+    cancellation_case = dict(cancellation_input, reasonCode=cancellation_code)
+    case(backend, "CreateCancellation", cancellation_case)
+    del cancellation_case["reasonDetail"]
+    case(backend, "CreateCancellation", cancellation_case, False, "cancellation detail required for " + cancellation_code)
+for cancellation_detail in ["가", "가" * 1000, "🚰" * 1000]:
+    case(backend, "CreateCancellation", dict(cancellation_input, reasonDetail=cancellation_detail))
+for cancellation_detail in [None, "", " \t\n", "가" * 1001, "🚰" * 1001]:
+    case(backend, "CreateCancellation", dict(cancellation_input, reasonDetail=cancellation_detail), False)
+missing_cancellation_reason = dict(cancellation_input)
+del missing_cancellation_reason["reasonCode"]
+case(backend, "CreateCancellation", missing_cancellation_reason, False)
+case(backend, "CreateCancellation", dict(cancellation_input, reasonCode="UNKNOWN"), False)
+
+failed_search = deepcopy(backend["paths"]["/service-requests/{requestId}"]["get"]["responses"]["200"]["content"]["application/json"]["examples"]["noCandidates"]["value"])
+failed_search["currentRound"]["status"] = "SEARCH_FAILED"
+failed_search["followUpReason"] = "SEARCH_FAILED"
+case(backend, "ServiceRequestDetail", failed_search)
+case(backend, "DispatchRoundList", {
+    "requestId": failed_search["requestId"], "needsAdminAction": True,
+    "rounds": [failed_search["currentRound"]],
+})
+case(backend, "DispatchHistory", {
+    "requestId": failed_search["requestId"], "currentWork": None, "followUpDecisions": [],
+    "rounds": [{
+        "dispatchRoundId": failed_search["currentRound"]["dispatchRoundId"],
+        "sequence": 1, "status": "SEARCH_FAILED", "works": [], "events": [],
+    }],
+})
+case(backend, "RoundStatus", "SEARCH_FAILED")
+case(backend, "RoundStatus", "FAILED", False)
 
 device = backend["paths"]["/push-devices/{installationId}"]
 record("device upsert and delete", set(device) == {"put", "delete"})
 for operation in device.values():
-    record("device administrator authorization", operation["x-roles"] == ["ADMIN"])
+    record("device administrator and driver authorization", operation["x-roles"] == ["ADMIN", "DRIVER"])
     record("device setters no idempotency key", not any(
         parameter.get("$ref", "").endswith("/IdempotencyKey") for parameter in operation.get("parameters", [])))
 case(backend, "PushDeviceRegistration", {"platform": "ANDROID", "pushToken": "example-token"})

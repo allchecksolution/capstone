@@ -1,5 +1,6 @@
 package com.allcheck.global.exception
 
+import com.allcheck.global.ratelimit.RequestLimitExceededException
 import jakarta.validation.ConstraintViolationException
 import jakarta.validation.Valid
 import jakarta.validation.constraints.Min
@@ -64,6 +65,25 @@ class GlobalExceptionHandlerTest {
     private lateinit var objectMapper: ObjectMapper
 
     @Test
+    fun `요청 제한 예외는 전용 헤더와 기존 공통 오류 본문을 반환한다`() {
+        // given
+        val request = get("/api/v1/exception-tests/rate-limit")
+
+        // when
+        val result = mockMvc.perform(request)
+
+        // then
+        val response = result.andExpect(status().isTooManyRequests)
+            .andExpect(header().string("Retry-After", "23"))
+            .andExpect(header().string("Cache-Control", "no-store"))
+            .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+            .andExpect(jsonPath("$.code").value("TOO_MANY_REQUESTS"))
+            .andReturn().response
+        assertThat(objectMapper.readTree(response.contentAsString).properties().map { it.key })
+            .containsExactlyInAnyOrder("code", "message")
+    }
+
+    @Test
     fun `비즈니스 예외는 에러 코드의 상태와 응답을 반환하고 원인 정보를 노출하지 않는다`(output: CapturedOutput) {
         // given
         val request = get("/api/v1/exception-tests/business")
@@ -74,6 +94,7 @@ class GlobalExceptionHandlerTest {
         // then
         val response = result
             .andExpect(status().isConflict)
+            .andExpect(header().doesNotExist("Retry-After"))
             .andExpect(content().contentTypeCompatibleWith("application/json"))
             .andExpect(jsonPath("$.code").value("TEST_BUSINESS_ERROR"))
             .andExpect(jsonPath("$.message").value("테스트 비즈니스 오류입니다."))
@@ -523,6 +544,9 @@ class GlobalExceptionHandlerTest {
 
     @RestController
     class TestController {
+        @GetMapping("/api/v1/exception-tests/rate-limit")
+        fun rateLimit(): ErrorResponse = throw RequestLimitExceededException(23)
+
         @GetMapping("/api/v1/exception-tests/business")
         fun business(): ErrorResponse = throw BusinessException(
             TestErrorCode.TEST_BUSINESS_ERROR,
