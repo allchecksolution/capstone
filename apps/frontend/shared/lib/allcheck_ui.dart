@@ -21,6 +21,7 @@ part 'src/store.dart';
 part 'src/domain.dart';
 part 'src/shell.dart';
 part 'src/admin.dart';
+part 'src/admin_accounts.dart';
 part 'src/driver.dart';
 part 'src/files.dart';
 part 'src/integration.dart';
@@ -51,7 +52,7 @@ Future<void> launchAllcheck(AppRole role, {
 }) async {
   WidgetsFlutterBinding.ensureInitialized();
   const baseUrl=String.fromEnvironment('API_BASE_URL');
-  backend??=baseUrl.isEmpty?null:role==AppRole.driver?DriverOnboardingBackend(baseUrl):HttpFrontendBackend(baseUrl);
+  backend??=baseUrl.isEmpty?null:role==AppRole.driver?DriverOnboardingBackend(baseUrl):AdminRestBackend(baseUrl);
   push??=pushEnabled?FirebaseAppPush():null;
   if (role == AppRole.driver) KakaoDriverAuth.initialize();
   if(backend!=null){runApp(AllcheckApp(role:role,store:AppStore(role),backend:backend,push:push,driverAuth:driverAuth,onKakaoAuthenticated:onKakaoAuthenticated));return;}

@@ -8,7 +8,7 @@ import org.springframework.boot.builder.SpringApplicationBuilder
 
 /** 애플리케이션 진입점에서 호출하는 운영자 전용 명령. HTTP로 노출하지 않는다. */
 object AdminProvisioningCommand {
-    fun run(args: Array<String>): Int = AdminProvisioningCli(provision = { loginId, password, role ->
+    fun run(args: Array<String>, command: String = "provision-admin"): Int = AdminProvisioningCli(command = command, provision = { loginId, password, role ->
         SpringApplicationBuilder(AdminProvisioningConfig::class.java)
             .web(WebApplicationType.NONE)
             .profiles("admin-provisioning")
@@ -19,7 +19,12 @@ object AdminProvisioningCommand {
                 "--logging.level.root=OFF",
                 "--logging.level.org.hibernate.orm.jdbc.bind=OFF",
             ).use { context ->
-                context.getBean(AdminAccountProvisioningService::class.java).provision(loginId, password, role)
+                val service = context.getBean(AdminAccountProvisioningService::class.java)
+                when (command) {
+                    "recover-bootstrap-admin" -> service.recover(loginId, password)
+                    "adopt-bootstrap-admin" -> service.adopt(loginId, password)
+                    else -> service.provision(loginId, password, role)
+                }
             }
     }).run(args)
 }

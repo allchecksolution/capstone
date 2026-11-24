@@ -1,8 +1,10 @@
 package com.allcheck.identity.domain.entity.account
 
+import com.allcheck.global.exception.BusinessException
 import com.allcheck.identity.UserType
 import com.allcheck.identity.domain.vo.account.AdminCredential
 import com.allcheck.identity.domain.vo.account.SocialLogin
+import com.allcheck.identity.exception.IdentityErrorCode
 import jakarta.persistence.Column
 import jakarta.persistence.Embedded
 import jakarta.persistence.Entity
@@ -30,11 +32,28 @@ class Account private constructor(
     val userType: UserType,
     @Embedded
     val socialLogin: SocialLogin?,
-    @Embedded
-    val adminCredential: AdminCredential?,
+    adminCredential: AdminCredential?,
     @Column(name = "created_at", nullable = false, updatable = false)
     val createdAt: Instant,
 ) {
+    @Embedded
+    var adminCredential: AdminCredential? = adminCredential
+        protected set
+
+    @Column(name = "is_bootstrap_admin", nullable = false)
+    var isBootstrapAdmin: Boolean = false
+        protected set
+
+    fun designateBootstrapAdministrator() {
+        require(userType == UserType.ADMIN && enabled)
+        isBootstrapAdmin = true
+    }
+
+    fun changeAdministratorCredential(loginId: String, passwordHash: String) {
+        val current = checkNotNull(adminCredential)
+        adminCredential = AdminCredential(loginId, passwordHash, current.role)
+    }
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "account_id", nullable = false, updatable = false)
@@ -55,6 +74,7 @@ class Account private constructor(
         protected set
 
     fun disable(now: Instant) {
+        if (isBootstrapAdmin) throw BusinessException(IdentityErrorCode.BOOTSTRAP_ADMIN_PROTECTED)
         require(!now.isBefore(createdAt)) { "Account deactivation cannot precede creation." }
         if (!enabled) return
         enabled = false

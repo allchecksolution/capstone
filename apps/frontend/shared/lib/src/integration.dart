@@ -72,12 +72,13 @@ extension BackendScreens on _WorkflowShellState {
     refresh(()=>busy=true);
     try{
       // ID/password only, per current product decision. No public signup.
-      final response=await api.call('auth/admin-login',{'username':value('username'),'password':value('password')});
+      final response=await api.call('auth/admin-login',{'username':controller('username').text,'password':controller('password').text});
       if(!mounted)return;
       await applyServerState(response);
       if(!mounted)return;
       adminName=text(response,'name',value('username'));
       controller('password').clear();signedIn=true;developmentSession=false;
+      adminAccountRequest=null;adminAccountPage=1;editingAdministrator=null;
       history.clear();go('home',replace:true);
     }catch(e){failure(e);}
     finally{if(mounted){refresh(()=>busy=false);if(signedIn)unawaited(afterAuthentication());}}
@@ -86,7 +87,7 @@ extension BackendScreens on _WorkflowShellState {
   Future<void> refreshState()async{
     if(!signedIn||developmentSession||page=='register'||widget.backend==null||busy||refreshingState)return;
     refreshingState=true;final version=stateVersion;
-    try{final response=await api.call('workflow/state',{'role':widget.role.name});if(mounted&&signedIn&&!busy&&version==stateVersion)await applyServerState(response);}
+    try{final response=await api.call('workflow/state',{'role':widget.role.name,if(admin&&page=='driver')'driverId':id});if(mounted&&signedIn&&!busy&&version==stateVersion)await applyServerState(response);}
     catch(e){failure(e);}
     finally{refreshingState=false;}
   }

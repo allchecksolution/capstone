@@ -38,7 +38,7 @@ class SessionIssuanceService(
             refreshToken = refreshToken,
             expiresIn = accessTokens.lifetimeSeconds,
             refreshExpiresIn = properties.expiration.seconds,
-            user = AuthUserResponse(checkNotNull(account.id), account.userType, account.adminCredential?.role),
+            user = AuthUserResponse(checkNotNull(account.id), account.userType, account.adminCredential?.role, account.isBootstrapAdmin.takeIf { account.adminCredential != null }),
         )
     }
 }

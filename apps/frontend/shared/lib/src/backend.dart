@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 part 'driver_backend.dart';
+part 'admin_backend.dart';
 
 typedef ApiData = Map<String, dynamic>;
 
@@ -73,6 +74,12 @@ class HttpFrontendBackend implements FrontendBackend {
         String? code;
         try{final error=jsonDecode(utf8.decode(response.bodyBytes));if(error is Map&&error['code'] is String)code=error['code'] as String;}catch(_){}
         final businessMessage=switch(code){
+          'INVALID_CREDENTIALS'=>'아이디 또는 비밀번호를 확인해 주세요.',
+          'ADMIN_LOGIN_ID_ALREADY_EXISTS'=>'이미 사용 중인 관리자 아이디입니다.',
+          'BOOTSTRAP_ADMIN_REQUIRED'=>'최초 관리자만 계정을 관리할 수 있습니다.',
+          'BOOTSTRAP_ADMIN_PROTECTED'=>'최초 관리자 계정은 삭제하거나 관리 대상으로 변경할 수 없습니다.',
+          'ADMIN_ACCOUNT_VERSION_CONFLICT'=>'다른 요청으로 계정이 변경되었습니다. 새로고침해 주세요.',
+          'ACCOUNT_DISABLED'=>'비활성화된 계정입니다. 최초 관리자에게 문의해 주세요.',
           'BUSINESS_INFO_INVALID'=>'사업자등록번호·개업일자·대표자명을 확인해 주세요. 계속사업자만 신청할 수 있습니다.',
           'BUSINESS_VERIFICATION_UNAVAILABLE'=>'사업자 확인 서비스를 이용할 수 없습니다. 잠시 후 다시 시도해 주세요.',
           _=>null,
