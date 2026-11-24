@@ -4,7 +4,6 @@ import com.allcheck.global.exception.BusinessException
 import com.allcheck.operations.FollowUpChoice
 import com.allcheck.operations.FollowUpTarget
 import com.allcheck.operations.RequestIntake
-import com.allcheck.operations.RequestStatus
 import com.allcheck.operations.SiteCoordinates
 import com.allcheck.operations.exception.OperationsErrorCode
 import com.allcheck.operations.request.DecisionSnapshot
@@ -14,7 +13,6 @@ import com.allcheck.operations.request.domain.entity.FollowUpDecision
 import com.allcheck.operations.request.domain.entity.ServiceRequest
 import com.allcheck.operations.request.infrastructure.repository.FollowUpDecisionRepository
 import com.allcheck.operations.request.infrastructure.repository.ServiceRequestRepository
-import jakarta.persistence.EntityManager
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
@@ -22,17 +20,13 @@ import java.time.Instant
 
 @Service
 @Transactional(readOnly = true)
-class RequestService(private val requests: ServiceRequestRepository, private val decisions: FollowUpDecisionRepository, private val em: EntityManager) : RequestOperations {
+class RequestService(private val requests: ServiceRequestRepository, private val decisions: FollowUpDecisionRepository) : RequestOperations {
     @Transactional(propagation = Propagation.MANDATORY)
     override fun create(receptionId: Long, adminId: Long, intake: RequestIntake, site: SiteCoordinates, now: Instant) = requests.saveAndFlush(ServiceRequest(receptionId, adminId, intake, site, now)).snapshot()
 
     @Transactional(propagation = Propagation.MANDATORY)
     override fun lock(requestId: Long) = (requests.lock(requestId) ?: missing()).snapshot()
     override fun get(requestId: Long) = entity(requestId).snapshot()
-    override fun list(status: RequestStatus?, page: Int, size: Int): List<RequestSnapshot> {
-        val query = em.createQuery("select r from ServiceRequest r where (:status is null or r.status=:status) order by r.createdAt desc, r.requestId desc", ServiceRequest::class.java)
-        return query.setParameter("status", status).setFirstResult((page - 1) * size).setMaxResults(size).resultList.map { it.snapshot() }
-    }
 
     @Transactional(propagation = Propagation.MANDATORY)
     override fun startRound(requestId: Long, roundId: Long, now: Instant) = entity(requestId).startRound(roundId, now)

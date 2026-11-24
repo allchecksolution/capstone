@@ -32,6 +32,12 @@ internal object AdministrativeArea {
         return selected.isNotEmpty() && site.take(selected.size) == selected
     }
 
+    fun regionPrefix(value: String): Pair<Set<String>, List<String>> {
+        val normalized = parts(value)
+        val first = normalized.first()
+        return (aliases.filterValues { it == first }.keys + first) to normalized.drop(1)
+    }
+
     private fun parts(value: String): List<String> {
         val trimmed = value.trim()
         if (trimmed.isEmpty()) return emptyList()

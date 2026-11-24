@@ -7,6 +7,7 @@ import com.allcheck.identity.UserType
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
+import org.springframework.http.HttpMethod
 import org.springframework.security.access.AccessDeniedException
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher
@@ -20,7 +21,8 @@ class DriverBusinessAccessFilter(
     private val driverRoutes = listOf("availability", "location", "dispatch-offers", "works", "profile", "chat")
         .map { PathPatternRequestMatcher.withDefaults().matcher("/api/v1/drivers/me/$it/**") }
     private val sharedRoutes = listOf("works", "dispatch-offers", "service-requests", "reports")
-        .map { PathPatternRequestMatcher.withDefaults().matcher("/api/v1/$it/**") }
+        .map { PathPatternRequestMatcher.withDefaults().matcher("/api/v1/$it/**") } +
+        PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/api/v1/chat/ws")
 
     override fun shouldNotFilter(request: HttpServletRequest): Boolean = (driverRoutes + sharedRoutes).none { it.matches(request) }
 

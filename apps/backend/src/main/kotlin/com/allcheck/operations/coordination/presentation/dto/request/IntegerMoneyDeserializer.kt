@@ -1,4 +1,4 @@
-package com.allcheck.operations.coordination.presentation.dto
+package com.allcheck.operations.coordination.presentation.dto.request
 
 import com.allcheck.global.exception.BusinessException
 import com.allcheck.global.exception.GlobalErrorCode
