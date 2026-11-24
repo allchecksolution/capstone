@@ -68,6 +68,9 @@ class SecurityConfig(
                 authorize("/api/v1/receptions/**", hasRole("ADMIN"))
                 authorize("/api/v1/service-requests", hasRole("ADMIN"))
                 authorize("/api/v1/service-requests/**", hasRole("ADMIN"))
+                authorize("/api/v1/work-statistics", hasRole("ADMIN"))
+                authorize("/api/v1/chat-rooms", hasRole("ADMIN"))
+                authorize("/api/v1/chat-rooms/**", hasRole("ADMIN"))
                 authorize("/api/v1/dispatch-cancellations", hasRole("ADMIN"))
                 authorize("/api/v1/dispatch-cancellations/**", hasRole("ADMIN"))
                 authorize("/api/v1/drivers/me/works", hasRole("DRIVER"))
@@ -81,7 +84,13 @@ class SecurityConfig(
                 accessDeniedHandler = customAccessDeniedHandler
             }
             addFilterBefore<UsernamePasswordAuthenticationFilter>(
-                JwtAuthenticationFilter(jwtTokenProvider, identityOperations, customAuthenticationEntryPoint, credentialRequests),
+                JwtAuthenticationFilter(
+                    jwtTokenProvider,
+                    identityOperations,
+                    customAuthenticationEntryPoint,
+                    credentialRequests,
+                    PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/api/v1/chat/ws"),
+                ),
             )
             addFilterAfter<JwtAuthenticationFilter>(DriverBusinessAccessFilter(driverOperations, customAccessDeniedHandler))
         }

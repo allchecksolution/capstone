@@ -13,7 +13,6 @@ interface RequestOperations {
     /** 명령 트랜잭션은 항상 의뢰 → 기사 순서로 잠근다. 외부 호출 중에는 잠그지 않는다. */
     fun lock(requestId: Long): RequestSnapshot
     fun get(requestId: Long): RequestSnapshot
-    fun list(status: RequestStatus?, page: Int, size: Int): List<RequestSnapshot>
     fun startRound(requestId: Long, roundId: Long, now: Instant)
     fun accept(requestId: Long, roundId: Long, workId: Long, now: Instant)
     fun followUp(requestId: Long, target: FollowUpTarget, reason: String, now: Instant)

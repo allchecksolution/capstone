@@ -2,6 +2,8 @@
 
 관리자 인증은 MFA 없이 사전 발급 ID/PW만 사용합니다. 인증·가입·접근 권한의 업무 정책은 [Business Specification](../backend/docs/business-specification.md)을 기준으로 합니다. 아래 operation은 현재 프론트 어댑터의 동작이며, 구현된 HTTP 경로·입출력은 백엔드의 생성 OpenAPI와 API 인터페이스·DTO에서 확인합니다. [전체 OpenAPI 초안](../../docs/api/openapi.yaml)은 초기 설계 참고 자료이며 업무 명세를 대체하지 않습니다.
 
+> 관리자 앱의 상담 접수 연결과 제한 사항은 [BACKEND-INTEGRATION.md](BACKEND-INTEGRATION.md)를 따릅니다. 서버가 구현하지 않은 operation URL과 전체 state 응답은 구현되었다고 가정하지 않습니다.
+
 ## 서버 어댑터
 
 기사 앱의 `API_BASE_URL`이 지정되면 `DriverOnboardingBackend`를 사용합니다. base URL은 `/api/v1`까지 포함합니다. 카카오 로그인·갱신·로그아웃, 가입 상태 조회, 사업자 확인, 가입/재신청은 현재 백엔드 REST 계약으로 연결했습니다. 아래 operation 표는 나머지 기존 프론트 계약의 참조이며, 모든 업무 API가 연결됐다는 의미는 아닙니다. 관리자 앱은 기존 `HttpFrontendBackend`를 유지합니다.

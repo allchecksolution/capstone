@@ -196,3 +196,38 @@ Runtime activation requires the following, in addition to the existing JWT and s
 Keys and credentials belong in runtime secret configuration. Live SGIS/S3/FCM verification, retention/cleanup,
 and cross-application deployment remain integration work. Automated coverage uses isolated PostgreSQL/PostGIS
 schemas, offline S3 signing, and loopback SGIS/FCM.
+
+## Chat Integration
+
+REST owns message creation and history under `/api/v1/chat-rooms/{driverId}` and
+`/api/v1/drivers/me/chat`. Retry an uncertain send with the same body and `Idempotency-Key`.
+`GET .../messages` returns the newest messages first. Use `before` for older messages or `after`
+for new messages in ascending order. Both take a message ID from the same conversation. Follow
+`nextCursor` in the requested direction until it is null. Update read state via `PUT .../read`.
+
+Connect to `/api/v1/chat/ws` over WSS in production. The upgrade requires an authenticated
+administrator or active driver. Each room subscription is authorized separately. Native clients can present the bearer token
+in the Authorization header. Browser clients offer WebSocket subprotocols `allcheck-chat.v1`
+and `bearer.<access-token>`. The server negotiates `allcheck-chat.v1` and treats the token
+offer as a credential. Use the same origin by default. Configure comma-separated explicit browser
+origins through the `chat.websocket.allowed-origins` property when needed.
+
+| Client frame | Server response |
+| --- | --- |
+| `{"type":"SUBSCRIBE","driverId":123}` | `SUBSCRIBED` with the driver ID after current subscription access is confirmed |
+| `{"type":"UNSUBSCRIBE"}` | `UNSUBSCRIBED` |
+| `{"type":"PING"}` | `PONG` |
+
+Send a ping within each 60-second inactivity window and unsubscribe when leaving the conversation.
+The server checks idle connections every 15 seconds and clears an expired connection's subscription.
+An invalid or unauthorized frame produces `ERROR` with a code. The same connection can change
+rooms by subscribing again. An expired token or revoked session closes the connection with code
+1008. Reconnect with a current access token, subscribe, and fetch history after the last known message.
+For a first visit, subscribe and fetch the newest page. Deduplicate using `messageId` while merging
+history with `MESSAGE_CREATED` events. Those events carry `driverId`, `messageId`, and `sender`.
+On an event, fetch authorized history after the last known message to resolve the content.
+
+Chat FCM uses the existing device registration and FCM connection. The data fields are
+`notificationId`, `type=chat_received`, `resourceId` (driver ID), `messageId`, and `role` (`admin`
+or `driver`). The notification body is generic. Resolve the message through the same REST history.
+Business access, delivery scope, and retention follow [BR-10](business-specification.md#br-10).

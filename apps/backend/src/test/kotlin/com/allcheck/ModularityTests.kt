@@ -9,19 +9,17 @@ import org.springframework.modulith.core.ApplicationModules
 class ModularityTests {
 
     @Test
-    fun `인증 기사 애플리케이션과 응답 DTO는 요청 DTO에 의존하지 않는다`() {
+    fun `애플리케이션과 응답 DTO는 요청 DTO에 의존하지 않는다`() {
         // given
         val classes = ClassFileImporter().withImportOption(ImportOption.DoNotIncludeTests())
-            .importPackages("com.allcheck.identity", "com.allcheck.driver")
+            .importPackages("com.allcheck")
 
         // when & then
         noClasses().that().resideInAnyPackage(
-            "com.allcheck.identity.application..",
-            "com.allcheck.driver.application..",
-            "com.allcheck.driver.presentation.dto.response..",
-        ).should().dependOnClassesThat().resideInAnyPackage(
-            "com.allcheck.identity.presentation.dto.request..",
-            "com.allcheck.driver.presentation.dto.request..",
+            "com.allcheck..application..",
+            "com.allcheck..presentation.dto.response..",
+        ).should().dependOnClassesThat().resideInAPackage(
+            "com.allcheck..presentation.dto.request..",
         ).check(classes)
     }
 
@@ -29,6 +27,16 @@ class ModularityTests {
     fun verifyModuleStructure() {
         ApplicationModules.of(BackendApplication::class.java)
             .verify()
+    }
+
+    @Test
+    fun `채팅 도메인과 인프라는 애플리케이션 계층에 의존하지 않는다`() {
+        val classes = ClassFileImporter().withImportOption(ImportOption.DoNotIncludeTests())
+            .importPackages("com.allcheck.chat")
+
+        noClasses().that().resideInAnyPackage("com.allcheck.chat.domain..", "com.allcheck.chat.infrastructure..")
+            .should().dependOnClassesThat().resideInAPackage("com.allcheck.chat.application..")
+            .check(classes)
     }
 
     @Test

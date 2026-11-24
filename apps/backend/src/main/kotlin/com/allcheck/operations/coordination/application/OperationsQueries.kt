@@ -8,21 +8,21 @@ import com.allcheck.operations.OperationsActor
 import com.allcheck.operations.RequestStatus
 import com.allcheck.operations.WorkStatus
 import com.allcheck.operations.WorkType
-import com.allcheck.operations.coordination.presentation.dto.CancellationResponse
-import com.allcheck.operations.coordination.presentation.dto.DecisionResponse
-import com.allcheck.operations.coordination.presentation.dto.DispatchHistoryResponse
-import com.allcheck.operations.coordination.presentation.dto.DispatchOfferResponse
-import com.allcheck.operations.coordination.presentation.dto.FollowUpTargetResponse
-import com.allcheck.operations.coordination.presentation.dto.MonthlyStatisticsResponse
-import com.allcheck.operations.coordination.presentation.dto.OfferHistoryResponse
-import com.allcheck.operations.coordination.presentation.dto.OperationsPage
-import com.allcheck.operations.coordination.presentation.dto.ReportRevisionResponse
-import com.allcheck.operations.coordination.presentation.dto.RoundHistoryResponse
-import com.allcheck.operations.coordination.presentation.dto.ServiceRequestResponse
-import com.allcheck.operations.coordination.presentation.dto.WorkEventResponse
-import com.allcheck.operations.coordination.presentation.dto.WorkReportResponse
-import com.allcheck.operations.coordination.presentation.dto.WorkResponse
-import com.allcheck.operations.coordination.presentation.dto.WorkTypeDistribution
+import com.allcheck.operations.coordination.presentation.dto.response.CancellationResponse
+import com.allcheck.operations.coordination.presentation.dto.response.DecisionResponse
+import com.allcheck.operations.coordination.presentation.dto.response.DispatchHistoryResponse
+import com.allcheck.operations.coordination.presentation.dto.response.DispatchOfferResponse
+import com.allcheck.operations.coordination.presentation.dto.response.FollowUpTargetResponse
+import com.allcheck.operations.coordination.presentation.dto.response.MonthlyStatisticsResponse
+import com.allcheck.operations.coordination.presentation.dto.response.OfferHistoryResponse
+import com.allcheck.operations.coordination.presentation.dto.response.OperationsPage
+import com.allcheck.operations.coordination.presentation.dto.response.ReportRevisionResponse
+import com.allcheck.operations.coordination.presentation.dto.response.RoundHistoryResponse
+import com.allcheck.operations.coordination.presentation.dto.response.ServiceRequestResponse
+import com.allcheck.operations.coordination.presentation.dto.response.WorkEventResponse
+import com.allcheck.operations.coordination.presentation.dto.response.WorkReportResponse
+import com.allcheck.operations.coordination.presentation.dto.response.WorkResponse
+import com.allcheck.operations.coordination.presentation.dto.response.WorkTypeDistribution
 import com.allcheck.operations.dispatch.DispatchOperations
 import com.allcheck.operations.dispatch.OfferSnapshot
 import com.allcheck.operations.exception.OperationsErrorCode
@@ -43,14 +43,6 @@ class OperationsQueries(private val requests: RequestOperations, private val dis
     fun request(actor: OperationsActor, requestId: Long): ServiceRequestResponse {
         own(actor.role == ActorRole.ADMIN)
         return requests.get(requestId).response()
-    }
-    fun requests(actor: OperationsActor, status: RequestStatus?, page: Int, size: Int): OperationsPage<ServiceRequestResponse> {
-        own(actor.role == ActorRole.ADMIN)
-        bounds(page, size)
-        // 해당 페이지 크기로 조회한 뒤 한 항목 존재 여부를 별도로 검사하여 페이지 경계를 유지한다.
-        val rows = requests.list(status, page, size)
-        val more = requests.list(status, page + 1, size).isNotEmpty()
-        return OperationsPage(rows.map { it.response() }, page, size, more)
     }
     fun offers(actor: OperationsActor, page: Int, size: Int): OperationsPage<DispatchOfferResponse> {
         own(actor.role == ActorRole.DRIVER)
