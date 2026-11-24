@@ -56,7 +56,7 @@ Independent simultaneous initialization commands are serialized in PostgreSQL an
 
 ## Existing databases
 
-V22 adds the designation without automatically choosing or altering an existing administrator.
+V24 adds the designation without automatically choosing or altering an existing administrator.
 To select an existing active administrator explicitly:
 
 ```powershell
