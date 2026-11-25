@@ -12,22 +12,29 @@ import 'package:geolocator/geolocator.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'src/auth.dart';
+import 'src/business_document.dart';
 import 'src/backend.dart';
 import 'src/reception_backend.dart';
+import 'src/recording_collection.dart';
 import 'src/push.dart';
 export 'src/backend.dart';
 export 'src/reception_backend.dart';
+export 'src/recording_collection.dart';
 export 'src/push.dart';
 export 'src/auth.dart';
+export 'src/business_document.dart';
 part 'src/store.dart';
 part 'src/domain.dart';
 part 'src/shell.dart';
 part 'src/admin.dart';
 part 'src/admin_accounts.dart';
 part 'src/driver.dart';
+part 'src/business_ocr.dart';
 part 'src/files.dart';
 part 'src/integration.dart';
 part 'src/receptions.dart';
+part 'src/recording_settings.dart';
+part 'src/connected_workflow.dart';
 part 'src/location.dart';
 
 enum AppRole { admin, driver }
@@ -55,7 +62,13 @@ Future<void> launchAllcheck(AppRole role, {
 }) async {
   WidgetsFlutterBinding.ensureInitialized();
   const baseUrl=String.fromEnvironment('API_BASE_URL');
-  backend??=baseUrl.isEmpty?null:role==AppRole.driver?DriverOnboardingBackend(baseUrl):AdminRestBackend(baseUrl);
+  if (backend == null && baseUrl.isNotEmpty) {
+    final url = baseUrl.replaceFirst(RegExp(r'/+$'), '');
+    final apiUrl = Uri.parse(url).path.isEmpty ? '$url/api/v1' : url;
+    backend = role == AppRole.driver
+        ? DriverOnboardingBackend(apiUrl)
+        : AdminRestBackend(apiUrl);
+  }
   push??=pushEnabled?FirebaseAppPush():null;
   if (role == AppRole.driver) KakaoDriverAuth.initialize();
   if(backend!=null){runApp(AllcheckApp(role:role,store:AppStore(role),backend:backend,push:push,driverAuth:driverAuth,onKakaoAuthenticated:onKakaoAuthenticated));return;}
@@ -67,7 +80,8 @@ Future<void> launchAllcheck(AppRole role, {
     onKakaoAuthenticated: onKakaoAuthenticated));
 }
 class AllcheckApp extends StatelessWidget {
-  const AllcheckApp({super.key, required this.role, required this.store, this.driverAuth, this.onKakaoAuthenticated, this.backend, this.push});
+  const AllcheckApp({super.key, required this.role, required this.store, this.driverAuth, this.onKakaoAuthenticated, this.backend, this.push, this.businessScanner});
+  final BusinessDocumentScanner? businessScanner;
   final AppRole role;
   final AppStore store;
   final FrontendBackend? backend;
@@ -82,12 +96,164 @@ class AllcheckApp extends StatelessWidget {
     locale: const Locale('ko'),
     supportedLocales: const [Locale('ko'), Locale('en')],
     localizationsDelegates: GlobalMaterialLocalizations.delegates,
-    theme: ThemeData(useMaterial3: true, colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xff55bbcc)),
+    builder: (context, child) {
+      final mediaQuery = MediaQuery.of(context);
+      return MediaQuery(
+        data: mediaQuery.copyWith(
+          textScaler: _AllcheckTextScaler(mediaQuery.textScaler),
+        ),
+        child: child!,
+      );
+    },
+    theme: ThemeData(useMaterial3: true, colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xff0099d6)),
+      fontFamily: 'NanumSquareRound',
+      package: 'allcheck_ui',
       scaffoldBackgroundColor: Colors.white,
-      textTheme: const TextTheme(bodyMedium: TextStyle(color: Color(0xff111d3d)), titleLarge: TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
+      textTheme: const TextTheme(
+        displayLarge: _headingTextStyle,
+        displayMedium: _headingTextStyle,
+        displaySmall: _headingTextStyle,
+        headlineLarge: _headingTextStyle,
+        headlineMedium: _headingTextStyle,
+        headlineSmall: _headingTextStyle,
+        titleLarge: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+        titleMedium: _headingTextStyle,
+        titleSmall: _bodyTextStyle,
+        bodyLarge: _bodyTextStyle,
+        bodyMedium: TextStyle(color: Color(0xff111d3d), fontWeight: FontWeight.w700),
+        bodySmall: _bodyTextStyle,
+        labelLarge: _bodyTextStyle,
+        labelMedium: _bodyTextStyle,
+        labelSmall: _bodyTextStyle,
+      ),
       appBarTheme: const AppBarTheme(backgroundColor: Colors.white, foregroundColor: Color(0xff111d3d), surfaceTintColor: Colors.transparent),
-      inputDecorationTheme: InputDecorationTheme(border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xffe6ecf2))), contentPadding: const EdgeInsets.all(14)),
-      filledButtonTheme: FilledButtonThemeData(style: FilledButton.styleFrom(minimumSize: const Size(0, 50), backgroundColor: const Color(0xff55bbcc), foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))))),
-    home: WorkflowShell(role: role, store: store, backend: backend, push: push, driverAuth: driverAuth, onKakaoAuthenticated: onKakaoAuthenticated),
+      inputDecorationTheme: const InputDecorationTheme(
+        border: _ShadowedInputBorder(
+          borderRadius: BorderRadius.all(Radius.circular(10)),
+          borderSide: BorderSide(color: Color(0xffe6ecf2)),
+        ),
+        contentPadding: EdgeInsets.all(14),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          backgroundColor: Colors.white,
+          shadowColor: _outlineShadowColor,
+        ).copyWith(
+          elevation: const WidgetStateProperty<double>.fromMap({
+            WidgetState.disabled: 0,
+            WidgetState.pressed: 0,
+            WidgetState.any: 2,
+          }),
+        ),
+      ),
+      chipTheme: const ChipThemeData(
+        elevation: 2,
+        pressElevation: 0,
+        shadowColor: _outlineShadowColor,
+        selectedShadowColor: _outlineShadowColor,
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          minimumSize: const Size(0, 50),
+          backgroundColor: const Color(0xff0099d6),
+          foregroundColor: Colors.white,
+          shadowColor: const Color(0x59111d3d),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ).copyWith(
+          elevation: WidgetStateProperty<double>.fromMap({
+            WidgetState.disabled: 0,
+            WidgetState.pressed: 1,
+            WidgetState.hovered: 5,
+            WidgetState.any: 3,
+          }),
+        ),
+      ),
+    ),
+    home: WorkflowShell(role: role, store: store, backend: backend, push: push, driverAuth: driverAuth, onKakaoAuthenticated: onKakaoAuthenticated, businessScanner: businessScanner),
   );
+}
+
+const _outlineShadowColor = Color(0x40111d3d);
+const _headingTextStyle = TextStyle(fontWeight: FontWeight.w800);
+const _bodyTextStyle = TextStyle(fontWeight: FontWeight.w700);
+
+class _ShadowedInputBorder extends OutlineInputBorder {
+  const _ShadowedInputBorder({
+    required super.borderRadius,
+    required super.borderSide,
+    super.gapPadding,
+  });
+
+  @override
+  _ShadowedInputBorder copyWith({
+    BorderSide? borderSide,
+    BorderRadius? borderRadius,
+    double? gapPadding,
+  }) => _ShadowedInputBorder(
+    borderSide: borderSide ?? this.borderSide,
+    borderRadius: borderRadius ?? this.borderRadius,
+    gapPadding: gapPadding ?? this.gapPadding,
+  );
+
+  @override
+  ShapeBorder? lerpFrom(ShapeBorder? a, double t) {
+    final border = super.lerpFrom(a, t);
+    return border is OutlineInputBorder
+        ? copyWith(
+            borderSide: border.borderSide,
+            borderRadius: border.borderRadius,
+            gapPadding: border.gapPadding,
+          )
+        : border;
+  }
+
+  @override
+  void paint(
+    Canvas canvas,
+    Rect rect, {
+    double? gapStart,
+    double gapExtent = 0,
+    double gapPercentage = 0,
+    TextDirection? textDirection,
+  }) {
+    if (borderSide.style != BorderStyle.none) {
+      final outline = getOuterPath(rect, textDirection: textDirection);
+      final outside = Path()
+        ..fillType = PathFillType.evenOdd
+        ..addRect(rect.inflate(12))
+        ..addPath(outline, Offset.zero);
+      canvas.save();
+      canvas.clipPath(outside);
+      canvas.drawShadow(outline, _outlineShadowColor, 2, false);
+      canvas.restore();
+    }
+    super.paint(
+      canvas,
+      rect,
+      gapStart: gapStart,
+      gapExtent: gapExtent,
+      gapPercentage: gapPercentage,
+      textDirection: textDirection,
+    );
+  }
+}
+
+class _AllcheckTextScaler extends TextScaler {
+  const _AllcheckTextScaler(this.systemScaler);
+
+  final TextScaler systemScaler;
+  static const double _sizeMultiplier = 1.15;
+
+  @override
+  double scale(double fontSize) => systemScaler.scale(fontSize) * _sizeMultiplier;
+
+  @override
+  double get textScaleFactor => scale(14) / 14;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _AllcheckTextScaler && other.systemScaler == systemScaler;
+
+  @override
+  int get hashCode => Object.hash(_AllcheckTextScaler, systemScaler);
 }

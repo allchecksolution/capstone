@@ -3,7 +3,7 @@ description: Shared native Flutter UI and local workflow models for ALLCHECK.
 version: 0.3.0
 publish_to: none
 environment:
-  sdk: '>=3.10.0 <4.0.0'
+  sdk: '>=3.11.0 <4.0.0'
   flutter: '>=3.50.0'
 dependencies:
   flutter:
@@ -17,6 +17,7 @@ dependencies:
   crypto: ^3.0.8
   shared_preferences: ^2.5.6
   file_selector: ^1.1.0
+  image_picker: ^1.2.4
   geolocator: ^14.1.2
   share_plus: ^13.3.1
   audioplayers: ^6.8.1
@@ -24,3 +25,18 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+
+flutter:
+  assets:
+    - assets/branding/admin_logo.png
+    - assets/branding/driver_logo.png
+    - assets/fonts/NanumSquareRound-OFL.txt
+  fonts:
+    - family: NanumSquareRound
+      fonts:
+        - asset: assets/fonts/NanumSquareRoundR.ttf
+          weight: 400
+        - asset: assets/fonts/NanumSquareRoundB.ttf
+          weight: 700
+        - asset: assets/fonts/NanumSquareRoundEB.ttf
+          weight: 800

@@ -100,10 +100,11 @@ extension BackendScreens on _WorkflowShellState {
 
   Future<void> refreshState()async{
     if(!signedIn||developmentSession||page=='register'||widget.backend==null||busy||refreshingState)return;
-    if (springReceptions) {
-      if (['receptions', 'reception'].contains(page)) await loadReceptions();
+    if (springReceptions && ['receptions', 'reception'].contains(page)) {
+      await loadReceptions();
       return;
     }
+    if (receptionOnly) return;
     refreshingState=true;final version=stateVersion;
     try{final response=await api.call('workflow/state',{'role':widget.role.name,if(admin&&page=='driver')'driverId':id});if(mounted&&signedIn&&!busy&&version==stateVersion)await applyServerState(response);}
     catch(e){failure(e);}
@@ -148,7 +149,7 @@ extension BackendScreens on _WorkflowShellState {
 
   Future<void> afterAuthentication()async{
     if(!mounted||!signedIn||developmentSession||sdkOnlySession||afterAuthRunning)return;
-    if (springReceptions) return;
+    if (receptionOnly) return;
     afterAuthRunning=true;try{
     await loadInbox();
     try{final token=await appPush?.token();if(token!=null)await registerDevice(token);}catch(_){if(mounted)refresh(()=>pushStatus='알림 연결을 다시 시도해 주세요.');}

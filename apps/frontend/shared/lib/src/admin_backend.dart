@@ -3,8 +3,32 @@ part of 'backend.dart';
 /// Administrator screens use the existing REST contracts, never local approvals.
 class AdminRestBackend implements FrontendBackend {
   AdminRestBackend(String baseUrl, {http.Client? client})
-    : _session = HttpFrontendBackend(baseUrl, client: client, restAuth: true);
+    : _session = HttpFrontendBackend(baseUrl, client: client, restAuth: true),
+      _origin = Uri.parse(baseUrl).origin;
   final HttpFrontendBackend _session;
+  final String _origin;
+  late final SpringFrontendBackend _receptions = SpringFrontendBackend(
+    _origin,
+    client: _session._client,
+    transport: (method, path, body, key) {
+      if (_user == null || _session._accessToken == null) {
+        throw const ServiceFailure(401, '서버 인증 연결이 필요합니다.');
+      }
+      return _session._request(
+        'receptions/request',
+        body ?? const {},
+        path: path.substring('/api/v1/'.length),
+        method: method,
+        headers: {if (key != null) 'Idempotency-Key': key},
+      );
+    },
+  );
+  String? get recordingOwnerKey {
+    final accountId = _user?['accountId'];
+    return _session._accessToken != null && accountId != null
+        ? '$_origin|$accountId'
+        : null;
+  }
   ApiData? _user;
   List<ApiData> _drivers = [];
   int _page = 1;
@@ -21,6 +45,7 @@ class AdminRestBackend implements FrontendBackend {
     _totalPages = 0;
     _detailId = null;
     _session.clearSession();
+    _receptions.clearSession();
   }
 
   void close() {
@@ -30,8 +55,29 @@ class AdminRestBackend implements FrontendBackend {
 
   @override
   Future<ApiData> call(String operation, [ApiData data = const {}]) async {
+    if (operation.startsWith('receptions/')) {
+      return _receptions.call(operation, data);
+    }
     final generation = _generation;
     switch (operation) {
+      case 'chat/rooms':
+        return _session._request(
+          operation, const {},
+          path: 'chat-rooms?page=${data['page'] as int? ?? 1}', method: 'GET',
+        );
+      case 'chat/messages':
+      case 'chat/send':
+        return _session._chat(operation, 'chat-rooms/${_id(data['threadId'])}', data);
+      case 'dashboard/requests':
+        return _session._request(
+          operation, const {},
+          path: 'service-requests?page=${data['page'] as int? ?? 1}', method: 'GET',
+        );
+      case 'dashboard/statistics':
+        final query = Uri(queryParameters: {
+          'from': data['from'].toString(), 'to': data['to'].toString(),
+        }).query;
+        return _session._request(operation, const {}, path: 'work-statistics?$query', method: 'GET');
       case 'auth/admin-login':
         final result = await _session._request(operation, {
           'loginId': data['username'],
