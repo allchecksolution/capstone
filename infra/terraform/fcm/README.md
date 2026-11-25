@@ -42,10 +42,22 @@ terraform -chdir=infra/terraform/fcm init
 terraform -chdir=infra/terraform/fcm fmt -check -recursive
 terraform -chdir=infra/terraform/fcm validate
 terraform -chdir=infra/terraform/fcm test
-terraform -chdir=infra/terraform/fcm plan -var-file=dev.tfvars -out=dev.tfplan
+terraform -chdir=infra/terraform/fcm plan '-var-file=dev.tfvars' '-out=dev.tfplan'
 # 검토 후 실제 계정·권한을 만드는 별도 단계:
 terraform -chdir=infra/terraform/fcm apply dev.tfplan
 ```
+
+PowerShell에서는 점이 포함된 `-var-file=...`와 `-out=...` 인수 전체를 위처럼 따옴표로 감싼다.
+특히 Windows PowerShell 5.1에서는 따옴표가 없으면 파일명이 여러 인수로 나뉠 수 있다.
+
+| 명령 | 의미 |
+|---|---|
+| `-chdir=infra/terraform/fcm` | 저장소 루트 대신 해당 폴더의 Terraform 설정을 사용한다. 변수·plan 파일의 상대 경로도 이 폴더 기준이다. |
+| `init` | Google provider 등 필요한 구성요소와 state 저장 구성을 초기화한다. |
+| `validate` | Terraform 구성의 문법과 참조·타입을 검증한다. 실제 발송 권한이나 기기 수신은 검증하지 않는다. |
+| `test` | 이 루트에서는 mock Google provider로 설정을 검사하며 실제 클라우드 자원을 만들지 않는다. |
+| `plan '-var-file=dev.tfvars' '-out=dev.tfplan'` | 로컬 변수 파일로 변경 계획을 계산하고 `dev.tfplan`에 저장한다. Google 조회가 필요할 수 있지만 계획 자체는 자원을 생성하거나 IAM 권한을 변경하지 않는다. |
+| `apply dev.tfplan` | 저장한 계획대로 API 활성화, 발송 서비스 계정 및 IAM 권한을 실제 적용한다. 저장된 계획을 적용할 때는 추가 승인 질문이 없으므로 먼저 plan을 검토한다. |
 
 이 루트는 로컬 state를 사용한다. state·plan·개인 변수는 Git에서 제외하며 공유 적용 전에 원격 state·잠금을 정한다.
 init 후 생성된 .terraform.lock.hcl은 검증하고 Git에 포함해 팀의 provider 버전을 고정한다.
@@ -57,8 +69,13 @@ init 후 생성된 .terraform.lock.hcl은 검증하고 Git에 포함해 팀의 p
 개인키 없이 그 서비스 계정으로 ADC를 준비할 수 있다.
 
 ```powershell
-gcloud auth application-default login --impersonate-service-account=<sender_service_account_email>
+$senderEmail = terraform -chdir=infra/terraform/fcm output -raw sender_service_account_email
+gcloud auth application-default login "--impersonate-service-account=$senderEmail"
 ```
+
+첫 줄은 생성한 발송 서비스 계정의 이메일을 Terraform state에서 읽어 PowerShell 변수에 저장한다.
+두 번째 줄은 해당 계정의 권한으로 토큰을 얻을 수 있도록 로컬 ADC를 준비한다.
+서비스 계정 개인키를 생성하거나 다운로드하는 명령이 아니다.
 
 이 명령은 PC의 로컬 ADC를 변경한다. 관리자 Terraform 인증과 백엔드 발송 인증의 용도가 다르다.
 다시 Terraform으로 IAM/API를 변경할 때는 관리자 ADC를 복구하거나 별도 인증 환경을 사용한다.

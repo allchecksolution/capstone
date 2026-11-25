@@ -1,5 +1,5 @@
-# Copy to a private file outside the repository, fill in the values, then dot-source
-# it in the PowerShell session that runs .\gradlew.bat bootRun.
+# Copy to local-cloud-env.ps1 beside this file (Git-ignored), or a private file
+# outside the repository, then dot-source it in the session that runs bootRun.
 # This file sets environment variables only; it does not log in or create resources.
 
 $env:SPRING_PROFILES_ACTIVE = 'local'
@@ -14,7 +14,7 @@ $env:S3_REQUEST_TIMEOUT = '10s' # Development example, not a production deadline
 
 # Enable only after preparing the Firebase project, sender permissions and ADC.
 $env:FCM_ENABLED = 'false'
-$env:FCM_PROJECT_ID = ''
+$env:FCM_PROJECT_ID = 'PASTE_FIREBASE_PROJECT_ID_HERE' # Same project_id as infra/terraform/fcm/dev.tfvars.
 $env:FCM_CONNECT_TIMEOUT = '3s'
 $env:FCM_REQUEST_TIMEOUT = '10s'
 # With a separately prepared service-account/credential configuration file:

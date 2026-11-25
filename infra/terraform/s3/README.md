@@ -47,7 +47,7 @@ terraform -chdir=infra/terraform/s3 init
 terraform -chdir=infra/terraform/s3 fmt -check -recursive
 terraform -chdir=infra/terraform/s3 validate
 terraform -chdir=infra/terraform/s3 test
-terraform -chdir=infra/terraform/s3 plan -var-file=dev.tfvars -out=dev.tfplan
+terraform -chdir=infra/terraform/s3 plan '-var-file=dev.tfvars' '-out=dev.tfplan'
 terraform -chdir=infra/terraform/s3 apply dev.tfplan
 ```
 

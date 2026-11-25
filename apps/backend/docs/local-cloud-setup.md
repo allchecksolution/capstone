@@ -52,14 +52,47 @@ FCM Terraform은 명시한 개발자의 서비스 계정 impersonation을 지원
 Terraform을 실행하는 관리자의 인증과 백엔드 발송용 인증은 구분한다. 인증·권한이 준비되기 전에
 `FCM_ENABLED=true`로 바꾸지 않는다. 실제 기기 앱도 같은 개발용 Firebase 프로젝트에 등록해야 한다.
 
+### Android만 사용하는 경우
+
+Firebase 프로젝트 하나에 관리자 Android 앱(`kr.allcheck.flutter.admin`)과 기사 Android 앱
+(`kr.allcheck.flutter.driver`)을 각각 등록한다. Android 테스트에는 iOS 앱 등록이나 APNs 설정이 필요하지 않다.
+
+프로젝트 ID 입력 위치는 다음 두 곳이다. `PASTE_FIREBASE_PROJECT_ID_HERE`를 같은 프로젝트 ID로 교체한다.
+로컬 파일이 없다면 아래 예시를 복사해 만든다. 두 로컬 파일은 Git에서 제외한다.
+
+| 용도 | 로컬 파일 | 입력 항목 | 복사할 예시 |
+|---|---|---|---|
+| Terraform | `infra/terraform/fcm/dev.tfvars` | `project_id = "..."` | [terraform.tfvars.example](../../../infra/terraform/fcm/terraform.tfvars.example) |
+| 백엔드 | `apps/backend/scripts/local-cloud-env.ps1` | `$env:FCM_PROJECT_ID = '...'` | [local-cloud-env.ps1.example](../scripts/local-cloud-env.ps1.example) |
+
+프로젝트 ID 입력과 인증은 별도다. 서비스 계정 impersonation을 사용할 개발자는 `dev.tfvars`의
+`developer_members`에도 본인 Google 계정을 명시하고 Terraform을 적용해야 한다.
+인증이 준비되면 로컬 스크립트의 `FCM_ENABLED`를 `true`로 바꾼다.
+
+앱 설정에는 프로젝트 ID 외에도 Firebase가 발급하는 앱 ID, API 키 등이 필요하므로 직접 JSON을 만들지 않는다.
+각 Android 앱의 `google-services.json`을 Firebase 콘솔에서 다운로드해 다음 위치에 넣는다.
+
+| 앱 | 설정 파일 경로 |
+|---|---|
+| 관리자 | `apps/frontend/admin/android/app/google-services.json` |
+| 기사 | `apps/frontend/driver/android/app/google-services.json` |
+
+이 JSON 파일들도 Git에서 제외된다. 현재 앱은 네이티브 설정으로 `Firebase.initializeApp()`을 호출한다.
+각 앱 디렉터리에서 실행할 때 `--dart-define=ALLCHECK_PUSH_ENABLED=true`를 추가한다.
+실제 로그인·기기 등록을 위해 백엔드 주소와 기존 인증 설정도 준비해야 한다.
+
+접수 알림의 `ReceptionPushDevices` 구현체와 프론트·백엔드 기기 등록 API 및 알림 데이터 형식 연동은
+별도 구현 작업이다. 현재 상태에서 `RECEPTION_PUSH_ENABLED`는 `false`로 유지한다.
+
 ## 4. 백엔드 실행 설정
 
-[PowerShell 예시](../scripts/local-cloud-env.ps1.example)를 저장소 밖의 개인 `.ps1` 파일로 복사해 사용한다.
+[PowerShell 예시](../scripts/local-cloud-env.ps1.example)를 같은 폴더의 `local-cloud-env.ps1` 또는
+저장소 밖의 개인 `.ps1` 파일로 복사해 사용한다.
 예시는 외부 연동을 모두 끈 상태이며 로그인, 자원 생성, 백엔드 실행을 자동 수행하지 않는다.
 
 ```powershell
-# apps/backend에서 실행. 경로는 본인의 개인 파일로 교체한다.
-. 'C:\private\allcheck-local-cloud.ps1'
+# apps/backend에서 실행. 로컬 설정을 백엔드 프로세스에 전달한다.
+. .\scripts\local-cloud-env.ps1
 # PostgreSQL과 JWT_SECRET도 준비한 같은 터미널에서 실행한다.
 .\gradlew.bat bootRun
 ```
