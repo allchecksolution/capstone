@@ -48,11 +48,10 @@ Follow HTTP standards and REST design principles to ensure that clients can use 
 
 ## Reception Integration
 
-Implemented reception routes are administrator-only and require the identity module's
-`ReceptionAdministratorIdentity` adapter. Resolve an authenticated, currently authorized administrator to its
-numeric database ID; never infer it from a username or an arbitrary token claim. Until request JWT authentication
-and that adapter are connected, normal token requests remain 401 and an otherwise authenticated administrator
-without the adapter receives 503. A supplied adapter that denies access returns 403.
+Reception routes require administrator authority. Controllers use `@AuthenticationPrincipal` to receive the
+verified `AuthPrincipal` from Spring Security and pass its numeric account ID to reception services for ownership
+checks. Unauthenticated requests return 401. Authenticated requests without administrator authority or a
+supported administrator principal return 403.
 
 The generated OpenAPI exposes creation, owner-scoped list/detail, analysis detail, confirmation, reopening,
 WAV upload reservation/renewal, recording completion, and recording access. Reception HTTP errors use the shared `ErrorResponse` fields
@@ -93,7 +92,7 @@ and `HeadObject` with checksum mode enabled. A missing object or invalid/missing
 `FILE_UPLOAD_NOT_VERIFIED`; S3 permission/service failures are a safe 503 `RECORDING_STORAGE_UNAVAILABLE`.
 New uploads require a WAV filename and one of its four documented MIME aliases. A conditional range GET of the first 12 bytes verifies the WAVE container signature; it is not a full audio decoder or duration measurement. The AI service still validates decodability. Maximum size/duration and supported codec constraints are not inferred or imposed without a decision.
 
-Actual AWS/AI network verification, production JWT identity mapping, the Identity push-device adapter, Firebase credentials, and retention/cleanup remain deployment/integration work. Local integration tests use offline S3 signing and a loopback AI HTTP server.
+Actual AWS/AI network verification, Firebase credentials, and retention/cleanup remain deployment/integration work. Local integration tests use offline S3 signing and a loopback AI HTTP server.
 
 The unchanged original filename is sufficient input for server-side contact extraction. Parsing it on Backend
 keeps platform behavior consistent; parsing the random S3 key is impossible, and copying the name to S3 metadata
@@ -110,6 +109,7 @@ bucket/key, URL lifetime, and create-only policy. `reception.infrastructure.stor
 retains WAV/header verification, recording TTLs, and mapping neutral storage failures to reception errors.
 The former `RECEPTION_STORAGE_ENABLED`, `RECEPTION_STORAGE_REGION`, `RECEPTION_STORAGE_REQUEST_TIMEOUT`,
 and `RECEPTION_STORAGE_BUCKET` settings are replaced by the common SDK settings and reception bucket above.
+
 Terraform for private storage is under `infra/terraform/s3`; its outputs match these bindings.
 
 Completion notifications use `global.notification.FcmClient` and shared `global.config.FcmConfig` for technical
@@ -118,8 +118,8 @@ FCM uses Google Application Default Credentials (for example a runtime-mounted s
 by GOOGLE_APPLICATION_CREDENTIALS); secrets are not stored in YAML, Terraform outputs, database rows, or Git.
 
 To activate transport, set FCM_ENABLED=true, FCM_PROJECT_ID, FCM_CONNECT_TIMEOUT, and FCM_REQUEST_TIMEOUT.
-To activate the reception worker, also provide the Identity implementation of ReceptionPushDevices and set
-RECEPTION_PUSH_ENABLED=true, RECEPTION_PUSH_POLL_INTERVAL, and RECEPTION_PUSH_CLAIM_TTL. The claim TTL
+The reception worker uses Identity's `PushDeviceOperations` to resolve active administrator installations.
+Set RECEPTION_PUSH_ENABLED=true, RECEPTION_PUSH_POLL_INTERVAL, and RECEPTION_PUSH_CLAIM_TTL. The claim TTL
 must exceed the request timeout. These runtime durations remain explicit deployment choices.
 Retries default to three total attempts with one-minute base backoff; Retry-After can extend the delay.
 A dedicated one-thread executor keeps remote sends off the scheduler/DB transaction, with durable pending work
@@ -128,3 +128,106 @@ in the database. OAuth completion is followed by a final execution/access/bindin
 The `analysisRequestId` AI envelope is confirmed. RECEPTION_AI_CONTRACT is optional and defaults to
 analysis-request-id-v1; setting an incompatible contract fails startup. STT/analyze endpoints are still to be
 deployed by the AI service (the current AI application only implements health).
+
+## Operations Integration
+
+Implemented operations routes are declared in `operations.coordination.presentation.api.OperationsApi`.
+The generated `/v3/api-docs` is the implementation contract; the repository-level YAML remains a preliminary
+cross-application draft. In particular, implemented mutation responses use `OperationResponse`
+(`resourceId`, `requestId`, `status`, `version`, `at`, `relatedResourceId`). A matching idempotency replay
+returns the first result with `Idempotency-Replayed: true`; fetch current state after commands. Registration
+and follow-up decisions return the request version; acceptance, work transitions, cancellation and first report
+submission return the work version; report revisions return the report version; photo commands return the
+related work version. Reads and signed URL responses use `Cache-Control: no-store`.
+
+External IDs are `req_`, `round_`, `offer_`, `work_`, `cancel_`, `report_`, `revision_`, `photo_`, and `decision_`
+followed by their numeric IDs. Identity resolution is separate from these resource identifiers.
+Controllers receive the verified `AuthPrincipal` through `@AuthenticationPrincipal`. The operations actor
+resolver checks that the authenticated authority matches the principal's user type. Administrators use
+their account ID. Drivers use the driver ID resolved from their account ID through the active-driver API.
+Unsupported principals and accounts without current driver access return 403.
+
+`OperationsDrivers` is a required dependency. The driver API applies account eligibility, standby status,
+specialty, and the configured location validity period. The operations adapter matches the service area and
+returns the candidate's WGS84 coordinates, measurement time, and validity period. Search distinguishes a
+complete empty result from a lookup failure. Operations rechecks location freshness and filters by PostGIS
+distance, existing work occupancy, and past cancellations for the same request.
+`lockForAcceptance` is a short local module call joining the acceptance transaction. Its implementation must
+lock authoritative profile/availability/location state, or provide equivalent version protection through commit;
+it must not make an HTTP call under the operations lock. Lock order is request, operations driver guard, then
+the external driver's eligibility guard. The acceptance time and expiry are checked after acquiring guards.
+
+The nested request, dispatch, and work modules own their aggregates. The coordination module composes their
+public APIs; shared parent contracts have no dependency back into the child implementations. Database partial
+unique indexes protect active rounds, accepted offers, and unfinished driver/request work independently of
+command receipts. Durable tasks use database claims, lease tokens, bounded attempts and due times. Expired
+claims are recovered; a stale result cannot update a new claim or reopen a terminal round. Push transport can
+have an unknown outcome and therefore be delivered more than once; the logical offer/follow-up event remains
+unique and clients refresh authoritative state on receipt. Active progress screens initially poll every five seconds.
+
+All administrators may query `/service-requests`, its detail, `/dispatch-rounds` and `/dispatch-history`,
+`/dispatch-cancellations`, and `/reports`. History includes inline cancellation reasons and redispatch decisions.
+Drivers use `/drivers/me/dispatch-offers`, `/drivers/me/works?scope=CURRENT|HISTORY`, and
+`/drivers/me/work-statistics?month=YYYY-MM`. `HISTORY&month=YYYY-MM` uses Asia/Seoul completion/cancellation
+month; `CURRENT` with a month is invalid. Work and report details allow an owner's historical reads and a
+current driver's previous-work handover chain. Previous drivers cannot read another driver's subsequent work.
+Offer responses expose only the administrative area. Driver customer-phone access ends when their current
+unfinished work ends, including when the request retains its completed-work link.
+
+Photo reservations are `/works/{workId}/photos/upload-requests`, with renewal at
+`/works/{workId}/photos/{photoId}/upload-requests`. Same-key reservations are reused and freshly signed;
+renewal changes no business state and needs no command receipt. Completion verifies S3 HEAD MIME/length/SHA256
+and a conditional range read of the JPEG/PNG signature. This is format identification, not full image decoding.
+Only verified BEFORE/AFTER photos of the same work/driver may be submitted, three to five per phase.
+Photo access uses the related work permissions; responses never expose bucket/object keys. No server report
+draft, DURING photo, administrator approval, or direct ongoing-request edit/cancellation API is provided.
+
+Runtime activation requires the following, in addition to the existing JWT and shared S3/FCM configuration:
+
+| Feature | Configuration and prerequisites |
+|---|---|
+| Database | PostgreSQL 17 with PostGIS. V12 installs the extension in public if absent; provision it beforehand when the migration role lacks extension permission. Unmapped legacy photo references stop V12 without deleting data or guessing new work IDs. Local Compose uses the official PostGIS image with amd64 emulation on Apple Silicon. Existing data volumes are not reset. |
+| Geocoding | `OPERATIONS_SGIS_ENABLED=true`, `OPERATIONS_SGIS_SERVICE_ID`, `OPERATIONS_SGIS_SECRET`, `OPERATIONS_SGIS_CONNECT_TIMEOUT`, `OPERATIONS_SGIS_REQUEST_TIMEOUT`, and the provider's required usage permission. A single complete building-level match is converted from EPSG:5179 to WGS84 in PostGIS; missing/ambiguous results do not create a request or alter reception confirmation. |
+| Photos | `S3_ENABLED=true`, the shared S3 settings/credentials, and private `OPERATIONS_PHOTO_BUCKET` with PUT/HEAD/GET and checksum permissions. Upload/access TTLs default to 15m/10m and are configurable with `OPERATIONS_PHOTO_UPLOAD_URL_TTL` / `OPERATIONS_PHOTO_ACCESS_URL_TTL`. No bucket or public ACL is created by application startup. |
+| Worker | `OPERATIONS_WORKER_ENABLED=true` requires an enabled FCM connection. The driver and push device adapters are required application dependencies. `OPERATIONS_WORKER_LEASE` defaults to 60s and `OPERATIONS_WORKER_POLL_INTERVAL` to 1s. Configure integration timeouts within the lease and measure production capacity. |
+| Dispatch | `OPERATIONS_OFFER_LIFETIME` defaults to 1m. Search and driver-device transient retries use three total attempts with 5s/10s delays. A longer provider Retry-After is honored only within offer expiry. |
+| Administrator push | `OPERATIONS_ADMIN_PUSH_MAX_ATTEMPTS` defaults to 3; `OPERATIONS_ADMIN_PUSH_RETRY_DELAY` to 1m. Device resolution revalidates current authorization and binding; only the current unresolved follow-up target may be sent. |
+
+Keys and credentials belong in runtime secret configuration. Live SGIS/S3/FCM verification, retention/cleanup,
+and cross-application deployment remain integration work. Automated coverage uses isolated PostgreSQL/PostGIS
+schemas, offline S3 signing, and loopback SGIS/FCM.
+
+## Chat Integration
+
+REST owns message creation and history under `/api/v1/chat-rooms/{driverId}` and
+`/api/v1/drivers/me/chat`. Retry an uncertain send with the same body and `Idempotency-Key`.
+`GET .../messages` returns the newest messages first. Use `before` for older messages or `after`
+for new messages in ascending order. Both take a message ID from the same conversation. Follow
+`nextCursor` in the requested direction until it is null. Update read state via `PUT .../read`.
+
+Connect to `/api/v1/chat/ws` over WSS in production. The upgrade requires an authenticated
+administrator or active driver. Each room subscription is authorized separately. Native clients can present the bearer token
+in the Authorization header. Browser clients offer WebSocket subprotocols `allcheck-chat.v1`
+and `bearer.<access-token>`. The server negotiates `allcheck-chat.v1` and treats the token
+offer as a credential. Use the same origin by default. Configure comma-separated explicit browser
+origins through the `chat.websocket.allowed-origins` property when needed.
+
+| Client frame | Server response |
+| --- | --- |
+| `{"type":"SUBSCRIBE","driverId":123}` | `SUBSCRIBED` with the driver ID after current subscription access is confirmed |
+| `{"type":"UNSUBSCRIBE"}` | `UNSUBSCRIBED` |
+| `{"type":"PING"}` | `PONG` |
+
+Send a ping within each 60-second inactivity window and unsubscribe when leaving the conversation.
+The server checks idle connections every 15 seconds and clears an expired connection's subscription.
+An invalid or unauthorized frame produces `ERROR` with a code. The same connection can change
+rooms by subscribing again. An expired token or revoked session closes the connection with code
+1008. Reconnect with a current access token, subscribe, and fetch history after the last known message.
+For a first visit, subscribe and fetch the newest page. Deduplicate using `messageId` while merging
+history with `MESSAGE_CREATED` events. Those events carry `driverId`, `messageId`, and `sender`.
+On an event, fetch authorized history after the last known message to resolve the content.
+
+Chat FCM uses the existing device registration and FCM connection. The data fields are
+`notificationId`, `type=chat_received`, `resourceId` (driver ID), `messageId`, and `role` (`admin`
+or `driver`). The notification body is generic. Resolve the message through the same REST history.
+Business access, delivery scope, and retention follow [BR-10](business-specification.md#br-10).

@@ -43,6 +43,7 @@ class FcmClientTest {
         val body = mapper.readTree(requests[0].substringAfter("Bearer test-oauth "))
         assertThat(body.path("message").path("token").asString()).isEqualTo("test-device-token")
         assertThat(body.path("message").path("data").path("eventId").asString()).isEqualTo("evt_1")
+        assertThat(body.path("message").has("notification")).isFalse()
     }
 
     @ParameterizedTest

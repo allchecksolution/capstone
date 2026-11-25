@@ -39,7 +39,9 @@ management:
 
 jwt:
   secret: ${JWT_SECRET:}
-  access-token-expiration: ${JWT_ACCESS_TOKEN_EXPIRATION}
+  access-token-expiration: ${JWT_ACCESS_TOKEN_EXPIRATION:PT15M}
+  issuer: ${JWT_ISSUER:allcheck}
+  audience: ${JWT_AUDIENCE:allcheck-api}
 
 storage:
   s3:
@@ -68,3 +70,43 @@ reception:
     upload-url-ttl: ${RECEPTION_RECORDING_UPLOAD_URL_TTL:15m}
     playback-url-ttl: ${RECEPTION_RECORDING_PLAYBACK_URL_TTL:10m}
     ai-download-url-ttl: ${RECEPTION_RECORDING_AI_DOWNLOAD_URL_TTL:10m}
+
+identity:
+  sessions:
+    expiration: ${IDENTITY_SESSION_EXPIRATION:PT336H}
+  kakao:
+    app-id: ${KAKAO_APP_ID:}
+    connect-timeout: ${KAKAO_CONNECT_TIMEOUT:PT2S}
+    read-timeout: ${KAKAO_READ_TIMEOUT:PT5S}
+
+driver:
+  dispatch:
+    location-validity: ${DRIVER_LOCATION_VALIDITY:5m}
+  nts:
+    service-key: ${NTS_SERVICE_KEY:}
+    connect-timeout: ${NTS_CONNECT_TIMEOUT:PT2S}
+    read-timeout: ${NTS_READ_TIMEOUT:PT5S}
+  push:
+    lease: ${FCM_DELIVERY_LEASE:PT1M}
+    poll-interval: ${FCM_POLL_INTERVAL:PT5S}
+
+operations:
+  sgis:
+    enabled: ${OPERATIONS_SGIS_ENABLED:false}
+    service-id: ${OPERATIONS_SGIS_SERVICE_ID:}
+    secret: ${OPERATIONS_SGIS_SECRET:}
+    connect-timeout: ${OPERATIONS_SGIS_CONNECT_TIMEOUT:}
+    request-timeout: ${OPERATIONS_SGIS_REQUEST_TIMEOUT:}
+  worker:
+    enabled: ${OPERATIONS_WORKER_ENABLED:false}
+    lease: ${OPERATIONS_WORKER_LEASE:60s}
+    poll-interval: ${OPERATIONS_WORKER_POLL_INTERVAL:1s}
+  dispatch:
+    offer-lifetime: ${OPERATIONS_OFFER_LIFETIME:1m}
+  push:
+    admin-max-attempts: ${OPERATIONS_ADMIN_PUSH_MAX_ATTEMPTS:3}
+    admin-retry-delay: ${OPERATIONS_ADMIN_PUSH_RETRY_DELAY:1m}
+  photos:
+    bucket: ${OPERATIONS_PHOTO_BUCKET:}
+    upload-url-ttl: ${OPERATIONS_PHOTO_UPLOAD_URL_TTL:15m}
+    access-url-ttl: ${OPERATIONS_PHOTO_ACCESS_URL_TTL:10m}

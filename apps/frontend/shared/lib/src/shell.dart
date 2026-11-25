@@ -19,6 +19,7 @@ class _WorkflowShellState extends State<WorkflowShell> with WidgetsBindingObserv
   String page='login', id='', outcomeTitle='', outcomeText='', outcomeTarget='home', outcomeId='', search='', statusFilter='', typeFilter='', driverFilter='', regionFilter='', requestFilter='대기', jobFilter='진행 중', month='';
   int registrationStep=1,period=30;DateTime? fromDate,toDate;
   bool signedIn=false,busy=false,expanded=false,readonly=false,folderConnected=false,developmentSession=false;
+  Future<Json>? adminAccountRequest; int adminAccountPage=1; Json? editingAdministrator;
   String adminName='';Json? reportDraft;String draftReportId='';KakaoIdentity? kakaoIdentity;
   Json receptionPage = {};
   bool get sdkOnlySession=>!admin&&signedIn&&widget.backend==null&&widget.onKakaoAuthenticated==null&&!developmentSession;
@@ -59,20 +60,20 @@ class _WorkflowShellState extends State<WorkflowShell> with WidgetsBindingObserv
   Widget button(String text,VoidCallback fn,{bool secondary=false,bool danger=false})=>secondary?OutlinedButton(onPressed:busy?null:fn,child:Padding(padding:const EdgeInsets.symmetric(vertical:12),child:Text(text))):FilledButton(style:danger?FilledButton.styleFrom(backgroundColor:const Color(0xfff04c62)):null,onPressed:busy?null:fn,child:Text(text));
   Widget link(String title,String target,{String item=''})=>button(title,()=>go(target,item:item),secondary:true);
   Widget kv(String label,Object? content)=>stack([small(label),Text(content?.toString().isNotEmpty==true?content.toString():'미등록',style:const TextStyle(fontWeight:FontWeight.w600))]);
-  Widget field(String key,String label,{String initial='',bool required=true,bool lines=false,bool number=false,bool email=false,bool readOnly=false})=>TextFormField(key:ValueKey('$page/$id/$key'),controller:controller(key,initial),obscureText:key=='password',readOnly:readOnly,maxLines:lines?4:1,keyboardType:number?TextInputType.number:email?TextInputType.emailAddress:TextInputType.text,decoration:InputDecoration(labelText:'$label${required?' *':''}'),validator:(v){if(required&&(v??'').trim().isEmpty)return '필수 항목입니다.';if(number&&v?.isNotEmpty==true&&(double.tryParse(v!)==null||double.parse(v)<0))return '0 이상의 숫자를 입력해 주세요.';if(email&&v?.isNotEmpty==true&&!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(v!))return '이메일 형식을 확인해 주세요.';return null;});
+  Widget field(String key,String label,{String initial='',String helperText='',bool required=true,bool lines=false,bool number=false,bool email=false,bool readOnly=false})=>TextFormField(key:ValueKey('$page/$id/$key'),controller:controller(key,initial),obscureText:key=='password'||key=='currentPassword',readOnly:readOnly,maxLines:lines?4:1,keyboardType:number?TextInputType.number:email?TextInputType.emailAddress:TextInputType.text,decoration:InputDecoration(labelText:'$label${required?' *':''}',helperText:helperText.isEmpty?null:helperText,helperMaxLines:3),validator:(v){if(required&&(v??'').trim().isEmpty)return '필수 항목입니다.';if(number&&v?.isNotEmpty==true&&(double.tryParse(v!)==null||double.parse(v)<0))return '0 이상의 숫자를 입력해 주세요.';if(email&&v?.isNotEmpty==true&&!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(v!))return '이메일 형식을 확인해 주세요.';return null;});
   Widget dropdown(String key,String label,List<String> options,{String initial='',bool required=false}){final c=controller(key,initial);final selected=options.contains(c.text)?c.text:null;return DropdownButtonFormField<String>(initialValue:selected,isExpanded:true,decoration:InputDecoration(labelText:label),items:options.map((v)=>DropdownMenuItem(value:v,child:Text(v,overflow:TextOverflow.ellipsis))).toList(),onChanged:(v){c.text=v??'';setState((){});},validator:required?((v)=>v==null||v.isEmpty?'선택해 주세요.':null):null);}
   Widget choices(String key,String label,List<String> options,{List<String> initial=const []}){final selected=choiceValue(key,initial);return stack([heading(label),Wrap(spacing:8,runSpacing:6,children:options.map((v)=>FilterChip(label:Text(v),selected:selected.contains(v),onSelected:busy?null:(yes)=>setState(()=>yes?selected.add(v):selected.remove(v)))).toList())]);}
   Widget form(List<Widget> children)=>Form(key:formKey,child:stack(children));
-  Widget menu(String title,String target,{String item='',String subtitle=''})=>ListTile(contentPadding:EdgeInsets.zero,title:Text(title),subtitle:subtitle.isEmpty?null:small(subtitle),trailing:const Icon(Icons.chevron_right),onTap:()=>go(target,item:item));
+  Widget menu(String title,String target,{String item='',String subtitle=''})=>ListTile(contentPadding:EdgeInsets.zero,title:Text(title),subtitle:subtitle.isEmpty?null:small(subtitle),trailing:const Icon(Icons.chevron_right),onTap:()async{if(admin&&target=='drivers'&&widget.backend is AdminRestBackend&&!developmentSession){await openDriverList();return;}go(target,item:item);});
   Widget empty(String label)=>Padding(padding:const EdgeInsets.symmetric(vertical:28),child:Center(child:small(label)));
   Widget pill(String label)=>Chip(label:Text(label,style:const TextStyle(fontSize:11)),backgroundColor:const Color(0xffe8f7fd),side:BorderSide.none);
   Widget jobCard(Json j)=>box([Row(children:[pill(text(j,'type')),const Spacer(),small(text(j,'status'))]),heading(text(j,'title',text(j,'symptom','작업 의뢰'))),small(text(j,'area',text(j,'address'))),link('상세 보기',j['status']=='응답 대기'?'request':'detail',item:text(j,'id'))]);
   Widget tabs(List<String> options,String selected,void Function(String) change)=>Wrap(spacing:6,runSpacing:6,children:options.map((v)=>ChoiceChip(label:Text(v),selected:v==selected,onSelected:busy?null:(_)=>setState(()=>change(v)))).toList());
-  String get title=>({'login':admin?'관리자앱':'기사앱','kakao-connected':'기사앱','home':admin?'작업 이력 및 통계':'홈','jobs':'작업목록','chat':'관리자 문의','more':'더보기','register':'가입 정보 등록','detail':'작업 상세','report':'작업 보고서','receptions':'상담 접수','reception':'접수 상세','dispatch':'배차 요청','drivers':'기사 관리','driver':'기사 정보','reports':'작업 보고서','report-edit':'보고서 수정','report-history':'원본 및 수정 이력','cancellations':'배차 취소 요청','cancellation':'취소 요청 검토','stats':'나의 작업 통계','result':'처리 결과','settings':'설정','requests':'배차 요청 내역','request':'배차 요청','cancel':'취소 사유','revisit':'재방문 사유','withdraw':'회원 탈퇴','recordings':'Softphone 녹음 연결','export':'조회 결과 내보내기','notifications':'알림'})[page]??'올체크';
+  String get title=>({'admin-accounts':'관리자 계정 관리','admin-create':'관리자 추가','admin-edit':'관리자 수정','admin-password':'내 비밀번호 변경','login':admin?'관리자앱':'기사앱','kakao-connected':'기사앱','home':admin?'작업 이력 및 통계':'홈','jobs':'작업목록','chat':'관리자 문의','more':'더보기','register':'가입 정보 등록','detail':'작업 상세','report':'작업 보고서','receptions':'상담 접수','reception':'접수 상세','dispatch':'배차 요청','drivers':'기사 관리','driver':'기사 정보','reports':'작업 보고서','report-edit':'보고서 수정','report-history':'원본 및 수정 이력','cancellations':'배차 취소 요청','cancellation':'취소 요청 검토','stats':'나의 작업 통계','result':'처리 결과','settings':'설정','requests':'배차 요청 내역','request':'배차 요청','cancel':'취소 사유','revisit':'재방문 사유','withdraw':'회원 탈퇴','recordings':'Softphone 녹음 연결','export':'조회 결과 내보내기','notifications':'알림'})[page]??'올체크';
   Widget publicPage(){
     if(!admin&&page=='register')return this.driverRegistration();
     if(page=='terms'||page=='privacy')return widget.backend==null?notice('문서를 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.'):documentPage();
-    if(admin)return form([const SizedBox(height:32),heading('관리자앱'),field('username','아이디'),field('password','비밀번호'),button('로그인',loginAdmin)]);
+    if(admin)return form([const SizedBox(height:32),heading('관리자앱'),field('username','아이디'),field('password','비밀번호'),button('로그인',loginAdmin),small('계정을 발급받은 후 로그인해 주세요. 로그인할 수 없으면 운영 담당자에게 문의해 주세요.')]);
     if(page=='kakao-connected')return stack([const SizedBox(height:60),const Icon(Icons.check_circle_outline,size:76),heading('카카오 계정이 확인되었습니다.'),if(kakaoIdentity?.nickname!=null)Text(kakaoIdentity!.nickname!),button('계속',completeKakaoSignIn),button('로그아웃',logout,secondary:true)]);
     return stack([const SizedBox(height:100),const Center(child:Text('기사앱',style:TextStyle(fontSize:34,fontWeight:FontWeight.bold))),Center(child:small('빠르고 간편한 기사 업무 관리')),const SizedBox(height:100),FilledButton(style:FilledButton.styleFrom(backgroundColor:const Color(0xfffee500),foregroundColor:Colors.black),onPressed:busy?null:signInWithKakao,child:const Text('카카오 로그인')),Wrap(spacing:12,children:[TextButton(onPressed:()=>go('terms'),child:const Text('이용약관')),TextButton(onPressed:()=>go('privacy'),child:const Text('개인정보 처리방침'))])]);
   }
@@ -82,14 +83,20 @@ class _WorkflowShellState extends State<WorkflowShell> with WidgetsBindingObserv
     catch(e){message(e.toString().replaceFirst('Bad state: ',''));}
     finally{if(mounted)setState(()=>busy=false);}
   }
-  Future<void> enterDevelopment()async{
-    if(!developmentAccessEnabled||busy)return;
+  bool get canSkipReview=>temporaryReviewAccessEnabled&&!admin&&signedIn&&!developmentSession&&s.account?['status']=='승인 대기';
+  Future<void> enterDevelopment({bool preserveProfile=false,bool skipReview=false})async{
+    if(busy||!(skipReview?canSkipReview:developmentAccessEnabled))return;
+    final profile=preserveProfile?<String,dynamic>{...s.profile,...s.draft,
+      if(page=='register')...{for(final e in fields.entries)if(e.key.startsWith('register/$id/'))e.key.substring('register/$id/'.length):e.value.text.trim()}}:<String,dynamic>{'name':'기사','phone':''};
+    final wasTransient=s.transientSession;
     s.transientSession=true;
     if(!await act((){
-      if(!admin)s.data['account']=<String,dynamic>{'status':'활성',
-        'profile':<String,dynamic>{'name':'기사','phone':''}};
-    }))return;
+      final names=Map<String,dynamic>.from(s.displayNames);
+      s.data=AppStore.empty(widget.role);s.data['displayNames']=names;
+      if(!admin)s.data['account']=<String,dynamic>{'status':'활성','profile':profile};
+    })){s.transientSession=wasTransient;return;}
     if(!mounted)return;
+    stateVersion++;
     developmentSession=true;adminName=admin?'관리자':'';signedIn=true;
     kakaoIdentity=null;history.clear();go('home',replace:true);
   }
@@ -103,12 +110,13 @@ class _WorkflowShellState extends State<WorkflowShell> with WidgetsBindingObserv
           final names=Map<String,dynamic>.from(s.displayNames);
           s.data=AppStore.empty(AppRole.driver);
           s.data['displayNames']=names;
-          s.data['account']=<String,dynamic>{'provider':'kakao','userId':identity.userId,'status':'승인 대기',
+          s.data['account']=<String,dynamic>{'provider':'kakao','userId':identity.userId,'status':'미신청',
             'profile':<String,dynamic>{'name':names[identity.userId]??(identity.nickname?.trim().isNotEmpty==true?identity.nickname!.trim():'카카오 사용자'),if(identity.email!=null)'email':identity.email}};
+          s.data['draft']=Map<String,dynamic>.from(s.profile);
         });
         if(!mounted)return;
         for(final c in fields.values){c.dispose();}fields.clear();selections.clear();history.clear();
-        signedIn=true;kakaoIdentity=null;go('home',replace:true);
+        signedIn=true;kakaoIdentity=null;registrationStep=1;go('register',replace:true);
       }catch(_){message('로그인 정보를 준비하지 못했습니다. 다시 시도해 주세요.');}
       finally{if(mounted)setState(()=>busy=false);}
       return;
@@ -121,11 +129,25 @@ class _WorkflowShellState extends State<WorkflowShell> with WidgetsBindingObserv
       if(!mounted)return;for(final c in fields.values){c.dispose();}fields.clear();selections.clear();history.clear();
       if(account==null){registrationStep=1;go('register',replace:true);}
       else{signedIn=true;go('home',replace:true);}if(response?['state'] is Json)await applyServerState(response!);
-    }catch(_){message('로그인에 실패했습니다. 잠시 후 다시 시도해 주세요.');}
+    }on ServiceFailure catch(error){message(error.message);}
+    catch(_){message('로그인에 실패했습니다. 잠시 후 다시 시도해 주세요.');}
     finally{if(mounted){setState(()=>busy=false);if(signedIn)unawaited(afterAuthentication());}}
   }
 
-  Widget gated(){final rejected=s.account?['status']=='반려';return stack([const SizedBox(height:40),const Icon(Icons.schedule,size:70),heading(rejected?'가입 신청이 반려되었습니다.':'가입 상태를 확인해 주세요.'),notice(rejected?text(s.account!,'reason','정보 보완이 필요합니다.'):s.account?['status']=='탈퇴'?'탈퇴 처리된 계정입니다.':'관리자 검토가 진행 중입니다.'),if(rejected)button('다시 신청하기',()async{if(await act(()=>s.data['draft']=jsonDecode(jsonEncode(s.profile)) as Json)){registrationStep=1;go('register');}}),button('로그아웃',logout,secondary:true)]);}
+  Widget gated(){
+    final rejected=s.account?['status']=='반려';
+    return stack([
+      const SizedBox(height:40),const Icon(Icons.schedule,size:70),
+      heading(rejected?'가입 신청이 반려되었습니다.':'가입 상태를 확인해 주세요.'),
+      notice(rejected?text(s.account!,'reason','정보 보완이 필요합니다.'):s.account?['status']=='탈퇴'?'탈퇴 처리된 계정입니다.':'관리자 검토가 진행 중입니다.'),
+      if(canSkipReview)...[
+        button('임시로 관리자 검토 건너뛰기',()=>enterDevelopment(preserveProfile:true,skipReview:true)),
+        small('입력한 정보로 임시 홈에 진입합니다. 실제 승인 상태는 변경되지 않으며, 로그아웃하면 임시 이용이 종료됩니다.'),
+      ],
+      if(rejected)button('다시 신청하기',()async{if(await act(()=>s.data['draft']=jsonDecode(jsonEncode(s.profile)) as Json)){registrationStep=1;go('register');}}),
+      button('로그아웃',logout,secondary:true),
+    ]);
+  }
   Future<void> logout()async{
     if(!await confirm('로그아웃할까요?'))return;
     await platformTask(()async{
@@ -142,21 +164,21 @@ class _WorkflowShellState extends State<WorkflowShell> with WidgetsBindingObserv
     if(page=='result')return stack([const SizedBox(height:60),const Icon(Icons.check_circle_outline,size:76,color:Color(0xff55bbcc)),heading(outcomeTitle),small(outcomeText),link('계속',outcomeTarget,item:outcomeId),link('홈으로 이동','home')]);
     return const SizedBox.shrink();
   }
-  Widget sdkApprovalPage()=>page=='settings'&&id=='profile'?genericSettings():stack([
+  Widget sdkRegistrationPage()=>page=='settings'&&id=='profile'?genericSettings():stack([
     heading('${text(s.profile,'name','카카오 사용자')}님, 안녕하세요'),
-    const Icon(Icons.schedule,size:64),
-    heading('관리자 승인 대기'),
-    notice('최초 가입자는 관리자 승인 후 업무를 이용할 수 있습니다.'),
-    small('현재 서버가 연결되지 않아 가입·승인 요청은 아직 전송되지 않았습니다. 서버 연결 후 가입 신청과 승인 상태 확인이 필요합니다.'),
+    const Icon(Icons.assignment_outlined,size:64),
+    heading('가입 정보를 입력해 주세요.'),
+    notice('가입 정보를 입력하고 신청을 완료하면 관리자 검토가 시작됩니다.'),
+    button('가입 정보 입력',()=>go('register')),
     button('내 정보 수정',()=>go('settings',item:'profile'),secondary:true),
     button('로그아웃',logout,secondary:true),
   ]);
   @override Widget build(BuildContext context){
     final allowed=signedIn&&(admin||!sdkOnlySession&&s.account?['status']=='활성');
-    final content=sdkOnlySession?sdkApprovalPage():page=='notifications'&&signedIn?inbox():page=='result'?commonPage():!signedIn||page=='register'?publicPage():!allowed?gated():page=='result'?commonPage():admin?this.adminPage():this.driverPage();
+    final content=page=='register'?publicPage():sdkOnlySession?sdkRegistrationPage():page=='notifications'&&signedIn?inbox():page=='result'?commonPage():!signedIn?publicPage():!allowed?gated():page=='result'?commonPage():admin?this.adminPage():this.driverPage();
     final navPages=['home','jobs','chat','more'];final index=page=='chat'?2:['more','settings','recordings','drivers','driver','cancellations','cancellation'].contains(page)?3:['home','stats','notifications'].contains(page)?0:1;final showNav=allowed&&!springReceptions&&!['register','login'].contains(page);
     final wide=admin&&showNav&&MediaQuery.sizeOf(context).width>900;
-    final scroll=Align(alignment:Alignment.topCenter,child:ConstrainedBox(constraints:BoxConstraints(maxWidth:admin?1100:520),child:SingleChildScrollView(padding:const EdgeInsets.all(24),child:stack([if(sdkOnlySession)notice('카카오 로그인 완료 · 배차·가입 승인 등 서버 기능은 연결 후 사용할 수 있습니다.'),if(s.startupWarning.isNotEmpty)notice(s.startupWarning,error:true),if(locationError.isNotEmpty)notice(locationError,error:true),if(developmentAccessEnabled&&page=='login')button('개발용으로 입장',enterDevelopment,secondary:true),content]))));
+    final scroll=Align(alignment:Alignment.topCenter,child:ConstrainedBox(constraints:BoxConstraints(maxWidth:admin?1100:520),child:SingleChildScrollView(padding:const EdgeInsets.all(24),child:stack([if(sdkOnlySession)notice('카카오 로그인 완료 · 가입 정보는 입력할 수 있으며 사업자 확인과 가입 신청은 서버 연결 후 가능합니다.'),if(developmentSession)notice('개발용 화면입니다. 실제 가입 승인이나 서버 데이터 변경은 이루어지지 않습니다.'),if(s.startupWarning.isNotEmpty)notice(s.startupWarning,error:true),if(locationError.isNotEmpty)notice(locationError,error:true),if(developmentAccessEnabled&&page=='login')button('개발용으로 입장',enterDevelopment,secondary:true),if(developmentAccessEnabled&&!admin&&!developmentSession&&page=='register')button('개발용: 승인 대기 건너뛰기',()=>enterDevelopment(preserveProfile:true),secondary:true),content]))));
     return PopScope(canPop:false,onPopInvokedWithResult:(didPop,result){if(!didPop)back();},child:Scaffold(appBar:AppBar(title:Text(title),leading:history.isNotEmpty?IconButton(icon:const Icon(Icons.chevron_left),onPressed:back):null,actions:[if(allowed&&springReceptions)IconButton(tooltip:'녹음 폴더',icon:const Icon(Icons.folder_open),onPressed:()=>go('recordings')),if(allowed&&springReceptions)IconButton(tooltip:'로그아웃',icon:const Icon(Icons.logout),onPressed:logout),if(allowed&&!springReceptions)IconButton(tooltip:'알림',icon:const Icon(Icons.notifications_outlined),onPressed:(){go('notifications');unawaited(loadInbox());}),if(allowed)IconButton(tooltip:'새로고침',icon:const Icon(Icons.refresh),onPressed:busy?null:refreshState),if(busy)const Padding(padding:EdgeInsets.all(16),child:SizedBox(width:22,height:22,child:CircularProgressIndicator(strokeWidth:2)))]),body:SafeArea(top:false,child:LayoutBuilder(builder:(context,constraints)=>admin&&showNav&&constraints.maxWidth>900?Row(children:[NavigationRail(selectedIndex:index,onDestinationSelected:(i)=>go(navPages[i]),labelType:NavigationRailLabelType.all,destinations:const [NavigationRailDestination(icon:Icon(Icons.home_outlined),label:Text('홈')),NavigationRailDestination(icon:Icon(Icons.assignment_outlined),label:Text('작업목록')),NavigationRailDestination(icon:Icon(Icons.chat_bubble_outline),label:Text('문의')),NavigationRailDestination(icon:Icon(Icons.more_horiz),label:Text('더보기'))]),const VerticalDivider(width:1),Expanded(child:scroll)]):scroll)),bottomNavigationBar:showNav&&!wide?SafeArea(top:false,child:NavigationBar(selectedIndex:index,onDestinationSelected:(i)=>go(navPages[i]),destinations:const [NavigationDestination(icon:Icon(Icons.home_outlined),label:'홈'),NavigationDestination(icon:Icon(Icons.assignment_outlined),label:'작업목록'),NavigationDestination(icon:Icon(Icons.chat_bubble_outline),label:'문의'),NavigationDestination(icon:Icon(Icons.more_horiz),label:'더보기')])):null));
   }
 }

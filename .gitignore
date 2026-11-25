@@ -10,11 +10,15 @@ node_modules/
 .DS_Store
 Thumbs.db
 
+# IntelliJ IDEA settings at any directory depth.
+.idea/
+
 ############################
 # Environment
 ############################
 .env.*
 .env
+!.env.example
 
 # Removed WebView apps: exclude leftover local APKs and Gradle caches.
 /apps/admin/

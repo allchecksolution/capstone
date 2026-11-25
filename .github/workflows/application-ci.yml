@@ -1,0 +1,81 @@
+name: Application CI
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: Detect application changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    outputs:
+      ai: ${{ steps.paths.outputs.ai }}
+      backend: ${{ steps.paths.outputs.backend }}
+    steps:
+      - name: Find changes by application
+        id: paths
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: |
+            ai:
+              - 'apps/ai/**'
+              - '.github/workflows/ai-ci.yml'
+              - '.github/workflows/application-ci.yml'
+            backend:
+              - 'apps/backend/**'
+              - '.github/workflows/backend-ci.yml'
+              - '.github/workflows/application-ci.yml'
+
+  ai:
+    name: AI CI
+    needs: changes
+    if: needs.changes.outputs.ai == 'true'
+    uses: ./.github/workflows/ai-ci.yml
+
+  backend:
+    name: Backend CI
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    uses: ./.github/workflows/backend-ci.yml
+
+  gate:
+    name: Application CI Gate
+    needs: [changes, ai, backend]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Verify application CI results
+        shell: bash
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          AI_REQUIRED: ${{ needs.changes.outputs.ai }}
+          AI_RESULT: ${{ needs.ai.result }}
+          BACKEND_REQUIRED: ${{ needs.changes.outputs.backend }}
+          BACKEND_RESULT: ${{ needs.backend.result }}
+        run: |
+          if [[ "$CHANGES_RESULT" != 'success' ]]; then
+            echo "::error::Change detection did not succeed ($CHANGES_RESULT)."
+            exit 1
+          fi
+
+          verify_ci() {
+            local name="$1" required="$2" result="$3"
+            case "$required:$result" in
+              true:success) echo "$name passed." ;;
+              false:skipped) echo "$name skipped because no matching files changed." ;;
+              *)
+                echo "::error::Unexpected $name result: required=$required, result=$result."
+                return 1
+                ;;
+            esac
+          }
+
+          verify_ci 'AI CI' "$AI_REQUIRED" "$AI_RESULT"
+          verify_ci 'Backend CI' "$BACKEND_REQUIRED" "$BACKEND_RESULT"

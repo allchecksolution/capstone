@@ -120,11 +120,16 @@ not prevent registration of an already confirmed snapshot.
 `ReceptionCommandServiceTest` verifies database transaction-scoped advisory locking, successful command receipts,
 unchanged first-response replay, payload mismatch rejection, rollback, and current ownership checks on replay.
 `ReceptionApiIntegrationTest` exercises real HTTP serialization, authorization, validation, generated OpenAPI,
-and review flows against PostgreSQL with a test-only administrator identity adapter.
+and review flows against PostgreSQL with an administrator `AuthPrincipal` supplied through Spring Security's
+MockMvc test support.
 
 Full application and security tests also use owned UUID-named schemas. The `test` profile does not enable local
 Swagger automatically; tests that verify the documentation endpoints enable it explicitly. Run all backend
 coverage with `./gradlew ktlintCheck test`; it must not migrate or clear the local application's public schema.
+
+Identity and request rate-limit integration tests use `PostgresTestSchema` with the same `TEST_DATABASE_*`
+connection settings as the other backend tests. Each test class creates its own UUID-named schema and drops
+it after the class finishes. The backend CI job supplies those same connection settings to all tests.
 
 `RecordingStorageClientTest` signs real SDK requests offline and checks conditional PUT headers, distinct URL
 lifetimes, HEAD checksums, error translation, and disabled-storage behavior. `ReceptionApiIntegrationTest` also
@@ -156,3 +161,11 @@ its own PostgreSQL schema to verify atomic expansion, per-device ownership and t
 retries without AI reruns, unknown-outcome recovery, old-worker rejection, and independent concurrent claims.
 All full-context schemas explicitly disable production integrations/workers even if the development shell enables
 them. Tests inject only fake device bindings and loopback FCM transport; no actual notification is sent.
+
+`DriverPushSenderTest` verifies identifier-only data, preservation of the existing generic notification,
+provider result/error translation, and cancellation using the shared HTTP transport against loopback FCM.
+Driver integration tests cover logout, token rotation, and lease expiry at the final send checkpoint,
+plus rejection of stale claims. `DriverPushConfigTest` verifies the common FCM activation flag and that
+delivery leases exceed the shared HTTP timeout. Driver and reception retain separate delivery policies.
+`DriverRegistrationIntegrationTest` owns an isolated UUID-named schema through `PostgresTestSchema`,
+so its global queue polling cannot consume another test context's deliveries or device bindings.

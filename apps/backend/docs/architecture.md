@@ -162,3 +162,12 @@ Shared S3 metadata, range reads, and signing live in `global.storage`, with neut
 Business modules wrap these operations in their own infrastructure code to apply ownership, file format,
 object-key/bucket selection, write policy, and use-specific URL lifetimes. Do not move a business module's
 validators or error codes into global, or reuse another module's internal storage wrapper.
+
+### Shared Push Transport
+
+Use the single FCM HTTP v1 connection configuration in `global.config.FcmConfig` and the generic
+`global.notification.FcmClient` for all domains. The shared client accepts a device token, string data,
+and optional notification title/body; it does not depend on identity or driver types. It makes one HTTP
+request and returns classified failures, leaving delivery persistence and retry decisions to each domain.
+Domains own recipient resolution, message contents, delivery claims, and the final authorization/claim
+check supplied through `beforeSend`. Driver queue lease/poll settings remain under `driver.push`.

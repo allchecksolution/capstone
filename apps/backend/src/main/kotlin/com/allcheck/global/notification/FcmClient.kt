@@ -22,7 +22,9 @@ import java.time.format.DateTimeParseException
 class FcmClient(private val connections: ObjectProvider<FcmConnection>, private val clock: Clock) {
     private val mapper = JsonMapper.builder().build()
 
-    fun send(token: String, data: Map<String, String>, beforeSend: () -> Boolean = { true }): String {
+    fun isConfigured(): Boolean = connections.ifAvailable != null
+
+    fun send(token: String, data: Map<String, String>, notification: FcmNotification? = null, beforeSend: () -> Boolean = { true }): String {
         require(token.isNotBlank() && data.isNotEmpty())
         val connection = connections.ifAvailable ?: throw FcmException(FcmFailure.UNAVAILABLE)
         val accessToken = try {
@@ -33,10 +35,12 @@ class FcmClient(private val connections: ObjectProvider<FcmConnection>, private 
         if (accessToken.isBlank() || accessToken.any { it == '\r' || it == '\n' }) throw FcmException(FcmFailure.REJECTED)
         // OAuth 갱신이 오래 걸린 경우에도 호출자가 실제 메시지 전송 직전에 권한/실행권을 재확인할 수 있다.
         if (!beforeSend()) throw FcmException(FcmFailure.CANCELLED)
+        val message = mutableMapOf<String, Any>("token" to token, "data" to data)
+        notification?.let { message["notification"] = mapOf("title" to it.title, "body" to it.body) }
         val response = try {
             connection.client.post().uri("/v1/projects/${connection.projectId}/messages:send")
                 .header(HttpHeaders.AUTHORIZATION, "Bearer $accessToken").contentType(MediaType.APPLICATION_JSON)
-                .body(mapper.writeValueAsString(mapOf("message" to mapOf("token" to token, "data" to data))))
+                .body(mapper.writeValueAsString(mapOf("message" to message)))
                 .retrieve().toEntity(String::class.java)
         } catch (_: ResourceAccessException) {
             throw FcmException(FcmFailure.REMOTE_OUTCOME_UNKNOWN)

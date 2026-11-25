@@ -1,8 +1,6 @@
 package com.allcheck.reception.application.notification
 
-import com.allcheck.reception.ReceptionPushDevices
 import org.slf4j.LoggerFactory
-import org.springframework.beans.factory.ObjectProvider
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
@@ -22,14 +20,13 @@ import java.time.Duration
 @EnableScheduling
 @ConditionalOnProperty(name = ["reception.push.enabled"], havingValue = "true")
 class ReceptionPushWorkerConfig(
-    devices: ObjectProvider<ReceptionPushDevices>,
     @Value("\${notification.fcm.enabled:false}") fcmEnabled: Boolean,
     @Value("\${reception.push.claim-ttl}") ttl: Duration,
     @Value("\${reception.push.poll-interval}") pollInterval: Duration,
     @Value("\${notification.fcm.request-timeout}") timeout: Duration,
 ) {
     init {
-        require(fcmEnabled && devices.ifAvailable != null) { "FCM and Identity device integration are required before enabling reception push." }
+        require(fcmEnabled) { "FCM must be configured before enabling reception push." }
         require(ttl > timeout && timeout > Duration.ZERO && pollInterval > Duration.ZERO) { "Push claim TTL must exceed the HTTP timeout; runtime intervals must be positive." }
     }
 
