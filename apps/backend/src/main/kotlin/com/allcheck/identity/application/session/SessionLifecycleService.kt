@@ -56,7 +56,7 @@ class SessionLifecycleService(
             refreshToken = replacement,
             expiresIn = accessTokens.lifetimeSeconds,
             refreshExpiresIn = Duration.between(clock.instant(), session.expiresAt).seconds.coerceAtLeast(0),
-            user = AuthUserResponse(checkNotNull(account.id), account.userType, account.adminCredential?.role),
+            user = AuthUserResponse(checkNotNull(account.id), account.userType, account.adminCredential?.role, account.isBootstrapAdmin.takeIf { account.adminCredential != null }),
         )
     }
 

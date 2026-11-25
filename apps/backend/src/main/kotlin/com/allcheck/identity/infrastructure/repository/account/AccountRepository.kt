@@ -12,6 +12,12 @@ import org.springframework.data.repository.query.Param
 import java.time.Instant
 
 interface AccountRepository : JpaRepository<Account, Long> {
+    fun existsByIsBootstrapAdminTrue(): Boolean
+
+    fun findByIsBootstrapAdminTrue(): Account?
+
+    fun findByUserType(userType: UserType, pageable: org.springframework.data.domain.Pageable): org.springframework.data.domain.Page<Account>
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select account from Account account where account.id = :accountId")
     fun findByIdForUpdate(@Param("accountId") accountId: Long): Account?
