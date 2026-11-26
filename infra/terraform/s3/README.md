@@ -9,7 +9,7 @@ S3 통신 코드는 Backend의 `global.config.S3Config`, `global.storage.S3Stora
 - 비공개 버킷, 네 가지 Public Access Block, ACL 비활성화(`BucketOwnerEnforced`), 기본 SSE-S3 암호화.
 - HTTPS 강제와 `recordings/*`의 조건부 쓰기 강제. 다른 도메인의 경로에 녹음 불변 정책을 적용하지 않습니다.
 - 녹음 경로의 GetObject/PutObject 및 누락 객체 확인용 ListBucket IAM 정책. 삭제·ACL·버킷 관리 권한은 부여하지 않습니다.
-- 명시한 기존 Backend 실행 역할에만 권한 정책을 연결합니다. 역할이 미정이면 정책만 생성합니다.
+- 명시한 기존 애플리케이션 EC2 역할에만 권한 정책을 연결합니다. 역할이 미정이면 정책만 생성합니다.
 - 브라우저 origin을 명시했을 때만 CORS를 생성합니다. 네이티브 앱은 CORS가 필요하지 않습니다.
 - `prevent_destroy=true`, `force_destroy=false`. 보존 기간이 미정이므로 자동 삭제·아카이브·버전 정책은 추가하지 않습니다.
 
@@ -18,12 +18,11 @@ Backend가 미완료 업로드와 저장소 권한 장애를 구분하도록 Lis
 이 권한은 버킷 내 객체 이름을 조회할 수 있으므로, 실행 역할의 다른 정책까지 포함해 접근 범위를 확인합니다.
 사진·프로필 경로의 객체 읽기/쓰기는 현재 녹음 정책에 포함하지 않습니다.
 
-## 현재 개발 단계
+## 로컬 개발
 
-S3는 아직 생성하지 않았고 Backend는 개발 PC에서 실행한다. 이 루트는 새 버킷 생성용이다.
-현재 단계에서 import는 필요하지 않다. Firebase/FCM 설정은 별도 루트로 관리한다.
+개발 PC에서 실행하는 백엔드에 새 비공개 버킷을 연결한다. Firebase/FCM 설정은 별도 루트로 관리한다.
 
-- 서버 실행 역할이 아직 없으면 backend_role_name을 지정하지 않는다.
+- 로컬 개발에서는 `ec2_role_name`을 생략한다.
 - 이 경우 IAM 정책만 생성되며, 로컬 Backend의 AWS 인증 주체에 정책을 연결하는 작업은 별도로 필요하다.
 - aws_profile은 Terraform의 인증 설정이다. Backend의 AWS_PROFILE은 별도로 설정한다.
 - AWS_ACCESS_KEY_ID 등의 비밀값은 tfvars에 넣지 않는다.
@@ -38,7 +37,7 @@ Terraform 1.9 이상을 사용합니다. AWS provider 버전은 `.terraform.lock
 
 1. `terraform.tfvars.example`을 로컬 `.tfvars`로 복사하고 실제 대상 계정과 버킷 이름을 입력합니다.
 2. 로컬 AWS 프로필을 사용하면 `aws_profile`을 지정합니다. 배포 환경에서는 실행 역할/자격증명 체인을 사용합니다.
-3. 기존 Backend 실행 역할 이름을 알면 `backend_role_name`을 지정합니다. 새 역할의 신뢰 정책은 배포 방식 확정 후 구성합니다.
+3. [애플리케이션 Terraform](../application/outputs.tf)의 `ec2_role_name` 출력을 같은 이름의 S3 입력 변수에 지정합니다.
 
 저장소 루트에서 실행합니다.
 

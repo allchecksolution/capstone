@@ -87,11 +87,21 @@ serviceusage.services.use 권한을 확인한다. 발송 계정에 Owner/Editor�
 [로컬 클라우드 가이드](../../../apps/backend/docs/local-cloud-setup.md)의 예시를 따른다.
 FCM_ENABLED만 켜도 업무 이벤트나 기기 토큰이 생성되는 것은 아니다.
 
-## 검증 범위와 향후 배포
+## 스테이징 백엔드 발송 인증
+
+AWS 스테이징에서 발송하려면 EC2의 `/etc/allcheck/backend/google-adc.json`에 서버용 ADC를 준비한다.
+Compose가 이 파일을 컨테이너의 `/run/allcheck/google-adc.json`에 읽기 전용으로 마운트하며 백엔드 UID 10001이 읽을 수 있어야 한다.
+Secrets Manager의 `allcheck/staging/backend/runtime`에 `GOOGLE_APPLICATION_CREDENTIALS=/run/allcheck/google-adc.json`,
+`FCM_PROJECT_ID`, `FCM_CONNECT_TIMEOUT`, `FCM_REQUEST_TIMEOUT`을 설정한 뒤 `FCM_ENABLED`를 활성화한다.
+첫 스테이징의 기동 검증은 `FCM_ENABLED` 기본값인 `false`로 진행할 수 있다.
+
+EC2 역할로 [Workload Identity Federation](https://docs.cloud.google.com/iam/docs/workload-identity-federation-with-other-clouds)을
+사용하려면 Google의 신뢰 설정과 컨테이너의 EC2 메타데이터 접근을 별도로 준비한다.
+
+## 검증 범위
 
 mock provider 테스트는 권한 범위·명시적 개발자 등록·API 유지 설정을 검사하며 실제 Google 호출을 하지 않는다.
 실제 발송은 프로젝트·앱 등록·기기 토큰·서버 인증이 준비된 뒤 확인한다.
-나중에 AWS 배포 방식이 정해지면 WIF 등 서버 인증을 별도로 구성하고 개발자 ADC를 배포 이미지에 넣지 않는다.
 
 참고: [FCM 발송 권한](https://docs.cloud.google.com/iam/docs/roles-permissions/firebasecloudmessaging),
 [로컬 ADC](https://docs.cloud.google.com/docs/authentication/set-up-adc-local-dev-environment),

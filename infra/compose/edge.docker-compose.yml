@@ -1,0 +1,19 @@
+services:
+  npm:
+    image: jc21/nginx-proxy-manager:2.17.1
+    restart: unless-stopped
+    mem_limit: 512m
+    logging: {driver: local}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "127.0.0.1:81:81"
+    volumes:
+      - ${ALLCHECK_DATA_DIR:-/var/lib/allcheck}/npm/data:/data
+      - ${ALLCHECK_DATA_DIR:-/var/lib/allcheck}/npm/letsencrypt:/etc/letsencrypt
+    networks: [proxy]
+
+networks:
+  proxy:
+    external: true
+    name: allcheck-proxy

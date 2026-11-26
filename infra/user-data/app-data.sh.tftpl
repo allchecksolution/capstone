@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+dnf install -y docker jq e2fsprogs
+command -v aws >/dev/null
+install -d /usr/local/lib/docker/cli-plugins /opt/allcheck/compose /etc/allcheck/backend /var/lib/allcheck
+compose_url=https://github.com/docker/compose/releases/download/v2.40.3/docker-compose-linux-x86_64
+curl -fsSL --retry 4 "$compose_url" -o /usr/local/lib/docker/cli-plugins/docker-compose
+curl -fsSL --retry 4 "$compose_url.sha256" | (
+  sha=$(awk 'NR == 1 { print $1 }')
+  printf '%s  %s\n' "$sha" /usr/local/lib/docker/cli-plugins/docker-compose | sha256sum -c -
+)
+chmod 0755 /usr/local/lib/docker/cli-plugins/docker-compose
+
+volume_serial='${volume_serial}'
+deadline=$((SECONDS + 300))
+while :; do
+  volume_device=$(lsblk -dpno NAME,SERIAL | awk -v volume="$volume_serial" '$2 == volume { print $1 }')
+  [[ -b "$volume_device" ]] && break
+  (( SECONDS < deadline )) || exit 1
+  sleep 3
+done
+if ! blkid "$volume_device" >/dev/null; then
+  [[ -z "$(wipefs --noheadings "$volume_device")" ]]
+  mkfs.ext4 -q "$volume_device"
+fi
+[[ "$(blkid -s TYPE -o value "$volume_device")" == ext4 ]]
+uuid=$(blkid -s UUID -o value "$volume_device")
+if ! grep -Fq "UUID=$uuid /var/lib/allcheck " /etc/fstab; then
+  printf 'UUID=%s /var/lib/allcheck ext4 defaults 0 2\n' "$uuid" >> /etc/fstab
+fi
+mountpoint -q /var/lib/allcheck || mount /var/lib/allcheck
+
+install -d /etc/systemd/system/docker.service.d
+printf '[Unit]\nRequiresMountsFor=/var/lib/allcheck\n' > /etc/systemd/system/docker.service.d/allcheck-data.conf
+systemctl daemon-reload
+systemctl enable --now docker
+docker network inspect allcheck-proxy >/dev/null 2>&1 || docker network create allcheck-proxy
+
+printf '%s' '${app_compose}' | base64 -d > /opt/allcheck/compose/app-data.docker-compose.yml
+printf '%s' '${edge_compose}' | base64 -d > /opt/allcheck/compose/edge.docker-compose.yml
+printf '%s' '${postgres_init}' | base64 -d > /opt/allcheck/compose/init-postgres.sh
+chmod 0755 /opt/allcheck/compose/init-postgres.sh
+docker compose --env-file /dev/null -p allcheck-edge -f /opt/allcheck/compose/edge.docker-compose.yml up -d

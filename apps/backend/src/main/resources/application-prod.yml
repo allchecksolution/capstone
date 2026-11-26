@@ -18,6 +18,9 @@ management:
   endpoint:
     health:
       show-details: never
+      group:
+        readiness:
+          include: readinessState,db
 
 logging:
   level:

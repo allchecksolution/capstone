@@ -18,7 +18,7 @@ S3와 FCM은 백엔드에서 외부로 호출한다. 이 통신을 위해 백엔
 
 - `terraform.tfvars.example`을 비공개 `dev.tfvars`로 복사한 뒤 AWS 계정, 리전, 전역 고유 버킷 이름을 지정한다.
 - Terraform 실행 인증은 외부에서 제공한다. 자격증명을 tfvars에 저장하지 않는다.
-- 아직 배포 서버의 역할이 없으므로 `backend_role_name`은 지정하지 않아도 된다.
+- 로컬 개발에서는 `ec2_role_name`을 생략한다.
 - 이 경우 녹음 접근 정책은 생성되지만 누구에게도 연결되지 않는다. 로컬 백엔드가 사용하는 AWS 주체에
   `recordings_policy_arn`의 정책을 연결하는 절차가 별도로 필요하다.
 - Terraform 실행 주체와 백엔드 실행 주체는 용도가 다르다. 백엔드에는 버킷 관리 권한이 필요하지 않다.
@@ -120,10 +120,10 @@ JWT_SECRET과 기존 DB 설정은 이 예시가 생성하거나 대체하지 않
 인증정보, FCM 기기 토큰, 서명 URL과 녹음 내용은 로그·Git·Terraform 출력에 남기지 않는다.
 녹음 보존·삭제 주기와 미정인 재시도 정책은 이 뼈대에서 정하지 않는다.
 
-## 6. 향후 AWS 배포
+## 6. AWS 스테이징 연결
 
-서버 배포 방식이 정해지면 실행 역할에 기존 녹음 정책을 연결하고, Google 발송 인증도 서버 환경에 맞게 구성한다.
-AWS→Google Workload Identity Federation은 그 단계에서 검토한다. 개발자 개인 ADC나 장기 키를 서버 이미지에 복사하지 않는다.
+스테이징에서는 [애플리케이션 EC2 역할](../../../infra/terraform/application/outputs.tf)에 녹음 정책을 연결하고,
+[스테이징 백엔드 발송 인증](../../../infra/terraform/fcm/README.md#스테이징-백엔드-발송-인증)을 별도로 준비한다.
 운영용 버킷·Firebase 프로젝트와 state는 개발 환경과 분리한다.
 
 참고: [AWS SDK 인증](https://docs.aws.amazon.com/sdk-for-java/latest/developer-guide/credentials.html),
