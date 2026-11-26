@@ -67,14 +67,14 @@ run "explicit_browser_and_role" {
   command = plan
   variables {
     allowed_cors_origins = ["https://admin.example.com"]
-    backend_role_name    = "test-backend-role"
+    ec2_role_name        = "test-application-ec2-role"
   }
   assert {
     condition     = length(aws_s3_bucket_cors_configuration.private_media) == 1 && one(aws_s3_bucket_cors_configuration.private_media[0].cors_rule).allowed_origins == toset(["https://admin.example.com"])
     error_message = "CORS must use only the explicitly supplied browser origin."
   }
   assert {
-    condition     = aws_iam_role_policy_attachment.recordings[0].role == "test-backend-role"
+    condition     = aws_iam_role_policy_attachment.recordings[0].role == "test-application-ec2-role"
     error_message = "Attach only to the explicitly supplied existing role."
   }
 }

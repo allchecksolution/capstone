@@ -23,7 +23,7 @@ resource "aws_iam_policy" "recordings" {
 }
 
 resource "aws_iam_role_policy_attachment" "recordings" {
-  count      = var.backend_role_name == null ? 0 : 1
-  role       = var.backend_role_name
+  count      = var.ec2_role_name == null ? 0 : 1
+  role       = var.ec2_role_name
   policy_arn = aws_iam_policy.recordings.arn
 }

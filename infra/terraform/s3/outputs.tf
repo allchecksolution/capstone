@@ -8,7 +8,7 @@ output "bucket_arn" {
 }
 
 output "recordings_policy_arn" {
-  description = "Attach to the Backend execution role if backend_role_name was not specified."
+  description = "Attach to the application EC2 role if ec2_role_name was not specified."
   value       = aws_iam_policy.recordings.arn
 }
 

@@ -40,13 +40,13 @@ variable "bucket_name" {
   }
 }
 
-variable "backend_role_name" {
-  description = "Existing Backend execution-role name to receive recording permissions. Null creates the policy without attaching it."
+variable "ec2_role_name" {
+  description = "Existing application EC2 role name to receive recording permissions. Null creates the policy without attaching it."
   type        = string
   default     = null
   validation {
-    condition     = var.backend_role_name == null ? true : length(trimspace(var.backend_role_name)) > 0
-    error_message = "Backend role name must be nonblank when specified."
+    condition     = var.ec2_role_name == null ? true : length(trimspace(var.ec2_role_name)) > 0
+    error_message = "EC2 role name must be nonblank when specified."
   }
 }
 
