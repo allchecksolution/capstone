@@ -1,0 +1,5 @@
+aws_account_id    = "000000000000"
+aws_region        = "ap-northeast-2"
+availability_zone = "ap-northeast-2a"
+environment       = "staging"
+instance_type     = "t3.medium"
