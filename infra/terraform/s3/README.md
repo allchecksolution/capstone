@@ -18,6 +18,19 @@ Backend가 미완료 업로드와 저장소 권한 장애를 구분하도록 Lis
 이 권한은 버킷 내 객체 이름을 조회할 수 있으므로, 실행 역할의 다른 정책까지 포함해 접근 범위를 확인합니다.
 사진·프로필 경로의 객체 읽기/쓰기는 현재 녹음 정책에 포함하지 않습니다.
 
+## 현재 개발 단계
+
+S3는 아직 생성하지 않았고 Backend는 개발 PC에서 실행한다. 이 루트는 새 버킷 생성용이다.
+현재 단계에서 import는 필요하지 않다. Firebase/FCM 설정은 별도 루트로 관리한다.
+
+- 서버 실행 역할이 아직 없으면 backend_role_name을 지정하지 않는다.
+- 이 경우 IAM 정책만 생성되며, 로컬 Backend의 AWS 인증 주체에 정책을 연결하는 작업은 별도로 필요하다.
+- aws_profile은 Terraform의 인증 설정이다. Backend의 AWS_PROFILE은 별도로 설정한다.
+- AWS_ACCESS_KEY_ID 등의 비밀값은 tfvars에 넣지 않는다.
+- 구성 작성이나 init/validate/test는 실제 S3 배포가 아니다. 실제 계정 정보를 정한 뒤 plan을 검토하고 apply한다.
+
+로컬 Backend 환경변수와 인증 절차는 [로컬 클라우드 연동 가이드](../../../apps/backend/docs/local-cloud-setup.md)를 참고한다.
+
 ## 적용 정보
 
 Terraform 1.9 이상을 사용합니다. AWS provider 버전은 `.terraform.lock.hcl`로 고정합니다.
@@ -34,7 +47,7 @@ terraform -chdir=infra/terraform/s3 init
 terraform -chdir=infra/terraform/s3 fmt -check -recursive
 terraform -chdir=infra/terraform/s3 validate
 terraform -chdir=infra/terraform/s3 test
-terraform -chdir=infra/terraform/s3 plan -var-file=dev.tfvars -out=dev.tfplan
+terraform -chdir=infra/terraform/s3 plan '-var-file=dev.tfvars' '-out=dev.tfplan'
 terraform -chdir=infra/terraform/s3 apply dev.tfplan
 ```
 
