@@ -38,6 +38,20 @@ extension BackendScreens on _WorkflowShellState {
   }
 
   Future<void> applyServerState(Json result) async {
+    if (result['consultations'] is List || result['consultation'] is Json) {
+      await s.change(() {
+        if (result['consultations'] is List) {
+          s.data['consultations'] = result['consultations'];
+          receptionPage = result['receptionPage'] as Json? ?? {};
+        } else {
+          final row = result['consultation'] as Json;
+          final rows = s.consultations;
+          final index = rows.indexWhere((c) => c['id'] == row['id']);
+          if (index < 0) { rows.insert(0, row); } else { rows[index] = row; }
+        }
+      });
+      return;
+    }
     final state=result['state'];
     if(state is! Json)throw const ServiceFailure(0,'서버 응답 형식을 확인해 주세요.');
     await s.change((){
@@ -63,7 +77,7 @@ extension BackendScreens on _WorkflowShellState {
         if(entity?['version']!=null)'expectedVersion':entity!['version']});
       if(!mounted)return false;
       await applyServerState(response);lastResourceId=text(response,'resourceId');retryKeys.remove(key);return true;
-    }catch(e){conflict=e is ServiceFailure&&[409,410].contains(e.status);failure(e);return false;}
+    }catch(e){conflict=e is ServiceFailure&&[409,410].contains(e.status);if(conflict)retryKeys.remove(key);failure(e);return false;}
     finally{if(mounted){refresh(()=>busy=false);if(conflict)await refreshState();drainPending();}}
   }
 
@@ -72,12 +86,13 @@ extension BackendScreens on _WorkflowShellState {
     refresh(()=>busy=true);
     try{
       // ID/password only, per current product decision. No public signup.
-      final response=await api.call('auth/admin-login',{'username':value('username'),'password':value('password')});
+      final response=await api.call('auth/admin-login',{'username':controller('username').text,'password':controller('password').text});
       if(!mounted)return;
       await applyServerState(response);
       if(!mounted)return;
       adminName=text(response,'name',value('username'));
       controller('password').clear();signedIn=true;developmentSession=false;
+      adminAccountRequest=null;adminAccountPage=1;editingAdministrator=null;
       history.clear();go('home',replace:true);
     }catch(e){failure(e);}
     finally{if(mounted){refresh(()=>busy=false);if(signedIn)unawaited(afterAuthentication());}}
@@ -85,8 +100,12 @@ extension BackendScreens on _WorkflowShellState {
 
   Future<void> refreshState()async{
     if(!signedIn||developmentSession||page=='register'||widget.backend==null||busy||refreshingState)return;
+    if (springReceptions) {
+      if (['receptions', 'reception'].contains(page)) await loadReceptions();
+      return;
+    }
     refreshingState=true;final version=stateVersion;
-    try{final response=await api.call('workflow/state',{'role':widget.role.name});if(mounted&&signedIn&&!busy&&version==stateVersion)await applyServerState(response);}
+    try{final response=await api.call('workflow/state',{'role':widget.role.name,if(admin&&page=='driver')'driverId':id});if(mounted&&signedIn&&!busy&&version==stateVersion)await applyServerState(response);}
     catch(e){failure(e);}
     finally{refreshingState=false;}
   }
@@ -129,6 +148,7 @@ extension BackendScreens on _WorkflowShellState {
 
   Future<void> afterAuthentication()async{
     if(!mounted||!signedIn||developmentSession||sdkOnlySession||afterAuthRunning)return;
+    if (springReceptions) return;
     afterAuthRunning=true;try{
     await loadInbox();
     try{final token=await appPush?.token();if(token!=null)await registerDevice(token);}catch(_){if(mounted)refresh(()=>pushStatus='알림 연결을 다시 시도해 주세요.');}

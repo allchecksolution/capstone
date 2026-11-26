@@ -2,6 +2,7 @@ package com.allcheck.driver.application.query
 
 import com.allcheck.driver.domain.vo.registration.DriverAccountStatus
 import com.allcheck.driver.exception.DriverErrorCode
+import com.allcheck.driver.infrastructure.repository.dispatch.DriverDispatchStateRepository
 import com.allcheck.driver.infrastructure.repository.registration.DriverHistoryRepository
 import com.allcheck.driver.infrastructure.repository.registration.DriverRepository
 import com.allcheck.driver.presentation.dto.response.query.DriverDetailResponse
@@ -22,6 +23,7 @@ import java.util.Locale
 class DriverQueryService(
     private val drivers: DriverRepository,
     private val history: DriverHistoryRepository,
+    private val dispatchStates: DriverDispatchStateRepository,
 ) {
     fun checkCanSubmit(accountId: Long) {
         if (drivers.existsByAccountId(accountId)) throw BusinessException(DriverErrorCode.DRIVER_ALREADY_REGISTERED)
@@ -56,6 +58,7 @@ class DriverQueryService(
             BusinessVerificationResponse(verifiedAt = driver.business.verifiedAt),
             history.findAllByDriverIdAndEventTypeOrderByOccurredAtAsc(driverId, "REJECTED")
                 .map { RegistrationRejection(checkNotNull(it.reason), it.occurredAt) },
+            dispatchStates.findById(driverId).orElse(null)?.availability?.name,
         )
     }
 }

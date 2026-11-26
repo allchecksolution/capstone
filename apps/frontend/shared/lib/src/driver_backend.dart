@@ -126,6 +126,17 @@ class DriverOnboardingBackend implements FrontendBackend {
       }
       return workType;
     }).toList();
+    if (specialties.isEmpty || specialties.length > 3) {
+      throw const ServiceFailure(400, '전문 분야는 1~3개만 선택해 주세요.');
+    }
+    final accountNumber = flat['bankAccount'] as String? ?? '';
+    if (accountNumber.length < 6 || accountNumber.length > 30 ||
+        !RegExp(r'^[0-9]+(?:-[0-9]+)*$').hasMatch(accountNumber)) {
+      throw const ServiceFailure(400, '계좌번호는 6~30자로, 숫자와 숫자 사이의 -만 입력해 주세요.');
+    }
+    if (!RegExp(r'^[0-9+-]{9,20}$').hasMatch(flat['companyPhone'] as String? ?? '')) {
+      throw const ServiceFailure(400, '회사 대표번호는 숫자·+·-로 9~20자를 입력해 주세요.');
+    }
     List<String> collection(String key, String other) => {
       ...((flat[key] as List?) ?? []).cast<String>(),
       if ((flat[other] as String?)?.trim().isNotEmpty == true)

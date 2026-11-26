@@ -1,0 +1,54 @@
+package com.allcheck.chat.presentation.controller
+
+import com.allcheck.chat.application.ChatService
+import com.allcheck.chat.presentation.api.ChatApi
+import com.allcheck.chat.presentation.dto.request.MarkChatRead
+import com.allcheck.chat.presentation.dto.request.SendChatMessage
+import com.allcheck.chat.presentation.dto.response.ChatRoomPageResponse
+import com.allcheck.chat.presentation.dto.response.response
+import com.allcheck.chat.presentation.parseChatMessageId
+import com.allcheck.chat.presentation.security.toChatActor
+import com.allcheck.global.security.principal.AuthPrincipal
+import org.springframework.http.CacheControl
+import org.springframework.http.HttpStatus
+import org.springframework.http.ResponseEntity
+import org.springframework.security.access.prepost.PreAuthorize
+import org.springframework.web.bind.annotation.RestController
+
+@RestController
+internal class ChatController(private val chat: ChatService) : ChatApi {
+
+    @PreAuthorize("hasRole('ADMIN')")
+    override fun rooms(principal: AuthPrincipal?, q: String?, page: Int, size: Int): ResponseEntity<ChatRoomPageResponse> {
+        val roomPage = chat.rooms(principal.toChatActor(), q, page, size)
+        return ok(ChatRoomPageResponse(roomPage.rooms.map { it.response() }, page, size, roomPage.hasNext))
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    override fun messages(principal: AuthPrincipal?, driverId: Long, before: String?, after: String?, limit: Int) = ok(chat.messages(principal.toChatActor(), driverId, before?.let(::parseChatMessageId), after?.let(::parseChatMessageId), limit).response())
+
+    @PreAuthorize("hasRole('ADMIN')")
+    override fun send(principal: AuthPrincipal?, driverId: Long, key: String, body: SendChatMessage) = created(chat.send(principal.toChatActor(), driverId, key, body.body).response())
+
+    @PreAuthorize("hasRole('ADMIN')")
+    override fun markRead(principal: AuthPrincipal?, driverId: Long, body: MarkChatRead) = ok(chat.markRead(principal.toChatActor(), driverId, parseChatMessageId(body.lastReadMessageId)).response())
+
+    @PreAuthorize("hasRole('DRIVER')")
+    override fun myMessages(principal: AuthPrincipal?, before: String?, after: String?, limit: Int) = principal.toChatActor().let { actor ->
+        ok(chat.messages(actor, chat.ownDriverId(actor), before?.let(::parseChatMessageId), after?.let(::parseChatMessageId), limit).response())
+    }
+
+    @PreAuthorize("hasRole('DRIVER')")
+    override fun mySend(principal: AuthPrincipal?, key: String, body: SendChatMessage) = principal.toChatActor().let { actor ->
+        created(chat.send(actor, chat.ownDriverId(actor), key, body.body).response())
+    }
+
+    @PreAuthorize("hasRole('DRIVER')")
+    override fun myMarkRead(principal: AuthPrincipal?, body: MarkChatRead) = principal.toChatActor().let { actor ->
+        ok(chat.markRead(actor, chat.ownDriverId(actor), parseChatMessageId(body.lastReadMessageId)).response())
+    }
+
+    private fun <T> ok(body: T) = ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(body)
+
+    private fun <T> created(body: T) = ResponseEntity.status(HttpStatus.CREATED).cacheControl(CacheControl.noStore()).body(body)
+}

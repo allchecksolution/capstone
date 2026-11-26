@@ -17,6 +17,7 @@ class AdminProvisioningCli(
     private val readConsolePassword: () -> CharArray? = { System.console()?.readPassword("Administrator password: ") },
     private val output: PrintStream = System.out,
     private val error: PrintStream = System.err,
+    private val command: String = "provision-admin",
 ) {
     fun run(args: Array<String>): Int {
         if (args.contentEquals(arrayOf("--help"))) {
@@ -33,7 +34,12 @@ class AdminProvisioningCli(
         try {
             if (password.isEmpty() || password.size > 200 || password.all { it.isWhitespace() }) return usageError()
             val created = provision(options.loginId, String(password), options.role)
-            output.println("ADMIN_CREATED accountId=${created.accountId} role=${created.role}")
+            val action = when (command) {
+                "recover-bootstrap-admin" -> "ADMIN_RECOVERED"
+                "adopt-bootstrap-admin" -> "ADMIN_ADOPTED"
+                else -> "ADMIN_CREATED"
+            }
+            output.println("$action accountId=${created.accountId} role=${created.role}")
             return 0
         } catch (ex: BusinessException) {
             error.println(ex.errorCode.name)
@@ -58,7 +64,8 @@ class AdminProvisioningCli(
         }
         val loginId = values["--login-id"] ?: return null
         if (loginId.isBlank() || loginId.length > 100 || '\u0000' in loginId) return null
-        val role = AdminRole.entries.firstOrNull { it.name == values["--role"] } ?: return null
+        val role = if (command == "provision-admin") AdminRole.entries.firstOrNull { it.name == values["--role"] } ?: return null else AdminRole.MASTER
+        if (command != "provision-admin" && values.containsKey("--role")) return null
         return Options(loginId, role, values["--password-file"])
     }
 
@@ -87,6 +94,6 @@ class AdminProvisioningCli(
     private data class Options(val loginId: String, val role: AdminRole, val passwordFile: String?)
 
     companion object {
-        private const val USAGE = "Usage: java -jar app.jar provision-admin --login-id=<id> --role=<MASTER|SUB> [--password-file=<UTF-8 file>]\nWithout --password-file, enter the password in an interactive console. Passwords are never accepted as command-line arguments."
+        private const val USAGE = "Usage: java -jar app.jar provision-admin --login-id=<id> --role=<MASTER|SUB> [--password-file=<UTF-8 file>]\nRecovery: recover-bootstrap-admin --login-id=<id> [--password-file=<file>]\nMigration: adopt-bootstrap-admin --login-id=<existing-id> [--password-file=<current-password-file>]\nWithout --password-file, enter the password in an interactive console. Passwords are never accepted as command-line arguments."
     }
 }

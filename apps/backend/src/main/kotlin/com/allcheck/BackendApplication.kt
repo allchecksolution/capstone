@@ -9,8 +9,8 @@ import kotlin.system.exitProcess
 class BackendApplication
 
 fun main(args: Array<String>) {
-    if (args.firstOrNull() == "provision-admin") {
-        exitProcess(AdminProvisioningCommand.run(args.drop(1).toTypedArray()))
+    if (args.firstOrNull() in setOf("provision-admin", "recover-bootstrap-admin", "adopt-bootstrap-admin")) {
+        exitProcess(AdminProvisioningCommand.run(args.drop(1).toTypedArray(), args[0]))
     }
     runApplication<BackendApplication>(*args)
 }

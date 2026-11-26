@@ -1,5 +1,6 @@
 package com.allcheck.identity.infrastructure.repository.account
 
+import com.allcheck.identity.UserType
 import com.allcheck.identity.domain.entity.account.Account
 import com.allcheck.identity.domain.vo.account.SocialLogin
 import jakarta.persistence.LockModeType
@@ -11,11 +12,22 @@ import org.springframework.data.repository.query.Param
 import java.time.Instant
 
 interface AccountRepository : JpaRepository<Account, Long> {
+    fun existsByIsBootstrapAdminTrue(): Boolean
+
+    fun findByIsBootstrapAdminTrue(): Account?
+
+    fun findByUserType(userType: UserType, pageable: org.springframework.data.domain.Pageable): org.springframework.data.domain.Page<Account>
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select account from Account account where account.id = :accountId")
     fun findByIdForUpdate(@Param("accountId") accountId: Long): Account?
 
     fun findBySocialLogin(socialLogin: SocialLogin): Account?
+
+    @Query("select account.id from Account account where account.id in :ids and account.enabled = true and account.userType = com.allcheck.identity.UserType.DRIVER")
+    fun activeDriverIds(ids: Collection<Long>): Set<Long>
+
+    fun existsByIdAndEnabledTrueAndUserType(id: Long, userType: UserType): Boolean
 
     fun findByAdminCredentialLoginId(loginId: String): Account?
 

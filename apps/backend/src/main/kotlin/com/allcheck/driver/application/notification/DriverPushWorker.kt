@@ -22,7 +22,7 @@ class DriverPushWorker(
         }
         // FCM 호출은 DB claim 트랜잭션이 끝난 뒤 수행한다.
         val result = client.send(target, transactions.event(claim.eventId)) {
-            transactions.target(claim)?.tokenHash == target.tokenHash
+            transactions.target(claim)?.sameBinding(target) == true
         }
         if (result?.invalidToken == true) devices.invalidate(target)
         transactions.finish(claim, result)

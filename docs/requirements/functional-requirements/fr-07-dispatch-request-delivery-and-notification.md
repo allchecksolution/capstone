@@ -15,3 +15,7 @@
 [BR-02](../../../apps/backend/docs/business-specification.md#br-02), 접수 스냅샷의 기준은
 [BR-04](../../../apps/backend/docs/business-specification.md#br-04)를 따른다.
 고객 연락처는 수락 후 해당 의뢰의 담당 기사에게만 제공한다. 배차 후보에게는 연락처를 제공하지 않으며, notes의 후보 공개 정책과 구분한다.
+
+수락 전 배차 요청의 주소는 시·군·구와 읍·면·동 수준까지만 제공하고 현장까지의 직선거리를 함께 표시한다. 도로명·건물번호·동호수와 현장 좌표는 배차 요청 응답에 포함하지 않으며, 전체 확정 주소는 수락 후 권한 있는 작업 조회에서 제공한다. 작업 유형·증상·방문 시간·검토된 부가정보의 기존 공개 기준은 유지하며 상세 기준은 [BR-02](../../../apps/backend/docs/business-specification.md#br-02)를 따른다.
+
+배차 알림은 해당 기사의 등록된 활성 기기 전체에 전송하되, 기사당 하나의 배차 요청과 응답 기한을 공유한다. 어느 기기에서든 먼저 확정된 유효 응답을 해당 기사의 응답으로 처리한다. 기기별 전송 결과와 기사 단위 전달 상태의 집계는 [BR-01](../../../apps/backend/docs/business-specification.md#br-01) 및 [BR-04](../../../apps/backend/docs/business-specification.md#br-04)를 따르며, 기기 등록·토큰 관리는 타 도메인 연동으로 분리한다.

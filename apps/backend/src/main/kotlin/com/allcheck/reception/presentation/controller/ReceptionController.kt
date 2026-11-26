@@ -1,5 +1,9 @@
 package com.allcheck.reception.presentation.controller
 
+import com.allcheck.global.exception.BusinessException
+import com.allcheck.global.security.exception.SecurityErrorCode
+import com.allcheck.global.security.principal.AuthPrincipal
+import com.allcheck.identity.UserType
 import com.allcheck.reception.application.ReceptionCommandService
 import com.allcheck.reception.application.review.ReceptionQueryService
 import com.allcheck.reception.domain.vo.ReceptionExternalId
@@ -11,11 +15,9 @@ import com.allcheck.reception.presentation.dto.request.review.ReopenReceptionReq
 import com.allcheck.reception.presentation.dto.response.review.ReceptionConfirmedResponse
 import com.allcheck.reception.presentation.dto.response.review.ReceptionDetailResponse
 import com.allcheck.reception.presentation.dto.response.review.ReceptionReopenedResponse
-import com.allcheck.reception.presentation.security.ReceptionAdminResolver
 import org.springframework.http.CacheControl
 import org.springframework.http.ResponseEntity
 import org.springframework.security.access.prepost.PreAuthorize
-import org.springframework.security.core.Authentication
 import org.springframework.web.bind.annotation.RestController
 import java.net.URI
 
@@ -24,30 +26,35 @@ import java.net.URI
 class ReceptionController(
     private val commands: ReceptionCommandService,
     private val queries: ReceptionQueryService,
-    private val admins: ReceptionAdminResolver,
 ) : ReceptionApi {
-    override fun create(authentication: Authentication, key: String, request: CreateReceptionRequest): ResponseEntity<ReceptionDetailResponse> {
-        val result = commands.create(admins.resolve(authentication), key, request.toCreationData())
+    override fun create(principal: AuthPrincipal?, key: String, request: CreateReceptionRequest): ResponseEntity<ReceptionDetailResponse> {
+        val result = commands.create(principal.requireReceptionAdminId(), key, request.toCreationData())
         return ResponseEntity.created(URI.create("/api/v1/receptions/${result.value.receptionId}"))
             .cacheControl(CacheControl.noStore()).header("Idempotency-Replayed", result.replayed.toString()).body(result.value)
     }
 
-    override fun list(authentication: Authentication, reviewStatus: ReceptionReviewStatus?, page: Int, size: Int) = ResponseEntity.ok()
-        .cacheControl(CacheControl.noStore()).body(queries.list(admins.resolve(authentication), reviewStatus, page, size))
+    override fun list(principal: AuthPrincipal?, reviewStatus: ReceptionReviewStatus?, page: Int, size: Int) = ResponseEntity.ok()
+        .cacheControl(CacheControl.noStore()).body(queries.list(principal.requireReceptionAdminId(), reviewStatus, page, size))
 
-    override fun detail(authentication: Authentication, receptionId: String) = ResponseEntity.ok()
-        .cacheControl(CacheControl.noStore()).body(queries.detail(admins.resolve(authentication), ReceptionExternalId.RECEPTION.parse(receptionId)))
+    override fun detail(principal: AuthPrincipal?, receptionId: String) = ResponseEntity.ok()
+        .cacheControl(CacheControl.noStore()).body(queries.detail(principal.requireReceptionAdminId(), ReceptionExternalId.RECEPTION.parse(receptionId)))
 
-    override fun analysis(authentication: Authentication, receptionId: String, analysisRequestId: String) = ResponseEntity.ok()
-        .cacheControl(CacheControl.noStore()).body(queries.analysis(admins.resolve(authentication), ReceptionExternalId.RECEPTION.parse(receptionId), ReceptionExternalId.ANALYSIS.parse(analysisRequestId)))
+    override fun analysis(principal: AuthPrincipal?, receptionId: String, analysisRequestId: String) = ResponseEntity.ok()
+        .cacheControl(CacheControl.noStore()).body(queries.analysis(principal.requireReceptionAdminId(), ReceptionExternalId.RECEPTION.parse(receptionId), ReceptionExternalId.ANALYSIS.parse(analysisRequestId)))
 
-    override fun confirm(authentication: Authentication, receptionId: String, key: String, request: ConfirmReceptionRequest): ResponseEntity<ReceptionConfirmedResponse> {
-        val result = commands.confirm(admins.resolve(authentication), ReceptionExternalId.RECEPTION.parse(receptionId), key, request.expectedVersion, request.finalData.toConfirmationData())
+    override fun confirm(principal: AuthPrincipal?, receptionId: String, key: String, request: ConfirmReceptionRequest): ResponseEntity<ReceptionConfirmedResponse> {
+        val result = commands.confirm(principal.requireReceptionAdminId(), ReceptionExternalId.RECEPTION.parse(receptionId), key, request.expectedVersion, request.finalData.toConfirmationData())
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).header("Idempotency-Replayed", result.replayed.toString()).body(result.value)
     }
 
-    override fun reopen(authentication: Authentication, receptionId: String, key: String, request: ReopenReceptionRequest): ResponseEntity<ReceptionReopenedResponse> {
-        val result = commands.reopen(admins.resolve(authentication), ReceptionExternalId.RECEPTION.parse(receptionId), key, request.expectedVersion)
+    override fun reopen(principal: AuthPrincipal?, receptionId: String, key: String, request: ReopenReceptionRequest): ResponseEntity<ReceptionReopenedResponse> {
+        val result = commands.reopen(principal.requireReceptionAdminId(), ReceptionExternalId.RECEPTION.parse(receptionId), key, request.expectedVersion)
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).header("Idempotency-Replayed", result.replayed.toString()).body(result.value)
     }
+}
+
+internal fun AuthPrincipal?.requireReceptionAdminId(): Long {
+    if (this == null || userType != UserType.ADMIN) throw BusinessException(SecurityErrorCode.ACCESS_DENIED)
+    check(accountId > 0) { "The authenticated administrator must have a persisted account ID." }
+    return accountId
 }

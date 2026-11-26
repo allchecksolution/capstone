@@ -1,6 +1,8 @@
 package com.allcheck.reception.presentation
 
-import com.allcheck.reception.ReceptionAdministratorIdentity
+import com.allcheck.global.security.principal.AuthPrincipal
+import com.allcheck.identity.AdminRole
+import com.allcheck.identity.UserType
 import com.allcheck.reception.application.analysis.ReceptionAnalysisTransactions
 import com.allcheck.reception.application.recording.ReceptionRecordingTransactions
 import com.allcheck.reception.application.recording.RecordingUploadMetadata
@@ -61,7 +63,7 @@ import javax.sql.DataSource
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @TestPropertySource("classpath:jwt-test.properties")
-@Import(ReceptionApiIntegrationTest.IdentityFixture::class)
+@Import(ReceptionApiIntegrationTest.Fixtures::class)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class ReceptionApiIntegrationTest @Autowired constructor(
@@ -381,11 +383,12 @@ class ReceptionApiIntegrationTest @Autowired constructor(
     )
 
     private fun key() = UUID.randomUUID().toString()
-    private fun admin(id: Long) = authentication(UsernamePasswordAuthenticationToken.authenticated(TestAdmin(id), null, AuthorityUtils.createAuthorityList("ROLE_ADMIN")))
-    data class TestAdmin(val id: Long)
+    private fun admin(id: Long) = authentication(
+        UsernamePasswordAuthenticationToken.authenticated(AuthPrincipal(id, 1L, UserType.ADMIN, AdminRole.MASTER), null, AuthorityUtils.createAuthorityList("ROLE_ADMIN")),
+    )
 
     @TestConfiguration(proxyBeanMethods = false)
-    class IdentityFixture {
+    class Fixtures {
         @Bean
         fun storageFixture() = StorageFixture()
 
@@ -401,9 +404,6 @@ class ReceptionApiIntegrationTest @Autowired constructor(
 
         @Bean(destroyMethod = "close")
         fun offlineSigner(fixture: StorageFixture): S3Presigner = S3TestFixtures.signer { fixture.signatures.incrementAndGet() }
-
-        @Bean
-        fun administratorIdentity() = ReceptionAdministratorIdentity { authentication -> (authentication.principal as? TestAdmin)?.id }
 
         @Bean
         @Primary

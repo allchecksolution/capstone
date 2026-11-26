@@ -12,7 +12,9 @@ import com.allcheck.identity.infrastructure.repository.account.AccountRepository
 import com.allcheck.identity.infrastructure.repository.session.AuthSessionRepository
 import com.allcheck.identity.infrastructure.session.RefreshTokenProvider
 import com.allcheck.identity.presentation.dto.response.session.TokenPairResponse
+import com.allcheck.support.PostgresTestSchema
 import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -26,6 +28,9 @@ import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
+import org.springframework.test.annotation.DirtiesContext
+import org.springframework.test.context.DynamicPropertyRegistry
+import org.springframework.test.context.DynamicPropertySource
 import org.springframework.test.context.TestPropertySource
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean
@@ -44,17 +49,16 @@ import java.time.Instant
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import javax.sql.DataSource
 
 @SpringBootTest(
     properties = [
-        "spring.datasource.url=\${IDENTITY_TEST_DATABASE_URL:jdbc:postgresql://localhost:15432/allcheck_identity_test}",
-        "spring.datasource.username=\${IDENTITY_TEST_DATABASE_USER:allcheck}",
-        "spring.datasource.password=\${IDENTITY_TEST_DATABASE_PASSWORD:allcheck_local_6}",
         "spring.jpa.show-sql=false",
         "identity.sessions.expiration=PT336H",
     ],
 )
 @AutoConfigureMockMvc
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @TestPropertySource("classpath:jwt-test.properties")
 class KakaoLoginIntegrationTest @Autowired constructor(
     private val mockMvc: MockMvc,
@@ -286,4 +290,16 @@ class KakaoLoginIntegrationTest @Autowired constructor(
     }
 
     private fun request(accessToken: String = token): String = """{"kakaoAccessToken":"$accessToken"}"""
+
+    companion object {
+        private val database = PostgresTestSchema("kakao_login")
+
+        @JvmStatic
+        @DynamicPropertySource
+        fun properties(registry: DynamicPropertyRegistry) = database.register(registry)
+
+        @JvmStatic
+        @AfterAll
+        fun removeTestSchema(@Autowired dataSource: DataSource) = database.remove(dataSource)
+    }
 }

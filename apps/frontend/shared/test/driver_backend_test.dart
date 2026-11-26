@@ -43,6 +43,65 @@ http.Response noRegistration() =>
     jsonResponse({'code': 'DRIVER_NOT_FOUND'}, 404);
 
 void main() {
+  for (final invalid in <Map<String,dynamic>>[
+    {'specialties':['막힘','내벽 누수','외벽 누수','방수']},
+    {'bankAccount':'123 456'},
+    {'bankAccount':'123'},
+    {'companyPhone':'12345'},
+  ]) {
+    test('invalid registration is explained before POST (${invalid.keys.single})', () async {
+      var posts = 0;
+      final backend = DriverOnboardingBackend('https://api.example.com/api/v1', client: MockClient((request) async {
+        posts++;
+        return jsonResponse({});
+      }));
+      await expectLater(backend.call('drivers/register', {
+        'profile': {...profile, ...invalid}, 'requestId':'test-key',
+      }), throwsA(isA<ServiceFailure>().having((error)=>error.status,'status',400)));
+      expect(posts,0);
+      backend.close();
+    });
+  }
+  test('registration validation points to safe field labels without echoing response values', () async {
+    final backend = DriverOnboardingBackend('https://api.example.com/api/v1', client: MockClient((request) async => jsonResponse({
+      'code':'INVALID_INPUT_VALUE', 'message':'private response data',
+      'details':[
+        {'field':'profile.specialties','reason':'private original value'},
+        {'field':'profile.settlementAccount.accountNumber','reason':'private bank value'},
+        {'field':'private-token-field','reason':'private token'},
+      ],
+    },400)));
+    await expectLater(backend.call('drivers/register', {'profile':profile,'requestId':'test-key'}),
+      throwsA(isA<ServiceFailure>()
+        .having((error)=>error.message,'specialty hint',contains('전문 분야(1~3개)'))
+        .having((error)=>error.message,'bank hint',contains('계좌번호'))
+        .having((error)=>error.message,'no raw values',isNot(contains('private')))));
+    backend.close();
+  });
+  test('registration server errors are distinct from invalid input', () async {
+    final backend = DriverOnboardingBackend('https://api.example.com/api/v1', client: MockClient((request) async => jsonResponse({
+      'code':'INTERNAL_SERVER_ERROR','message':'private SQL details',
+    },500)));
+    await expectLater(backend.call('drivers/register', {'profile':profile,'requestId':'test-key'}),
+      throwsA(isA<ServiceFailure>()
+        .having((error)=>error.message,'server failure',contains('서버 내부 오류'))
+        .having((error)=>error.message,'no SQL',isNot(contains('SQL')))));
+    backend.close();
+  });
+  for (final code in ['KAKAO_AUTH_FAILED', 'KAKAO_SERVICE_UNAVAILABLE']) {
+    test('Kakao verification error $code is safe and distinguishable', () async {
+      final backend = DriverOnboardingBackend('https://api.example.com/api/v1',
+        client: MockClient((request) async => jsonResponse({
+          'code': code, 'message': 'private token and upstream response',
+        }, code == 'KAKAO_AUTH_FAILED' ? 401 : 503)));
+      await expectLater(backend.call('auth/kakao', {'accessToken': 'test-token'}),
+        throwsA(isA<ServiceFailure>()
+          .having((error) => error.code, 'error code', code)
+          .having((error) => error.message, 'safe message', contains(code == 'KAKAO_AUTH_FAILED' ? '카카오 로그인부터' : '서버에서 카카오 인증'))
+          .having((error) => error.message, 'no raw response', isNot(contains('private')))));
+      backend.close();
+    });
+  }
   test(
     'driver login, business check, submission and logout use actual REST contracts',
     () async {
