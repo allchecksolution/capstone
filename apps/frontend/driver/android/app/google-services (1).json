@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "414145711645",
+    "project_id": "allcheck-dev-7c794",
+    "storage_bucket": "allcheck-dev-7c794.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:414145711645:android:b629b23f92251d6c7bc0f4",
+        "android_client_info": {
+          "package_name": "kr.allcheck.flutter.admin"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA02JMVo6Ye8F1TSSWq1N7kKqxiytlC54I"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
