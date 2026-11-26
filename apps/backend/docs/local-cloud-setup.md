@@ -120,10 +120,10 @@ JWT_SECRET과 기존 DB 설정은 이 예시가 생성하거나 대체하지 않
 인증정보, FCM 기기 토큰, 서명 URL과 녹음 내용은 로그·Git·Terraform 출력에 남기지 않는다.
 녹음 보존·삭제 주기와 미정인 재시도 정책은 이 뼈대에서 정하지 않는다.
 
-## 6. 향후 AWS 배포
+## 6. AWS 스테이징 연결
 
-서버 배포 방식이 정해지면 실행 역할에 기존 녹음 정책을 연결하고, Google 발송 인증도 서버 환경에 맞게 구성한다.
-AWS→Google Workload Identity Federation은 그 단계에서 검토한다. 개발자 개인 ADC나 장기 키를 서버 이미지에 복사하지 않는다.
+스테이징에서는 [애플리케이션 EC2 역할](../../../infra/terraform/application/outputs.tf)에 녹음 정책을 연결하고,
+[스테이징 백엔드 발송 인증](../../../infra/terraform/fcm/README.md#스테이징-백엔드-발송-인증)을 별도로 준비한다.
 운영용 버킷·Firebase 프로젝트와 state는 개발 환경과 분리한다.
 
 참고: [AWS SDK 인증](https://docs.aws.amazon.com/sdk-for-java/latest/developer-guide/credentials.html),
