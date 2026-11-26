@@ -2,7 +2,7 @@
 set -euo pipefail
 
 : "${AWS_REGION:?Set the deployment region}" "${GITHUB_REPOSITORY:?Set the image repository}"
-: "${BACKEND_INSTANCE_ID:?Set the EC2 instance ID}" "${DEPLOY_TARGET:?Select the services to deploy}"
+: "${APPLICATION_INSTANCE_ID:?Set the EC2 instance ID}" "${DEPLOY_TARGET:?Select the services to deploy}"
 
 case "$DEPLOY_TARGET" in
   backend|ai|both) ;;
@@ -31,12 +31,12 @@ if [[ "$DEPLOY_TARGET" != backend ]]; then
   ai_image="ghcr.io/$repository-ai:$AI_IMAGE_REVISION"
   ai_secret=${AI_RUNTIME_SECRET_ARN:-}
 fi
-if [[ ! "$BACKEND_INSTANCE_ID" =~ ^i-([a-f0-9]{8}|[a-f0-9]{17})$ ]]; then
-  echo "BACKEND_INSTANCE_ID must identify exactly one EC2 instance." >&2
+if [[ ! "$APPLICATION_INSTANCE_ID" =~ ^i-([a-f0-9]{8}|[a-f0-9]{17})$ ]]; then
+  echo "APPLICATION_INSTANCE_ID must identify exactly one EC2 instance." >&2
   exit 1
 fi
 
-pull_secret=${BACKEND_GHCR_PULL_SECRET_ARN:-}
+pull_secret=${GHCR_PULL_SECRET_ARN:-}
 secret_arn="^arn:aws:secretsmanager:$AWS_REGION:[0-9]{12}:secret:[A-Za-z0-9/_+=.@-]+$"
 for arn in "$backend_secret" "$pull_secret" "$ai_secret"; do
   if [[ -n "$arn" && ! "$arn" =~ $secret_arn ]]; then
@@ -48,7 +48,7 @@ done
 export AWS_MAX_ATTEMPTS=2
 aws_cli=(aws --region "$AWS_REGION" --cli-connect-timeout 5 --cli-read-timeout 10 --no-cli-pager)
 ping_status=$("${aws_cli[@]}" ssm describe-instance-information \
-  --filters "Key=InstanceIds,Values=$BACKEND_INSTANCE_ID" \
+  --filters "Key=InstanceIds,Values=$APPLICATION_INSTANCE_ID" \
   --query 'InstanceInformationList[0].PingStatus' --output text)
 if [[ "$ping_status" != Online ]]; then
   echo "The selected EC2 instance is not online in Systems Manager." >&2
@@ -70,24 +70,24 @@ bash "$bundle_dir/deploy.sh" %q %q %q %q %q %q %q' \
   "$bundle" "$DEPLOY_TARGET" "$backend_image" "$ai_image" "$AWS_REGION" "$backend_secret" "$ai_secret" "$pull_secret"
 parameters=$(jq -cn --arg command "$remote_command" '{commands:[$command],executionTimeout:["600"]}')
 command_id=$("${aws_cli[@]}" ssm send-command --document-name AWS-RunShellScript \
-  --instance-ids "$BACKEND_INSTANCE_ID" --parameters "$parameters" --timeout-seconds 90 \
+  --instance-ids "$APPLICATION_INSTANCE_ID" --parameters "$parameters" --timeout-seconds 90 \
   --comment "Deploy ALLCHECK $DEPLOY_TARGET" --query Command.CommandId --output text)
 if [[ ! "$command_id" =~ ^[a-f0-9-]{36}$ ]]; then
   echo "Systems Manager did not return a command ID." >&2
   exit 1
 fi
-echo "SSM command $command_id for $BACKEND_INSTANCE_ID"
+echo "SSM command $command_id for $APPLICATION_INSTANCE_ID"
 
 deadline=$((SECONDS + 720))
 while (( SECONDS < deadline )); do
   if status=$("${aws_cli[@]}" ssm get-command-invocation --command-id "$command_id" \
-    --instance-id "$BACKEND_INSTANCE_ID" --query Status --output text 2>&1); then
+    --instance-id "$APPLICATION_INSTANCE_ID" --query Status --output text 2>&1); then
     case "$status" in
       Success)
         echo "Deployment and EC2 application readiness checks succeeded."
         if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
           {
-            printf 'Deployed %s to \x60%s\x60 (SSM command \x60%s\x60).\n\n' "$DEPLOY_TARGET" "$BACKEND_INSTANCE_ID" "$command_id"
+            printf 'Deployed %s to \x60%s\x60 (SSM command \x60%s\x60).\n\n' "$DEPLOY_TARGET" "$APPLICATION_INSTANCE_ID" "$command_id"
             for image in "$backend_image" "$ai_image"; do
               if [[ -n "$image" ]]; then
                 printf -- '- \x60%s\x60\n' "$image"

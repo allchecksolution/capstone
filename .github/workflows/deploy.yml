@@ -23,7 +23,7 @@ on:
       - 'infra/scripts/deploy.sh'
       - 'infra/compose/app-data.docker-compose.yml'
       - '.github/scripts/smoke-backend-image.sh'
-      - '.github/scripts/send-backend-deployment.sh'
+      - '.github/scripts/send-application-deployment.sh'
       - '.github/workflows/backend-ci.yml'
       - '.github/workflows/ai-ci.yml'
       - '.github/workflows/deploy.yml'
@@ -62,7 +62,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: backend-cd-${{ github.event_name == 'push' && 'main' || github.run_id }}
+  group: application-cd-${{ github.event_name == 'push' && 'main' || github.run_id }}
   queue: max
 
 jobs:
@@ -108,7 +108,7 @@ jobs:
               apps/ai/app/*|apps/ai/tests/*|apps/ai/pyproject.toml|apps/ai/uv.lock|apps/ai/.python-version|\
               apps/ai/Dockerfile|apps/ai/.dockerignore|.github/workflows/ai-ci.yml)
                 ai=true ;;
-              .github/workflows/deploy.yml|.github/scripts/send-backend-deployment.sh|\
+              .github/workflows/deploy.yml|.github/scripts/send-application-deployment.sh|\
               infra/scripts/deploy.sh|infra/compose/app-data.docker-compose.yml)
                 backend=true
                 ai=true ;;
@@ -220,7 +220,7 @@ jobs:
     timeout-minutes: 16
     environment: ${{ github.event_name == 'push' && 'staging' || inputs.environment }}
     concurrency:
-      group: backend-deploy-${{ github.event_name == 'push' && 'staging' || inputs.environment }}
+      group: application-deploy-${{ github.event_name == 'push' && 'staging' || inputs.environment }}
       queue: max
     permissions:
       contents: read
@@ -234,17 +234,17 @@ jobs:
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
-          role-session-name: backend-deploy-${{ github.run_id }}
+          role-session-name: application-deploy-${{ github.run_id }}
       - name: Send deployment and check the SSM result
         env:
           DEPLOY_TARGET: ${{ needs.changes.outputs.target }}
           IMAGE_REVISION: ${{ github.event_name == 'push' && needs.publish.outputs.backend_image_revision || inputs.image_revision }}
           AI_IMAGE_REVISION: ${{ github.event_name == 'push' && needs.publish.outputs.ai_image_revision || inputs.ai_image_revision }}
-          BACKEND_INSTANCE_ID: ${{ vars.BACKEND_INSTANCE_ID }}
+          APPLICATION_INSTANCE_ID: ${{ vars.APPLICATION_INSTANCE_ID }}
           BACKEND_RUNTIME_SECRET_ARN: ${{ vars.BACKEND_RUNTIME_SECRET_ARN }}
           AI_RUNTIME_SECRET_ARN: ${{ vars.AI_RUNTIME_SECRET_ARN }}
-          BACKEND_GHCR_PULL_SECRET_ARN: ${{ vars.BACKEND_GHCR_PULL_SECRET_ARN }}
-        run: bash .github/scripts/send-backend-deployment.sh
+          GHCR_PULL_SECRET_ARN: ${{ vars.GHCR_PULL_SECRET_ARN }}
+        run: bash .github/scripts/send-application-deployment.sh
       - name: Check public HTTPS readiness
         if: needs.changes.outputs.target != 'ai'
         shell: bash
