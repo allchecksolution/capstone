@@ -48,6 +48,7 @@ services:
     env_file:
       - path: ${ALLCHECK_AI_ENV:?Set ALLCHECK_AI_ENV}
         format: raw
+    networks: [default, proxy]
 
 networks:
   proxy:
