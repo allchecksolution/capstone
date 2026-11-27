@@ -29,3 +29,28 @@ variable "developer_members" {
     error_message = "Specify explicit user:email or group:email members; public principals are forbidden."
   }
 }
+
+variable "staging_wif" {
+  description = "Optional AWS role allowed to impersonate the existing sender through a dedicated WIF pool."
+  type = object({
+    project_number = string
+    aws_account_id = string
+    aws_role_name  = string
+    pool_id        = optional(string, "allcheck-staging-fcm")
+    provider_id    = optional(string, "aws-ec2")
+  })
+  default = null
+
+  validation {
+    condition = var.staging_wif == null ? true : (
+      can(regex("^[0-9]+$", var.staging_wif.project_number)) &&
+      can(regex("^[0-9]{12}$", var.staging_wif.aws_account_id)) &&
+      can(regex("^[A-Za-z0-9_+=,.@-]{1,64}$", var.staging_wif.aws_role_name)) &&
+      can(regex("^[a-z][a-z0-9-]{2,30}[a-z0-9]$", var.staging_wif.pool_id)) &&
+      can(regex("^[a-z][a-z0-9-]{2,30}[a-z0-9]$", var.staging_wif.provider_id)) &&
+      !startswith(var.staging_wif.pool_id, "gcp-") &&
+      !startswith(var.staging_wif.provider_id, "gcp-")
+    )
+    error_message = "Specify a numeric project number, 12-digit AWS account, exact IAM role name, and valid 4-to-32-character WIF IDs without the reserved gcp- prefix."
+  }
+}
