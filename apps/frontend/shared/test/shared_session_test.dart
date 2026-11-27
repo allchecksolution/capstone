@@ -314,10 +314,11 @@ void main() {
       );
       await tester.enterText(find.byType(TextFormField).at(0), 'admin');
       await tester.enterText(find.byType(TextFormField).at(1), 'test');
+      await tester.ensureVisible(find.widgetWithText(FilledButton, '로그인'));
       await tester.tap(find.widgetWithText(FilledButton, '로그인'));
       await tester.pumpAndSettle();
       expect(find.widgetWithText(FilledButton, '관리자 계정 관리'), findsOneWidget);
-      await tester.tap(find.widgetWithText(FilledButton, '상담 접수'));
+      await tester.tap(find.text('상담 접수 · STT / AI 분석'));
       await tester.pumpAndSettle();
       expect(find.text('rec_1'), findsOneWidget);
       expect(find.byType(NavigationBar), findsOneWidget);
@@ -333,6 +334,7 @@ void main() {
     expire = false;
     await tester.enterText(find.byType(TextFormField).at(0), 'another-admin');
     await tester.enterText(find.byType(TextFormField).at(1), 'test');
+    await tester.ensureVisible(find.widgetWithText(FilledButton, '로그인'));
     await tester.tap(find.widgetWithText(FilledButton, '로그인'));
     await tester.pumpAndSettle();
     expect(store.consultations, isEmpty);

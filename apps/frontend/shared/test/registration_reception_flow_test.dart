@@ -85,6 +85,12 @@ class DeviceLogin implements DriverAuth {
 
 Future<void> tapText(WidgetTester tester, String text) async {
   FocusManager.instance.primaryFocus?.unfocus();
+  // A previous result snackbar may cover buttons at the bottom of the page.
+  for (final messenger in tester.stateList<ScaffoldMessengerState>(
+    find.byType(ScaffoldMessenger),
+  )) {
+    messenger.removeCurrentSnackBar();
+  }
   await tester.pumpAndSettle();
   await Scrollable.ensureVisible(
     tester.element(find.text(text)),

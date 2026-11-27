@@ -12,6 +12,14 @@ class AdminRestBackend implements FrontendBackend {
   final HttpFrontendBackend _session;
   late final FrontendBackend? _receptions;
   bool get supportsReceptions => _receptions != null;
+
+  /// Separates queued recordings by server and administrator account.
+  String? get recordingOwnerKey {
+    final accountId = _user?['accountId'];
+    return _session._accessToken != null && accountId != null
+        ? '${Uri.parse(_session.baseUrl).origin}|$accountId'
+        : null;
+  }
   ApiData? _user;
   List<ApiData> _drivers = [];
   int _page = 1;
@@ -41,11 +49,29 @@ class AdminRestBackend implements FrontendBackend {
     if (operation == 'auth/admin-login') clearSession();
     final generation = _generation;
     if (operation.startsWith('receptions/') && _receptions != null) {
-      final result = await _receptions!.call(operation, data);
+      final result = await _receptions.call(operation, data);
       _check(generation);
       return result;
     }
     switch (operation) {
+      case 'chat/rooms':
+        return _session._request(
+          operation, const {},
+          path: 'chat-rooms?page=${data['page'] as int? ?? 1}', method: 'GET',
+        );
+      case 'chat/messages':
+      case 'chat/send':
+        return _session._chat(operation, 'chat-rooms/${_id(data['threadId'])}', data);
+      case 'dashboard/requests':
+        return _session._request(
+          operation, const {},
+          path: 'service-requests?page=${data['page'] as int? ?? 1}', method: 'GET',
+        );
+      case 'dashboard/statistics':
+        final query = Uri(queryParameters: {
+          'from': data['from'].toString(), 'to': data['to'].toString(),
+        }).query;
+        return _session._request(operation, const {}, path: 'work-statistics?$query', method: 'GET');
       case 'auth/admin-login':
         final result = await _session._request(operation, {
           'loginId': data['username'],

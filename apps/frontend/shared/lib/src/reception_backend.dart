@@ -14,24 +14,35 @@ class SpringFrontendBackend implements FrontendBackend {
     : _session = HttpFrontendBackend(baseUrl, client: client, restAuth: true),
       _ownsSession = true;
 
+  /// Shares the administrator's authentication, refresh and cancellation state.
   SpringFrontendBackend.withSession(this._session) : _ownsSession = false;
 
   final HttpFrontendBackend _session;
   final bool _ownsSession;
   int get _generation => _session.sessionGeneration;
+  String? _administratorId;
+
+  /// Reception-only sessions identify the stable administrator explicitly.
+  String? get recordingOwnerKey =>
+      hasServiceSession && _administratorId != null
+      ? '${Uri.parse(_session.baseUrl).origin}|$_administratorId'
+      : null;
   final _uploads = <String, _RecordingAttempt>{};
   bool get hasServiceSession => _session.hasServiceSession;
 
   /// Called by the service authentication adapter once that domain is merged.
   /// Never pass a Kakao provider token as the application's service token.
-  void setServiceSession(String accessToken) {
+  void setServiceSession(String accessToken, {String? administratorId}) {
     _session.setServiceSession(accessToken);
     _uploads.clear();
+    final id = administratorId?.trim();
+    _administratorId = id == null || id.isEmpty ? null : id;
   }
 
   @override
   void clearSession() {
     _session.clearSession();
+    _administratorId = null;
     _uploads.clear();
   }
 
@@ -60,6 +71,17 @@ class SpringFrontendBackend implements FrontendBackend {
     final id = data['id'];
     String receptionPath() => '/api/v1/receptions/${_segment(id)}';
     switch (operation) {
+      case 'receptions/register' when !_ownsSession:
+        final result = await _json(
+          'POST',
+          '/api/v1/service-requests',
+          key: _key(data),
+          body: {'receptionId': _segment(id), 'expectedVersion': data['expectedVersion']},
+        );
+        return {
+          ...await _call('receptions/detail', data),
+          'resourceId': result['resourceId'],
+        };
       case 'receptions/list':
         final result = await _json(
           'GET',

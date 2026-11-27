@@ -7,16 +7,36 @@ import android.provider.DocumentsContract
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.korean.KoreanTextRecognizerOptions
+import java.io.File
 
 class MainActivity : FlutterActivity() {
     private var folderResult: MethodChannel.Result? = null
     private var exportResult: MethodChannel.Result? = null
     private var exportBytes: ByteArray? = null
+    private var ocrResult: MethodChannel.Result? = null
     private val preferences get() = getSharedPreferences("allcheck_flutter_folder", MODE_PRIVATE)
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "allcheck/platform").setMethodCallHandler { call, result ->
             when (call.method) {
+                "recognizeBusinessDocument" -> {
+                    if (ocrResult != null) { result.error("BUSY", "문서 인식 중입니다.", null); return@setMethodCallHandler }
+                    val path = call.argument<String>("path")
+                    if (path == null || !File(path).isFile) { result.error("IMAGE", "사진을 확인해 주세요.", null); return@setMethodCallHandler }
+                    try {
+                        val image = InputImage.fromFilePath(this, Uri.fromFile(File(path)))
+                        val reader = TextRecognition.getClient(KoreanTextRecognizerOptions.Builder().build())
+                        ocrResult = result
+                        reader.process(image).addOnSuccessListener { recognized ->
+                            if (ocrResult === result) { ocrResult = null; result.success(recognized.text) }
+                        }.addOnFailureListener {
+                            if (ocrResult === result) { ocrResult = null; result.error("OCR", "문서 인식에 실패했습니다.", null) }
+                        }.addOnCompleteListener { reader.close() }
+                    } catch (_: Exception) { ocrResult = null; result.error("IMAGE", "사진을 읽지 못했습니다.", null) }
+                }
                 "recordingStatus" -> result.success(readable())
                 "connectRecordings" -> {
                     if (folderResult != null) { result.error("BUSY", "폴더 선택 중입니다.", null); return@setMethodCallHandler }
@@ -78,6 +98,8 @@ class MainActivity : FlutterActivity() {
         }
     }
     override fun onDestroy() {
+        ocrResult?.error("CLOSED", "문서 인식 화면이 종료되었습니다.", null)
+        ocrResult = null
         folderResult?.error("CLOSED", "폴더 연결 화면이 종료되었습니다.", null)
         exportResult?.error("CLOSED", "파일 저장 화면이 종료되었습니다.", null)
         folderResult = null; exportResult = null; exportBytes = null

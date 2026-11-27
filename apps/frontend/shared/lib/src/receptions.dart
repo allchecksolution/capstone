@@ -48,6 +48,11 @@ extension _ReceptionScreens on _WorkflowShellState {
 
   bool get receptionOnlySession =>
       widget.backend is SpringFrontendBackend && !developmentSession;
+  String? get recordingOwnerKey => switch (widget.backend) {
+    final AdminRestBackend backend => backend.recordingOwnerKey,
+    final SpringFrontendBackend backend => backend.recordingOwnerKey,
+    _ => null,
+  };
 
   bool get springReceptions =>
       !developmentSession &&
@@ -300,9 +305,24 @@ extension _ReceptionScreens on _WorkflowShellState {
             ),
         ]),
       if (c['reviewed'] == true && c['jobId'] == null)
+        if (widget.backend is AdminRestBackend)
+          button('의뢰 등록 · 자동 배차', () async {
+            if (!await confirm('확정한 정보로 의뢰를 등록할까요?')) return;
+            if (await command('receptions/register', {
+              'id': id,
+              'expectedVersion': c['version'],
+            }, () {})) {
+              message('의뢰를 등록했습니다.');
+              await loadReceptions();
+            }
+          }),
+      if (c['reviewed'] == true && c['jobId'] == null)
         button('검토 확정 취소 · 다시 수정', () async {
           if (await confirm('검토 확정을 취소하고 다시 수정할까요?')) {
-            await command('receptions/reopen', {'id': id}, () {});
+            await command('receptions/reopen', {
+              'id': id,
+              'expectedVersion': c['version'],
+            }, () {});
           }
         }, secondary: true),
       if (c['jobId'] != null) kv('등록된 의뢰 번호', c['jobId']),

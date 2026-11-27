@@ -1,7 +1,7 @@
 # 개발용 FCM 설정
 
 Firebase 콘솔에서 최초 프로젝트를 만든 뒤 FCM API, 발송 전용 서비스 계정과 권한을 관리하는 Terraform 루트다.
-Firebase 프로젝트·앱·서버 자체를 생성하지 않는다. 현재는 실제 프로젝트 ID가 없는 설정 뼈대다.
+Firebase 프로젝트·앱·서버 자체를 생성하지 않는다. 실제 프로젝트는 Git에서 제외된 `dev.tfvars`로 지정한다.
 
 ## 구성
 
@@ -87,6 +87,71 @@ serviceusage.services.use 권한을 확인한다. 발송 계정에 Owner/Editor�
 [로컬 클라우드 가이드](../../../apps/backend/docs/local-cloud-setup.md)의 예시를 따른다.
 FCM_ENABLED만 켜도 업무 이벤트나 기기 토큰이 생성되는 것은 아니다.
 
+### 노트북에서 테스트하기
+
+노트북에서는 Google 사용자 계정의 서비스 계정 impersonation으로 테스트한다.
+`staging-google-adc.json`은 EC2 메타데이터를 사용하므로 노트북의 `GOOGLE_APPLICATION_CREDENTIALS`에 지정하지 않는다.
+노트북 테스트는 AWS 역할을 통한 WIF 인증을 검증하지 않는다. 그것은 배포 후 EC2 컨테이너에서 확인한다.
+
+1. 저장소 루트에서 `terraform -chdir=infra/terraform/fcm test`를 실행한다. mock provider 테스트 6개가
+   통과해야 한다. 실제 Google/AWS 호출, 푸시 발송이나 인프라 변경은 없다.
+2. 로컬 ADC가 아직 없다면 앞 절의 `gcloud auth application-default login --impersonate-service-account=...`로
+   준비한다. 이미 발송 계정의 impersonation ADC가 있으면 다시 로그인할 필요가 없다.
+3. 현재 PowerShell에서 아래 명령으로 로컬 ADC의 단기 토큰 발급을 확인한다.
+
+```powershell
+# 이 노트북의 설치 경로. gcloud가 PATH에 있는 다른 PC에서는 그 명령으로 대체한다.
+$gcloudCmd = 'D:\ProgramFiles\google-cloud-sdk\bin\gcloud.cmd'
+# 이 PowerShell 프로세스에서만 파일 지정 해제. ADC 파일은 삭제하지 않는다.
+Remove-Item Env:GOOGLE_APPLICATION_CREDENTIALS -ErrorAction SilentlyContinue
+$localFcmAccessToken = & $gcloudCmd auth application-default print-access-token
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($localFcmAccessToken)) {
+  throw '로컬 발송 계정 인증을 확인하세요.'
+}
+Write-Output '단기 토큰 발급 성공'
+```
+
+토큰을 화면에 출력하거나 공유하지 않는다. 토큰 발급 성공은 FCM 발송·기기 수신 성공과는 구분한다.
+추가로 FCM에 실제 요청을 보내려면 같은 Firebase 프로젝트의 Android 앱을
+`--dart-define=ALLCHECK_PUSH_ENABLED=true`로 실행하고 알림 권한을 허용한다.
+이 PC에는 두 앱의 `google-services.json`이 있지만 Git에서는 제외되므로 다른 PC에는 별도 준비한다.
+현재 앱에 토큰 복사 UI는 없으므로 Flutter 디버거에서 `FirebaseAppPush.token()` 반환값 등으로
+해당 설치의 FCM 등록 토큰을 확인한다. 토큰을 얻은 다음 앱을 백그라운드로 전환한다.
+
+다음 요청은 처음에는 `validate_only = $true`여서 발송하지 않고 FCM 요청만 검증한다.
+성공 후 직접 `$false`로 바꿔 다시 실행하면 입력한 기기 한 대에 테스트 알림을 보낸다.
+
+```powershell
+$testDeviceToken = Read-Host '테스트 기기의 FCM 등록 토큰'
+try {
+  $testMessage = @{
+    validate_only = $true
+    message = @{
+      token = $testDeviceToken
+      notification = @{ title = 'ALLCHECK 테스트'; body = '노트북에서 보낸 FCM 테스트입니다.' }
+    }
+  } | ConvertTo-Json -Depth 4
+  $fcmReply = Invoke-RestMethod -Method Post `
+    -Uri 'https://fcm.googleapis.com/v1/projects/allcheck-dev-7c794/messages:send' `
+    -Headers @{ Authorization = "Bearer $localFcmAccessToken" } `
+    -ContentType 'application/json; charset=utf-8' `
+    -Body ([System.Text.Encoding]::UTF8.GetBytes($testMessage))
+  Write-Output 'FCM 요청 성공 (validate_only 값을 확인하세요)'
+} finally {
+  Remove-Variable localFcmAccessToken,testDeviceToken,testMessage,fcmReply -ErrorAction SilentlyContinue
+}
+```
+
+실제 발송으로 바꿔 다시 실행하기 전에는 위 인증 명령으로 토큰 변수를 다시 준비한다.
+이 테스트는 백엔드·DB를 거치지 않고 동일한 발송 계정에서 FCM으로 직접 전송한다.
+notification만 포함하므로 백그라운드 OS 알림을 확인하며, 앱 내부 배너나 클릭 후 화면 이동은 검증하지 않는다.
+현재 프론트의 `devices/register`와 백엔드의 `PUT /api/v1/push-devices/{installationId}`는 매핑이 필요하고,
+기사 가입·접수·배차 알림의 data 필드도 프론트 수신 형식과 다르다. 따라서 앱 업무 이벤트부터의 전체 테스트는
+이 연결을 맞춘 후 진행한다. 단순 `bootRun` 성공만으로 실제 발송까지 확인됐다고 보지 않는다.
+
+참고: [FCM validate_only](https://firebase.google.com/docs/reference/fcm/rest/v1/projects.messages/send),
+[Flutter 기기 등록 토큰](https://firebase.google.com/docs/cloud-messaging/flutter/get-started).
+
 ## 스테이징 백엔드 발송 인증
 
 AWS 스테이징에서 발송하려면 EC2의 `/etc/allcheck/backend/google-adc.json`에 서버용 ADC를 준비한다.
@@ -95,12 +160,60 @@ Secrets Manager의 `allcheck/staging/backend/runtime`에 `GOOGLE_APPLICATION_CRE
 `FCM_PROJECT_ID`, `FCM_CONNECT_TIMEOUT`, `FCM_REQUEST_TIMEOUT`을 설정한 뒤 `FCM_ENABLED`를 활성화한다.
 첫 스테이징의 기동 검증은 `FCM_ENABLED` 기본값인 `false`로 진행할 수 있다.
 
-EC2 역할로 [Workload Identity Federation](https://docs.cloud.google.com/iam/docs/workload-identity-federation-with-other-clouds)을
-사용하려면 Google의 신뢰 설정과 컨테이너의 EC2 메타데이터 접근을 별도로 준비한다.
+### AWS EC2 Workload Identity Federation
+
+기존 state와 `dev.tfvars`에서 선택적으로 `staging_wif`를 추가한다. 기존 발송 계정·FCM 발송 역할·개발자의
+Token Creator 권한은 유지하고 STS API, 전용 WIF 풀, AWS 공급자와 서비스 계정 IAM member만 추가한다.
+`staging_wif`를 생략하면 WIF를 만들지 않는다. 이미 적용한 값을 제거하면 WIF 삭제 계획이 나오므로 유지한다.
+
+```hcl
+staging_wif = {
+  project_number = "414145711645"
+  aws_account_id = "303357410104"
+  aws_role_name  = "allcheck-staging-ec2"
+  # pool_id     = "allcheck-staging-fcm"
+  # provider_id = "aws-ec2"
+}
+```
+
+프로젝트 번호는 실제 프로젝트 조회 결과와 검증한다. 공급자는 AWS 계정과 정확한 assumed-role ARN을
+함께 검사하며, IAM member도 해당 역할의 `attribute.aws_role` principalSet으로 제한한다.
+이 권한은 같은 역할을 사용하는 워크로드 전체에 적용되며 특정 EC2 인스턴스 한 대로 제한하지 않는다.
+다른 풀 공급자를 추가할 때도 이 속성의 신뢰 범위를 유지해야 한다.
+
+관리자 인증으로 다음을 실행한다. 기존 발송 계정 impersonation ADC는 인프라 관리용이 아니다.
+
+```powershell
+terraform -chdir=infra/terraform/fcm fmt -check -recursive
+terraform -chdir=infra/terraform/fcm validate
+terraform -chdir=infra/terraform/fcm test
+terraform -chdir=infra/terraform/fcm plan '-var-file=dev.tfvars' '-out=staging-wif.tfplan'
+# 기존 리소스 변경/교체/삭제 없이 위 4개 리소스만 추가되는지 확인 후:
+terraform -chdir=infra/terraform/fcm apply staging-wif.tfplan
+
+$providerName = terraform -chdir=infra/terraform/fcm output -raw staging_wif_provider_name
+$senderEmail = terraform -chdir=infra/terraform/fcm output -raw sender_service_account_email
+# 출력 디렉터리는 먼저 준비한다. 로컬 개발자 ADC를 덮어쓰지 않는다.
+gcloud iam workload-identity-pools create-cred-config $providerName "--service-account=$senderEmail" --aws --enable-imdsv2 '--output-file=infra/terraform/fcm/staging-google-adc.json'
+```
+
+생성 파일은 `external_account` 구성으로, 개인키나 실제 액세스 토큰을 담지 않는다.
+이 PC에서는 EC2 역할을 증명할 수 없으므로 파일 생성만으로 서버 인증 성공을 검증하지 못한다.
+EC2 파일 배치, Secrets Manager 수정과 재배포 후 실제 컨테이너에서 인증·FCM 수신을 검증한다.
+
+EC2에는 대상 역할의 instance profile이 실제 연결되어야 하며 IMDSv2가 활성화되어야 한다.
+Docker bridge 네트워크에서는 메타데이터 응답 hop limit `2`가 필요할 수 있다.
+현재 application 루트는 `enable_media_access`가 true일 때만 `2`, 기본값은 `1`이다.
+FCM만을 위해 이 변수를 켜면 S3 관련 변경도 함께 검토해야 하므로, 실제 설정과 plan을 확인한 뒤 별도로 조정한다.
+이 FCM 루트는 AWS 설정을 변경하지 않는다.
+
+참고: [Google WIF 설정](https://docs.cloud.google.com/iam/docs/workload-identity-federation-with-other-clouds),
+[ADC 구성 생성](https://docs.cloud.google.com/sdk/gcloud/reference/iam/workload-identity-pools/create-cred-config).
 
 ## 검증 범위
 
-mock provider 테스트는 권한 범위·명시적 개발자 등록·API 유지 설정을 검사하며 실제 Google 호출을 하지 않는다.
+mock provider 테스트는 권한 범위·명시적 개발자 등록·API 유지·WIF 계정/역할 제한·프로젝트 번호 불일치와
+와일드카드 역할 거부를 검사하며 실제 Google 호출을 하지 않는다.
 실제 발송은 프로젝트·앱 등록·기기 토큰·서버 인증이 준비된 뒤 확인한다.
 
 참고: [FCM 발송 권한](https://docs.cloud.google.com/iam/docs/roles-permissions/firebasecloudmessaging),

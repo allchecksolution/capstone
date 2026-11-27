@@ -37,3 +37,5 @@ override.tf
 override.tf.json
 *_override.tf
 *_override.tf.json
+# Generated EC2 WIF ADC configuration; deliver separately from source changes.
+/infra/terraform/fcm/staging-google-adc.json

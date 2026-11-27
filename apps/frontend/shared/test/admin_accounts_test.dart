@@ -58,6 +58,7 @@ void main() {
       );
       await tester.enterText(find.byType(TextFormField).at(0), 'admin');
       await tester.enterText(find.byType(TextFormField).at(1), 'initial');
+      await tester.ensureVisible(find.widgetWithText(FilledButton, '로그인'));
       await tester.tap(find.widgetWithText(FilledButton, '로그인'));
       await tester.pumpAndSettle();
       // Neither account type is forced onto a first-login password change page.

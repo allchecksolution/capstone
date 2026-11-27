@@ -14,9 +14,14 @@ android {
  compileSdk=flutter.compileSdkVersion
  ndkVersion=flutter.ndkVersion
  compileOptions { sourceCompatibility=JavaVersion.VERSION_17; targetCompatibility=JavaVersion.VERSION_17 }
- defaultConfig { applicationId="kr.allcheck.flutter.driver"; minSdk=24; targetSdk=flutter.targetSdkVersion; versionCode=flutter.versionCode; versionName=flutter.versionName; manifestPlaceholders["kakaoNativeAppKey"]=kakaoNativeAppKey.ifEmpty { "unconfigured" } }
+ defaultConfig { applicationId="kr.allcheck.flutter.driver"; minSdk=24; targetSdk=flutter.targetSdkVersion; versionCode=flutter.versionCode; versionName=flutter.versionName; manifestPlaceholders["kakaoNativeAppKey"]=kakaoNativeAppKey.ifEmpty { "unconfigured" }; testInstrumentationRunner="androidx.test.runner.AndroidJUnitRunner" }
 }
 kotlin { compilerOptions { jvmTarget=org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17 } }
 flutter { source="../.." }
+dependencies {
+ implementation("com.google.mlkit:text-recognition-korean:16.0.1")
+ androidTestImplementation("androidx.test:runner:1.6.2")
+ androidTestImplementation("androidx.test.ext:junit:1.2.1")
+}
 
 if(file("google-services.json").exists()) { apply(plugin="com.google.gms.google-services") }
