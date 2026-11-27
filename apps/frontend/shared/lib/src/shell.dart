@@ -52,10 +52,23 @@ class _WorkflowShellState extends State<WorkflowShell> with WidgetsBindingObserv
   }
   Future<bool> confirm(String title)async=>await showDialog<bool>(context:context,builder:(context)=>AlertDialog(title:Text(title),actions:[TextButton(onPressed:()=>Navigator.pop(context,false),child:const Text('취소')),FilledButton(onPressed:()=>Navigator.pop(context,true),child:const Text('확인'))]))??false;
   void result(String title,{String description='처리 결과를 확인해 주세요.',String target='home',String item=''}){outcomeTitle=title;outcomeText=description;outcomeTarget=target;outcomeId=item;go('result');}
-  Widget heading(String title)=>Text(title,style:const TextStyle(fontSize:18,fontWeight:FontWeight.w700));
-  Widget small(String text)=>Text(text,style:const TextStyle(fontSize:12,color:Color(0xff788399),height:1.5));
+  Widget brandLogo()=>Center(child:Image.asset(admin?'assets/branding/admin_logo.png':'assets/branding/driver_logo.png',package:'allcheck_ui',width:220,height:220,fit:BoxFit.contain,semanticLabel:admin?'올체크 관리자앱 로고':'올체크 기사앱 로고'));
+  Widget heading(String title)=>Text(title,style:_headingTextStyle.copyWith(fontSize:18));
+  Widget small(String text)=>Text(text,style:const TextStyle(fontSize:13,color:Color(0xff54627a),height:1.5));
   Widget notice(String text,{bool error=false})=>Container(width:double.infinity,padding:const EdgeInsets.all(14),decoration:BoxDecoration(color:error?const Color(0xfffdebf0):const Color(0xffe8f7fd),borderRadius:BorderRadius.circular(10)),child:Text(text,style:TextStyle(color:error?const Color(0xffbe324b):const Color(0xff258ea2),fontSize:13,height:1.5)));
-  Widget box(List<Widget> children)=>Container(width:double.infinity,padding:const EdgeInsets.all(16),decoration:BoxDecoration(border:Border.all(color:const Color(0xffe6ecf2)),borderRadius:BorderRadius.circular(14)),child:stack(children));
+  Widget box(List<Widget> children) => Material(
+    color: Colors.white,
+    elevation: 2,
+    shadowColor: _outlineShadowColor,
+    shape: const RoundedRectangleBorder(
+      side: BorderSide(color: Color(0xffe6ecf2)),
+      borderRadius: BorderRadius.all(Radius.circular(14)),
+    ),
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: stack(children),
+    ),
+  );
   Widget stack(List<Widget> children)=>Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[for(var i=0;i<children.length;i++)...<Widget>[if(i>0)const SizedBox(height:12),children[i]]]);
   Widget button(String text,VoidCallback fn,{bool secondary=false,bool danger=false})=>secondary?OutlinedButton(onPressed:busy?null:fn,child:Padding(padding:const EdgeInsets.symmetric(vertical:12),child:Text(text))):FilledButton(style:danger?FilledButton.styleFrom(backgroundColor:const Color(0xfff04c62)):null,onPressed:busy?null:fn,child:Text(text));
   Widget link(String title,String target,{String item=''})=>button(title,()=>go(target,item:item),secondary:true);
@@ -66,16 +79,16 @@ class _WorkflowShellState extends State<WorkflowShell> with WidgetsBindingObserv
   Widget form(List<Widget> children)=>Form(key:formKey,child:stack(children));
   Widget menu(String title,String target,{String item='',String subtitle=''})=>ListTile(contentPadding:EdgeInsets.zero,title:Text(title),subtitle:subtitle.isEmpty?null:small(subtitle),trailing:const Icon(Icons.chevron_right),onTap:()async{if(admin&&target=='drivers'&&widget.backend is AdminRestBackend&&!developmentSession){await openDriverList();return;}go(target,item:item);});
   Widget empty(String label)=>Padding(padding:const EdgeInsets.symmetric(vertical:28),child:Center(child:small(label)));
-  Widget pill(String label)=>Chip(label:Text(label,style:const TextStyle(fontSize:11)),backgroundColor:const Color(0xffe8f7fd),side:BorderSide.none);
+  Widget pill(String label)=>Chip(label:Text(label,style:const TextStyle(fontSize:11)),backgroundColor:const Color(0xffe8f7fd),side:BorderSide.none,elevation:0);
   Widget jobCard(Json j)=>box([Row(children:[pill(text(j,'type')),const Spacer(),small(text(j,'status'))]),heading(text(j,'title',text(j,'symptom','작업 의뢰'))),small(text(j,'area',text(j,'address'))),link('상세 보기',j['status']=='응답 대기'?'request':'detail',item:text(j,'id'))]);
   Widget tabs(List<String> options,String selected,void Function(String) change)=>Wrap(spacing:6,runSpacing:6,children:options.map((v)=>ChoiceChip(label:Text(v),selected:v==selected,onSelected:busy?null:(_)=>setState(()=>change(v)))).toList());
   String get title=>({'admin-accounts':'관리자 계정 관리','admin-create':'관리자 추가','admin-edit':'관리자 수정','admin-password':'내 비밀번호 변경','login':admin?'관리자앱':'기사앱','kakao-connected':'기사앱','home':admin?'작업 이력 및 통계':'홈','jobs':'작업목록','chat':'관리자 문의','more':'더보기','register':'가입 정보 등록','detail':'작업 상세','report':'작업 보고서','receptions':'상담 접수','reception':'접수 상세','dispatch':'배차 요청','drivers':'기사 관리','driver':'기사 정보','reports':'작업 보고서','report-edit':'보고서 수정','report-history':'원본 및 수정 이력','cancellations':'배차 취소 요청','cancellation':'취소 요청 검토','stats':'나의 작업 통계','result':'처리 결과','settings':'설정','requests':'배차 요청 내역','request':'배차 요청','cancel':'취소 사유','revisit':'재방문 사유','withdraw':'회원 탈퇴','recordings':'Softphone 녹음 연결','export':'조회 결과 내보내기','notifications':'알림'})[page]??'올체크';
   Widget publicPage(){
     if(!admin&&page=='register')return this.driverRegistration();
     if(page=='terms'||page=='privacy')return widget.backend==null?notice('문서를 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.'):documentPage();
-    if(admin)return form([const SizedBox(height:32),heading('관리자앱'),field('username','아이디'),field('password','비밀번호'),button('로그인',loginAdmin),small('계정을 발급받은 후 로그인해 주세요. 로그인할 수 없으면 운영 담당자에게 문의해 주세요.')]);
+    if(admin)return form([const SizedBox(height:32),brandLogo(),heading('관리자앱'),field('username','아이디'),field('password','비밀번호'),button('로그인',loginAdmin),small('계정을 발급받은 후 로그인해 주세요. 로그인할 수 없으면 운영 담당자에게 문의해 주세요.')]);
     if(page=='kakao-connected')return stack([const SizedBox(height:60),const Icon(Icons.check_circle_outline,size:76),heading('카카오 계정이 확인되었습니다.'),if(kakaoIdentity?.nickname!=null)Text(kakaoIdentity!.nickname!),button('계속',completeKakaoSignIn),button('로그아웃',logout,secondary:true)]);
-    return stack([const SizedBox(height:100),const Center(child:Text('기사앱',style:TextStyle(fontSize:34,fontWeight:FontWeight.bold))),Center(child:small('빠르고 간편한 기사 업무 관리')),const SizedBox(height:100),FilledButton(style:FilledButton.styleFrom(backgroundColor:const Color(0xfffee500),foregroundColor:Colors.black),onPressed:busy?null:signInWithKakao,child:const Text('카카오 로그인')),Wrap(spacing:12,children:[TextButton(onPressed:()=>go('terms'),child:const Text('이용약관')),TextButton(onPressed:()=>go('privacy'),child:const Text('개인정보 처리방침'))])]);
+    return stack([const SizedBox(height:24),brandLogo(),const Center(child:Text('기사앱',style:TextStyle(fontSize:24,fontWeight:FontWeight.w800))),Center(child:small('빠르고 간편한 기사 업무 관리')),const SizedBox(height:24),FilledButton(style:FilledButton.styleFrom(backgroundColor:const Color(0xfffee500),foregroundColor:Colors.black),onPressed:busy?null:signInWithKakao,child:const Text('카카오 로그인')),Wrap(spacing:12,children:[TextButton(onPressed:()=>go('terms'),child:const Text('이용약관')),TextButton(onPressed:()=>go('privacy'),child:const Text('개인정보 처리방침'))])]);
   }
   Future<void> signInWithKakao()async{
     if(busy)return;setState((){busy=true;kakaoIdentity=null;});
