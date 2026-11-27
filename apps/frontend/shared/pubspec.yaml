@@ -49,6 +49,7 @@ flutter:
   assets:
     - assets/branding/admin_logo.png
     - assets/branding/driver_logo.png
+    - assets/branding/startup_logo.png
     - assets/fonts/NanumSquareRound-OFL.txt
   fonts:
     - family: NanumSquareRound

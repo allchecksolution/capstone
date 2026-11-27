@@ -58,12 +58,14 @@ class _WorkflowShellState extends State<WorkflowShell> with WidgetsBindingObserv
   Widget notice(String text,{bool error=false})=>Container(width:double.infinity,padding:const EdgeInsets.all(14),decoration:BoxDecoration(color:error?const Color(0xfffdebf0):const Color(0xffe8f7fd),borderRadius:BorderRadius.circular(10)),child:Text(text,style:TextStyle(color:error?const Color(0xffbe324b):const Color(0xff258ea2),fontSize:13,height:1.5)));
   Widget box(List<Widget> children) => Material(
     color: Colors.white,
-    elevation: 2,
+    surfaceTintColor: Colors.transparent,
+    elevation: 1,
     shadowColor: _outlineShadowColor,
     shape: const RoundedRectangleBorder(
-      side: BorderSide(color: Color(0xffe6ecf2)),
-      borderRadius: BorderRadius.all(Radius.circular(14)),
+      side: BorderSide(color: Color(0xffe5e9f0)),
+      borderRadius: BorderRadius.all(Radius.circular(16)),
     ),
+    clipBehavior: Clip.antiAlias,
     child: Padding(
       padding: const EdgeInsets.all(16),
       child: stack(children),
@@ -72,6 +74,21 @@ class _WorkflowShellState extends State<WorkflowShell> with WidgetsBindingObserv
   Widget stack(List<Widget> children)=>Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[for(var i=0;i<children.length;i++)...<Widget>[if(i>0)const SizedBox(height:12),children[i]]]);
   Widget button(String text,VoidCallback fn,{bool secondary=false,bool danger=false})=>secondary?OutlinedButton(onPressed:busy?null:fn,child:Padding(padding:const EdgeInsets.symmetric(vertical:12),child:Text(text))):FilledButton(style:danger?FilledButton.styleFrom(backgroundColor:const Color(0xfff04c62)):null,onPressed:busy?null:fn,child:Text(text));
   Widget link(String title,String target,{String item=''})=>button(title,()=>go(target,item:item),secondary:true);
+  Widget homeLink(String title, String target) => FilledButton(
+    onPressed: busy ? null : () => go(target),
+    style: FilledButton.styleFrom(
+      minimumSize: const Size(0, 56),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+    ),
+    child: Row(
+      children: [
+        Expanded(child: Text(title, style: _headingTextStyle)),
+        const SizedBox(width: 12),
+        const Icon(Icons.arrow_forward_rounded, size: 20),
+      ],
+    ),
+  );
   Widget kv(String label,Object? content)=>stack([small(label),Text(content?.toString().isNotEmpty==true?content.toString():'미등록',style:const TextStyle(fontWeight:FontWeight.w600))]);
   Widget field(String key,String label,{String initial='',String helperText='',bool required=true,bool lines=false,bool number=false,bool email=false,bool readOnly=false})=>TextFormField(key:ValueKey('$page/$id/$key'),controller:controller(key,initial),obscureText:key=='password'||key=='currentPassword',readOnly:readOnly,maxLines:lines?4:1,keyboardType:number?TextInputType.number:email?TextInputType.emailAddress:TextInputType.text,decoration:InputDecoration(labelText:'$label${required?' *':''}',helperText:helperText.isEmpty?null:helperText,helperMaxLines:3),validator:(v){if(required&&(v??'').trim().isEmpty)return '필수 항목입니다.';if(number&&v?.isNotEmpty==true&&(double.tryParse(v!)==null||double.parse(v)<0))return '0 이상의 숫자를 입력해 주세요.';if(email&&v?.isNotEmpty==true&&!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(v!))return '이메일 형식을 확인해 주세요.';return null;});
   Widget dropdown(String key,String label,List<String> options,{String initial='',bool required=false}){final c=controller(key,initial);final selected=options.contains(c.text)?c.text:null;return DropdownButtonFormField<String>(initialValue:selected,isExpanded:true,decoration:InputDecoration(labelText:label),items:options.map((v)=>DropdownMenuItem(value:v,child:Text(v,overflow:TextOverflow.ellipsis))).toList(),onChanged:(v){c.text=v??'';setState((){});},validator:required?((v)=>v==null||v.isEmpty?'선택해 주세요.':null):null);}

@@ -29,6 +29,7 @@ part 'src/files.dart';
 part 'src/integration.dart';
 part 'src/receptions.dart';
 part 'src/location.dart';
+part 'src/startup_logo.dart';
 
 enum AppRole { admin, driver }
 const developmentAccessEnabled = kDebugMode &&
@@ -58,21 +59,22 @@ Future<void> launchAllcheck(AppRole role, {
   backend??=baseUrl.isEmpty?null:role==AppRole.driver?DriverOnboardingBackend(baseUrl):AdminRestBackend(baseUrl);
   push??=pushEnabled?FirebaseAppPush():null;
   if (role == AppRole.driver) KakaoDriverAuth.initialize();
-  if(backend!=null){runApp(AllcheckApp(role:role,store:AppStore(role),backend:backend,push:push,driverAuth:driverAuth,onKakaoAuthenticated:onKakaoAuthenticated));return;}
+  if(backend!=null){runApp(AllcheckApp(role:role,store:AppStore(role),backend:backend,push:push,driverAuth:driverAuth,onKakaoAuthenticated:onKakaoAuthenticated,showStartupLogo:true));return;}
   final preferences = SharedPreferencesAsync();
   final store = AppStore(role, save: (value) => preferences.setString('allcheck.flutter.${role.name}.v1', value));
   try { final value = await preferences.getString('allcheck.flutter.${role.name}.v1'); if (value != null) store.restore(value); }
   catch (_) { store.startupWarning = '저장 정보를 불러오지 못했습니다. 설정과 저장 공간을 확인해 주세요.'; }
   runApp(AllcheckApp(role: role, store: store, backend: backend, push: push, driverAuth: driverAuth,
-    onKakaoAuthenticated: onKakaoAuthenticated));
+    onKakaoAuthenticated: onKakaoAuthenticated, showStartupLogo: true));
 }
 class AllcheckApp extends StatelessWidget {
-  const AllcheckApp({super.key, required this.role, required this.store, this.driverAuth, this.onKakaoAuthenticated, this.backend, this.push});
+  const AllcheckApp({super.key, required this.role, required this.store, this.driverAuth, this.onKakaoAuthenticated, this.backend, this.push, this.showStartupLogo = false});
   final AppRole role;
   final AppStore store;
   final FrontendBackend? backend;
   final AppPush? push;
   final DriverAuth? driverAuth;
+  final bool showStartupLogo;
   /// Backend adapter: verify the Kakao token, then return the server account.
   /// Null means a new member; a returned account must contain server approval.
   final Future<Json?> Function(KakaoIdentity)? onKakaoAuthenticated;
@@ -88,10 +90,12 @@ class AllcheckApp extends StatelessWidget {
         data: mediaQuery.copyWith(
           textScaler: _AllcheckTextScaler(mediaQuery.textScaler),
         ),
-        child: child!,
+        child: showStartupLogo
+            ? _StartupLogo(child: child!)
+            : child!,
       );
     },
-    theme: ThemeData(useMaterial3: true, colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xff0099d6)),
+    theme: ThemeData(useMaterial3: true, colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xff305bd6)),
       fontFamily: 'NanumSquareRound',
       package: 'allcheck_ui',
       scaffoldBackgroundColor: Colors.white,
@@ -112,28 +116,61 @@ class AllcheckApp extends StatelessWidget {
         labelMedium: _bodyTextStyle,
         labelSmall: _bodyTextStyle,
       ),
-      appBarTheme: const AppBarTheme(backgroundColor: Colors.white, foregroundColor: Color(0xff111d3d), surfaceTintColor: Colors.transparent),
+      appBarTheme: const AppBarTheme(
+        backgroundColor: Colors.white,
+        foregroundColor: Color(0xff17264b),
+        surfaceTintColor: Colors.transparent,
+        shadowColor: _outlineShadowColor,
+        elevation: 0,
+        scrolledUnderElevation: 1,
+      ),
+      navigationBarTheme: const NavigationBarThemeData(
+        backgroundColor: Colors.white,
+        indicatorColor: Color(0xffe1ebff),
+        surfaceTintColor: Colors.transparent,
+        shadowColor: _outlineShadowColor,
+        elevation: 3,
+      ),
+      navigationRailTheme: const NavigationRailThemeData(
+        backgroundColor: Colors.white,
+        indicatorColor: Color(0xffe1ebff),
+      ),
       inputDecorationTheme: const InputDecorationTheme(
-        border: _ShadowedInputBorder(
-          borderRadius: BorderRadius.all(Radius.circular(10)),
-          borderSide: BorderSide(color: Color(0xffe6ecf2)),
+        filled: true,
+        fillColor: Color(0xfff7f8fa),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.all(Radius.circular(14)),
+          borderSide: BorderSide(color: Color(0xffe2e6ed)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.all(Radius.circular(14)),
+          borderSide: BorderSide(color: Color(0xffe2e6ed)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.all(Radius.circular(14)),
+          borderSide: BorderSide(color: Color(0xff305bd6), width: 2),
         ),
         contentPadding: EdgeInsets.all(14),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           backgroundColor: Colors.white,
+          foregroundColor: const Color(0xff2348a3),
+          side: const BorderSide(color: Color(0xffdce4f0)),
           shadowColor: _outlineShadowColor,
         ).copyWith(
           elevation: const WidgetStateProperty<double>.fromMap({
             WidgetState.disabled: 0,
             WidgetState.pressed: 0,
-            WidgetState.any: 2,
+            WidgetState.any: 0,
           }),
         ),
       ),
       chipTheme: const ChipThemeData(
-        elevation: 2,
+        backgroundColor: Color(0xfff4f6fb),
+        selectedColor: Color(0xffdce8ff),
+        side: BorderSide(color: Color(0xffe2e8f4)),
+        elevation: 0,
         pressElevation: 0,
         shadowColor: _outlineShadowColor,
         selectedShadowColor: _outlineShadowColor,
@@ -141,16 +178,16 @@ class AllcheckApp extends StatelessWidget {
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           minimumSize: const Size(0, 50),
-          backgroundColor: const Color(0xff0099d6),
+          backgroundColor: const Color(0xff305bd6),
           foregroundColor: Colors.white,
-          shadowColor: const Color(0x59111d3d),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shadowColor: const Color(0x55305bd6),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         ).copyWith(
           elevation: WidgetStateProperty<double>.fromMap({
             WidgetState.disabled: 0,
             WidgetState.pressed: 1,
-            WidgetState.hovered: 5,
-            WidgetState.any: 3,
+            WidgetState.hovered: 2,
+            WidgetState.any: 0,
           }),
         ),
       ),
@@ -159,70 +196,9 @@ class AllcheckApp extends StatelessWidget {
   );
 }
 
-const _outlineShadowColor = Color(0x40111d3d);
+const _outlineShadowColor = Color(0x301d3570);
 const _headingTextStyle = TextStyle(fontWeight: FontWeight.w800);
 const _bodyTextStyle = TextStyle(fontWeight: FontWeight.w700);
-
-class _ShadowedInputBorder extends OutlineInputBorder {
-  const _ShadowedInputBorder({
-    required super.borderRadius,
-    required super.borderSide,
-    super.gapPadding,
-  });
-
-  @override
-  _ShadowedInputBorder copyWith({
-    BorderSide? borderSide,
-    BorderRadius? borderRadius,
-    double? gapPadding,
-  }) => _ShadowedInputBorder(
-    borderSide: borderSide ?? this.borderSide,
-    borderRadius: borderRadius ?? this.borderRadius,
-    gapPadding: gapPadding ?? this.gapPadding,
-  );
-
-  @override
-  ShapeBorder? lerpFrom(ShapeBorder? a, double t) {
-    final border = super.lerpFrom(a, t);
-    return border is OutlineInputBorder
-        ? copyWith(
-            borderSide: border.borderSide,
-            borderRadius: border.borderRadius,
-            gapPadding: border.gapPadding,
-          )
-        : border;
-  }
-
-  @override
-  void paint(
-    Canvas canvas,
-    Rect rect, {
-    double? gapStart,
-    double gapExtent = 0,
-    double gapPercentage = 0,
-    TextDirection? textDirection,
-  }) {
-    if (borderSide.style != BorderStyle.none) {
-      final outline = getOuterPath(rect, textDirection: textDirection);
-      final outside = Path()
-        ..fillType = PathFillType.evenOdd
-        ..addRect(rect.inflate(12))
-        ..addPath(outline, Offset.zero);
-      canvas.save();
-      canvas.clipPath(outside);
-      canvas.drawShadow(outline, _outlineShadowColor, 2, false);
-      canvas.restore();
-    }
-    super.paint(
-      canvas,
-      rect,
-      gapStart: gapStart,
-      gapExtent: gapExtent,
-      gapPercentage: gapPercentage,
-      textDirection: textDirection,
-    );
-  }
-}
 
 class _AllcheckTextScaler extends TextScaler {
   const _AllcheckTextScaler(this.systemScaler);
