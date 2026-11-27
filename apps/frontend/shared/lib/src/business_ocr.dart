@@ -73,7 +73,7 @@ class _BusinessReviewDialog extends StatefulWidget {
 class _BusinessReviewDialogState extends State<_BusinessReviewDialog> {
   late final inputs = {
     for (final e in widget.found.entries)
-      e.key: TextEditingController(text: e.value),
+      e.key: TextEditingController(text: _registrationInitialValue(e.key, e.value)),
   };
   late final selected = {
     for (final key in inputs.keys)
@@ -114,6 +114,7 @@ class _BusinessReviewDialogState extends State<_BusinessReviewDialog> {
                       padding: const EdgeInsets.only(bottom: 12),
                       child: TextField(
                         controller: inputs[key],
+                        inputFormatters: _registrationFormatters(key),
                         decoration: InputDecoration(
                           labelText: BusinessDocumentFields.labels[key],
                         ),

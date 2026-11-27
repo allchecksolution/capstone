@@ -66,7 +66,7 @@ class DriverOnboardingBackend implements FrontendBackend {
       case 'drivers/business-check':
         final result = await _session._request(operation, {
           'businessRegistrationNumber': data['businessNumber'],
-          'openedOn': data['openedOn'],
+          'openedOn': registrationOpeningDateForApi(data['openedOn'] as String),
           'representativeName': data['owner'],
         }, path: 'drivers/business-verifications');
         _checkGeneration(generation);
@@ -179,7 +179,7 @@ class DriverOnboardingBackend implements FrontendBackend {
         'businessName': flat['company'],
         'businessRegistrationNumber': (flat['businessNumber'] as String)
             .replaceAll('-', ''),
-        'openedOn': flat['openedOn'],
+        'openedOn': registrationOpeningDateForApi(flat['openedOn'] as String),
         'representativeName': flat['owner'],
         'companyPhone': flat['companyPhone'],
         'businessType': flat['businessType'],

@@ -28,6 +28,7 @@ dev_dependencies:
 
 flutter:
   assets:
+    - assets/address_search.html
     - assets/branding/admin_logo.png
     - assets/branding/driver_logo.png
     - assets/branding/startup_logo.png
