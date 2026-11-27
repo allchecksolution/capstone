@@ -1,8 +1,13 @@
 part of '../allcheck_ui.dart';
 
 extension _ReceptionScreens on _WorkflowShellState {
-  bool get springReceptions =>
+  bool get receptionOnlySession =>
       widget.backend is SpringFrontendBackend && !developmentSession;
+
+  bool get springReceptions => !developmentSession &&
+      (widget.backend is SpringFrontendBackend ||
+       widget.backend is AdminRestBackend &&
+       (widget.backend as AdminRestBackend).supportsReceptions);
 
   Future<void> loadReceptions({int? pageNumber}) async {
     if (!springReceptions || busy || !signedIn) return;

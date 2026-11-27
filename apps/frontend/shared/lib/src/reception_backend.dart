@@ -5,41 +5,39 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 
-import 'api_endpoint.dart';
 import 'backend.dart';
 
 /// Adapter for the Controllers actually merged into main. Other domains must
 /// supply their implemented contracts before their operations can be enabled.
 class SpringFrontendBackend implements FrontendBackend {
   SpringFrontendBackend(String baseUrl, {http.Client? client})
-    : _base = ApiEndpoint(baseUrl).origin,
-      _client = client ?? http.Client();
+    : _session = HttpFrontendBackend(baseUrl, client: client, restAuth: true),
+      _ownsSession = true;
 
-  final Uri _base;
-  final http.Client _client;
-  String? _token;
-  int _generation = 0;
+  SpringFrontendBackend.withSession(this._session) : _ownsSession = false;
+
+  final HttpFrontendBackend _session;
+  final bool _ownsSession;
+  int get _generation => _session.sessionGeneration;
   final _uploads = <String, _RecordingAttempt>{};
-  bool get hasServiceSession => _token != null;
+  bool get hasServiceSession => _session.hasServiceSession;
 
   /// Called by the service authentication adapter once that domain is merged.
   /// Never pass a Kakao provider token as the application's service token.
   void setServiceSession(String accessToken) {
-    if (accessToken.trim().isEmpty) throw ArgumentError('Empty service token');
-    clearSession();
-    _token = accessToken;
+    _session.setServiceSession(accessToken);
+    _uploads.clear();
   }
 
   @override
   void clearSession() {
-    _token = null;
-    _generation++;
+    _session.clearSession();
     _uploads.clear();
   }
 
   void close() {
-    clearSession();
-    _client.close();
+    _uploads.clear();
+    if (_ownsSession) _session.close();
   }
 
   static const workTypes = <String, String>{
@@ -128,7 +126,7 @@ class SpringFrontendBackend implements FrontendBackend {
               'contactPhone': fields['phone'],
               'desiredVisitFrom': from.toUtc().toIso8601String(),
               'desiredVisitTo': to.toUtc().toIso8601String(),
-            'notes': fields['notes'] ?? '',
+              'notes': fields['notes'] ?? '',
             },
           },
         );
@@ -183,35 +181,23 @@ class SpringFrontendBackend implements FrontendBackend {
     String? key,
     Map<String, String>? query,
   }) async {
-    final token = _token;
-    if (token == null) throw const ServiceFailure(401, '서버 인증 연결이 필요합니다.');
+    if (!hasServiceSession) throw const ServiceFailure(401, '서버 인증 연결이 필요합니다.');
     final generation = _generation;
     try {
-      final request =
-          http.Request(
-              method,
-              _base.replace(path: path, queryParameters: query),
-            )
-            ..followRedirects = false
-            ..headers.addAll({
-              'Accept': 'application/json',
-              'Authorization': 'Bearer $token',
-              if (body != null) 'Content-Type': 'application/json',
-              'Idempotency-Key': ?key,
-            });
-      if (body != null) request.body = jsonEncode(body);
-      final response = await http.Response.fromStream(
-        await _client.send(request).timeout(const Duration(seconds: 30)),
-      ).timeout(const Duration(seconds: 30));
+      final target = Uri.parse(
+        path.substring('/api/v1/'.length),
+      ).replace(queryParameters: query);
+      final result = await _session.requestJson(
+        'receptions/resource',
+        body,
+        path: target.toString(),
+        method: method,
+        headers: {'Accept': 'application/json', 'Idempotency-Key': ?key},
+      );
       _checkSession(generation);
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        if (response.statusCode == 401) clearSession();
-        throw _failure(response.statusCode);
-      }
-      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
-      if (decoded is! ApiData) throw const FormatException();
-      return decoded;
-    } on ServiceFailure {
+      return result;
+    } on ServiceFailure catch (error) {
+      if (error.status > 0 && error.status != 499) throw _failure(error.status);
       rethrow;
     } on TimeoutException {
       throw const ServiceFailure(0, '응답 시간이 초과되었습니다. 같은 작업을 다시 시도해 주세요.');
@@ -311,8 +297,8 @@ class SpringFrontendBackend implements FrontendBackend {
             ..bodyBytes = bytes;
           request.headers.addAll(headers);
           // No application bearer on the S3 request; preserve signed headers.
-          final response = await _client
-              .send(request)
+          final response = await _session
+              .sendUpload(request)
               .timeout(const Duration(minutes: 2));
           await response.stream.drain<void>().timeout(
             const Duration(seconds: 30),

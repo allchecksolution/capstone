@@ -55,7 +55,7 @@ Future<void> launchAllcheck(AppRole role, {
 }) async {
   WidgetsFlutterBinding.ensureInitialized();
   const baseUrl=String.fromEnvironment('API_BASE_URL');
-  backend??=baseUrl.isEmpty?null:role==AppRole.driver?DriverOnboardingBackend(baseUrl):AdminRestBackend(baseUrl);
+  backend??=baseUrl.isEmpty?null:role==AppRole.driver?DriverOnboardingBackend(baseUrl):AdminRestBackend(baseUrl,receptionsFactory:SpringFrontendBackend.withSession);
   push??=pushEnabled?FirebaseAppPush():null;
   if (role == AppRole.driver) KakaoDriverAuth.initialize();
   if(backend!=null){runApp(AllcheckApp(role:role,store:AppStore(role),backend:backend,push:push,driverAuth:driverAuth,onKakaoAuthenticated:onKakaoAuthenticated));return;}

@@ -33,7 +33,7 @@ flutter run --dart-define-from-file=../.env
 
 `API_BASE_URL`에는 서버 origin을 지정합니다. 관리자·기사·상담 접수 어댑터가 `/api/v1`을 한 번만 붙이며, 기존 `/api/v1` 포함 설정도 호환됩니다. 원격 서버는 HTTPS만 허용하고, 로컬 debug에서는 `http://127.0.0.1:8080` 또는 Android 에뮬레이터용 `http://10.0.2.2:8080`을 사용할 수 있습니다. 실기기의 `127.0.0.1`은 기기 자신이며 PC 백엔드에 연결하려면 별도로 `adb reverse`가 필요합니다.
 
-현재 기본 어댑터는 관리자 `AdminRestBackend`(로그인·기사 심사·관리자 계정), 기사 `DriverOnboardingBackend`(카카오 서비스 인증·가입·승인 상태 조회)입니다. 상담 접수 `SpringFrontendBackend`는 별도 어댑터로 유지하며 기본 관리자 로그인과의 결합, 배차·작업·채팅 연동은 후속 작업입니다. 주소 설정만으로 미연동 기능이 활성화되지는 않습니다. 실제 서버 검수용 `.env`에서는 `ALLCHECK_DEV_ACCESS=false`, `ALLCHECK_TEMP_REVIEW_ACCESS=false`로 두어 개발용 입장과 임시 승인 건너뛰기를 숨깁니다. [실제 API 연동 내역과 검수 방법](BACKEND-INTEGRATION.md)을 확인하세요.
+현재 기본 어댑터는 관리자 `AdminRestBackend`(로그인·기사 심사·관리자 계정·상담 접수), 기사 `DriverOnboardingBackend`(카카오 서비스 인증·가입·승인 상태 조회)입니다. 관리자 앱은 `SpringFrontendBackend.withSession`으로 상담 접수 어댑터에 같은 로그인 세션을 연결하며, 홈의 상담 접수 버튼으로 진입합니다. 보호된 요청은 토큰 만료 시 한 번 갱신 후 원래 요청을 재시도합니다. 배차·작업·채팅 연동은 후속 작업이며, 실제 계정 로그인·업무 왕복은 별도 검수가 필요합니다. 실제 서버 검수용 `.env`에서는 `ALLCHECK_DEV_ACCESS=false`, `ALLCHECK_TEMP_REVIEW_ACCESS=false`로 두어 개발용 입장과 임시 승인 건너뛰기를 숨깁니다. [진행 단계·연동 내역·검수 방법](BACKEND-INTEGRATION.md)을 확인하세요.
 
 ## 연결 준비
 

@@ -42,13 +42,31 @@ class HttpFrontendBackend implements FrontendBackend {
   String? _refreshToken;
   Future<ApiData>? _refreshing;
   int _generation = 0;
+  bool get hasServiceSession => _accessToken != null;
+  int get sessionGeneration => _generation;
+
+  void setServiceSession(String accessToken) {
+    if (accessToken.trim().isEmpty) throw ArgumentError('Empty service token');
+    clearSession();
+    _accessToken = accessToken;
+  }
+
+  /// Resource adapters share authentication without copying bearer tokens.
+  Future<ApiData> requestJson(String operation, ApiData? data, {
+    required String path,
+    required String method,
+    Map<String, String> headers = const {},
+  }) => _request(operation, data ?? {}, path: path, method: method, headers: headers, hasBody: data != null);
+
+  /// Signed uploads carry only the headers supplied by their storage grant.
+  Future<http.StreamedResponse> sendUpload(http.Request request) => _client.send(request);
   // Tokens are memory-only. Restart requires authentication; no credentials or
   // TOTP secret is written to SharedPreferences or to application logs.
-  @override void clearSession() { _accessToken = null; _refreshToken = null; _generation++; }
+  @override void clearSession() { _accessToken = null; _refreshToken = null; _refreshing = null; _generation++; }
   void close() { clearSession(); _client.close(); }
 
   @override Future<ApiData> call(String operation, [ApiData data = const {}]) => _request(operation,data);
-  Future<ApiData> _request(String operation, ApiData data, {bool allowRefresh=true, String? path, String method='POST', Map<String,String> headers=const {}}) async {
+  Future<ApiData> _request(String operation, ApiData data, {bool allowRefresh=true, String? path, String method='POST', Map<String,String> headers=const {}, bool hasBody=true}) async {
     if (!RegExp(r'^[a-z][a-z0-9-]*(/[a-z][a-z0-9-]*)*$').hasMatch(operation)) {
       throw ArgumentError('Invalid API operation');
     }
@@ -56,22 +74,27 @@ class HttpFrontendBackend implements FrontendBackend {
     try {
       // An explicit operation API avoids sending writable client state or
       // trusting locally calculated approval/dispatch results on the server.
-      final target=path??(restAuth?switch(operation){'auth/kakao'=>'auth/sessions/kakao','auth/refresh'=>'auth/tokens/refresh','auth/logout'=>'auth/sessions/logout',_=>operation}:operation);
+      final target=path??(restAuth?switch(operation){'auth/admin-login'=>'auth/sessions/admin','auth/kakao'=>'auth/sessions/kakao','auth/refresh'=>'auth/tokens/refresh','auth/logout'=>'auth/sessions/logout',_=>operation}:operation);
+      final requestToken = _accessToken;
       final request = http.Request(method, Uri.parse('${baseUrl.replaceFirst(RegExp(r'/+$'), '')}/$target'))
         ..followRedirects = false
-        ..headers.addAll({'Content-Type': 'application/json',...headers,
-          if (_accessToken != null) 'Authorization': 'Bearer $_accessToken'});
-      if(method!='GET')request.body=jsonEncode(data);
+        ..headers.addAll({if (hasBody) 'Content-Type': 'application/json',...headers,
+          if (requestToken != null) 'Authorization': 'Bearer $requestToken'});
+      if(hasBody&&method!='GET')request.body=jsonEncode(data);
       final response = await http.Response.fromStream(await _client.send(request)
         .timeout(const Duration(seconds: 15))).timeout(const Duration(seconds: 15));
       if (generation != _generation) throw const ServiceFailure(499, '요청이 취소되었습니다.');
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        if(response.statusCode==401&&allowRefresh&&_refreshToken!=null&&!operation.startsWith('auth/')){
-          try{
-            _refreshing??=_request('auth/refresh',{'refreshToken':_refreshToken},allowRefresh:false);
-            await _refreshing;
-          }finally{_refreshing=null;}
-          return await _request(operation,data,allowRefresh:false,path:path,method:method,headers:headers);
+        const credentialOperations = {'auth/admin-login', 'auth/kakao', 'auth/refresh', 'auth/logout'};
+        if(response.statusCode==401&&allowRefresh&&_refreshToken!=null&&!credentialOperations.contains(operation)){
+          // A late 401 for an old bearer must not rotate the refresh token again.
+          if (requestToken == _accessToken) {
+            final pending = _refreshing ??= _request('auth/refresh', {'refreshToken': _refreshToken}, allowRefresh: false);
+            try { await pending; }
+            finally { if (identical(_refreshing, pending)) _refreshing = null; }
+          }
+          if (generation != _generation) throw const ServiceFailure(499, '요청이 취소되었습니다.');
+          return await _request(operation,data,allowRefresh:false,path:path,method:method,headers:headers,hasBody:hasBody);
         }
         if (response.statusCode == 401) clearSession();
         if (kDebugMode && operation=='drivers/register') debugPrint('API $operation failed (HTTP ${response.statusCode}).');
@@ -111,7 +134,7 @@ class HttpFrontendBackend implements FrontendBackend {
       if (['auth/admin-login', 'auth/kakao', 'auth/refresh'].contains(operation)) {
         final token = decoded['accessToken'];
         if (token is! String || token.isEmpty) throw const FormatException();
-        if(operation!='auth/refresh'){_refreshToken=null;_generation++;}
+        if(operation!='auth/refresh'){_refreshToken=null;_refreshing=null;_generation++;}
         _accessToken = token;
         final refresh=decoded['refreshToken'];
         if(refresh is String&&refresh.isNotEmpty)_refreshToken=refresh;

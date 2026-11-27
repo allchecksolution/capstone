@@ -2,9 +2,15 @@ part of 'backend.dart';
 
 /// Administrator screens use the existing REST contracts, never local approvals.
 class AdminRestBackend implements FrontendBackend {
-  AdminRestBackend(String baseUrl, {http.Client? client})
-    : _session = HttpFrontendBackend(baseUrl, client: client, restAuth: true);
+  AdminRestBackend(String baseUrl, {
+    http.Client? client,
+    FrontendBackend Function(HttpFrontendBackend)? receptionsFactory,
+  }) : _session = HttpFrontendBackend(baseUrl, client: client, restAuth: true) {
+    _receptions = receptionsFactory?.call(_session);
+  }
   final HttpFrontendBackend _session;
+  late final FrontendBackend? _receptions;
+  bool get supportsReceptions => _receptions != null;
   ApiData? _user;
   List<ApiData> _drivers = [];
   int _page = 1;
@@ -21,6 +27,7 @@ class AdminRestBackend implements FrontendBackend {
     _totalPages = 0;
     _detailId = null;
     _session.clearSession();
+    _receptions?.clearSession();
   }
 
   void close() {
@@ -30,7 +37,13 @@ class AdminRestBackend implements FrontendBackend {
 
   @override
   Future<ApiData> call(String operation, [ApiData data = const {}]) async {
+    if (operation == 'auth/admin-login') clearSession();
     final generation = _generation;
+    if (operation.startsWith('receptions/') && _receptions != null) {
+      final result = await _receptions!.call(operation, data);
+      _check(generation);
+      return result;
+    }
     switch (operation) {
       case 'auth/admin-login':
         final result = await _session._request(operation, {
@@ -47,7 +60,7 @@ class AdminRestBackend implements FrontendBackend {
           clearSession();
           throw const ServiceFailure(403, '관리자 계정으로 로그인해 주세요.');
         }
-        return {'state': _state(), 'name': data['username']};
+        return {'state': _state(), 'name': data['username'], 'resetState': true};
       case 'auth/logout':
         try {
           if (_session._refreshToken != null) {

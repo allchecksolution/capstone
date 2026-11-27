@@ -55,7 +55,11 @@ extension BackendScreens on _WorkflowShellState {
     final state=result['state'];
     if(state is! Json)throw const ServiceFailure(0,'서버 응답 형식을 확인해 주세요.');
     await s.change((){
-      s.restore(jsonEncode(state));
+      if (result['resetState'] == true) receptionPage = {};
+      final merged = widget.backend is AdminRestBackend && result['resetState'] != true
+          ? {...state, 'consultations': s.consultations}
+          : state;
+      s.restore(jsonEncode(merged));
       final collection=switch(page){'detail'||'request'||'report'||'report-edit'||'report-history'||'dispatch'||'cancel'||'revisit'=>s.jobs,'reception'=>s.consultations,'driver'=>s.drivers,'cancellation'=>s.cancellations,_=>null};
       if(collection!=null&&!collection.any((row)=>row['id']==id)){page='home';id='';history.clear();}
     });
@@ -100,10 +104,11 @@ extension BackendScreens on _WorkflowShellState {
 
   Future<void> refreshState()async{
     if(!signedIn||developmentSession||page=='register'||widget.backend==null||busy||refreshingState)return;
-    if (springReceptions) {
-      if (['receptions', 'reception'].contains(page)) await loadReceptions();
+    if (springReceptions && ['receptions', 'reception'].contains(page)) {
+      await loadReceptions();
       return;
     }
+    if (receptionOnlySession) return;
     refreshingState=true;final version=stateVersion;
     try{final response=await api.call('workflow/state',{'role':widget.role.name,if(admin&&page=='driver')'driverId':id});if(mounted&&signedIn&&!busy&&version==stateVersion)await applyServerState(response);}
     catch(e){failure(e);}
@@ -148,7 +153,7 @@ extension BackendScreens on _WorkflowShellState {
 
   Future<void> afterAuthentication()async{
     if(!mounted||!signedIn||developmentSession||sdkOnlySession||afterAuthRunning)return;
-    if (springReceptions) return;
+    if (receptionOnlySession) return;
     afterAuthRunning=true;try{
     await loadInbox();
     try{final token=await appPush?.token();if(token!=null)await registerDevice(token);}catch(_){if(mounted)refresh(()=>pushStatus='알림 연결을 다시 시도해 주세요.');}
