@@ -111,6 +111,8 @@ The former `RECEPTION_STORAGE_ENABLED`, `RECEPTION_STORAGE_REGION`, `RECEPTION_S
 and `RECEPTION_STORAGE_BUCKET` settings are replaced by the common SDK settings and reception bucket above.
 
 Terraform for private storage is under `infra/terraform/s3`; its outputs match these bindings.
+For local Backend development with external S3/FCM, follow [Local cloud setup](local-cloud-setup.md).
+FCM infrastructure under `infra/terraform/fcm` configures APIs and sender IAM after initial Firebase console project creation.
 
 Completion notifications use `global.notification.FcmClient` and shared `global.config.FcmConfig` for technical
 HTTP/OAuth handling. Reception owns durable event expansion, per-installation claims and retry outcomes.

@@ -1,0 +1,56 @@
+# Single-service releases supply the other image from the last successful deployment.
+services:
+  postgres:
+    image: postgis/postgis:17-3.5
+    restart: unless-stopped
+    mem_limit: 2g
+    shm_size: 128m
+    logging: {driver: local}
+    env_file:
+      - path: ${ALLCHECK_POSTGRES_ENV:?Set ALLCHECK_POSTGRES_ENV}
+        format: raw
+    environment:
+      POSTGRES_DB: allcheck
+      POSTGRES_USER: postgres
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - ${ALLCHECK_DATA_DIR:-/var/lib/allcheck}/postgres:/var/lib/postgresql/data
+      - ${ALLCHECK_POSTGRES_INIT:-/opt/allcheck/compose/init-postgres.sh}:/docker-entrypoint-initdb.d/20-allcheck.sh:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "allcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+  backend:
+    image: ${BACKEND_IMAGE:?Set BACKEND_IMAGE}
+    restart: unless-stopped
+    mem_limit: 2g
+    stop_grace_period: 20s
+    logging: {driver: local}
+    env_file:
+      - path: ${ALLCHECK_BACKEND_ENV:?Set ALLCHECK_BACKEND_ENV}
+        format: raw
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ${ALLCHECK_BACKEND_CONFIG_DIR:-/etc/allcheck/backend}:/run/allcheck:ro
+    networks: [default, proxy]
+
+  ai:
+    image: ${AI_IMAGE:?Set AI_IMAGE}
+    restart: unless-stopped
+    mem_limit: 1536m
+    logging: {driver: local}
+    env_file:
+      - path: ${ALLCHECK_AI_ENV:?Set ALLCHECK_AI_ENV}
+        format: raw
+    networks: [default, proxy]
+
+networks:
+  proxy:
+    external: true
+    name: allcheck-proxy

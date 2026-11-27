@@ -54,6 +54,7 @@ class SecurityConfig(
 
                 // Health
                 authorize(HttpMethod.GET, "/actuator/health", permitAll)
+                authorize(HttpMethod.GET, "/actuator/health/readiness", permitAll)
 
                 // Swagger (로컬 프로파일에서만 활성)
                 authorize(HttpMethod.GET, "/swagger-ui.html", permitAll)

@@ -1,10 +1,15 @@
-# Copy to a local .tfvars file and replace the account, profile, bucket and role.
+# Copy to dev.tfvars and fill in the account, region and NEW bucket name.
 # 000000000000 is a deliberate placeholder; allowed_account_ids prevents applying it to a real account.
 aws_account_id = "000000000000"
 aws_region     = "ap-northeast-2"
 environment    = "dev"
 bucket_name    = "allcheck-dev-private-media-000000000000"
 
-# aws_profile       = "your-project-profile"
-# backend_role_name = "your-existing-backend-execution-role"
+# aws_profile = "your-project-profile"
+# For local development, leave this unset and grant S3 access to the local backend identity.
+# ec2_role_name = "your-existing-application-ec2-role"
 # allowed_cors_origins = ["https://admin.example.com"]
+
+# aws_profile authenticates Terraform only; configure backend AWS credentials separately.
+# Leaving ec2_role_name unset creates the policy for manual attachment.
+# Do not put access keys or session tokens in this file.

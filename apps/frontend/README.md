@@ -35,6 +35,17 @@ flutter run --dart-define=API_BASE_URL=https://YOUR_SERVER
 
 ## 연결 준비
 
+### Android Firebase 설정
+
+같은 Firebase 프로젝트에 관리자 Android 앱(`kr.allcheck.flutter.admin`)과 기사 Android 앱
+(`kr.allcheck.flutter.driver`)을 각각 등록한다. 각 앱에서 다운로드한 `google-services.json`을
+`apps/frontend/admin/android/app/`과 `apps/frontend/driver/android/app/`에 각각 넣는다.
+프로젝트 ID만으로 이 JSON 파일을 만들 수 없으며, 설정 파일은 Git에서 제외한다.
+
+프로젝트 ID를 입력할 Terraform·백엔드 로컬 파일과 실행 방법은
+[Android 로컬 클라우드 설정](../backend/docs/local-cloud-setup.md#android만-사용하는-경우)을 따른다.
+각 앱 실행 시 `--dart-define=ALLCHECK_PUSH_ENABLED=true`를 추가한다.
+
 ### 백엔드 없이 카카오 로그인
 
 기사앱은 `API_BASE_URL` 없이도 카카오 SDK로 로그인할 수 있습니다. 카카오 인증 후 `계속`을 누르면 가입 정보 입력 1단계로 이동하며, 신청 전 상태를 승인 대기로 표시하지 않습니다. 카카오 닉네임과 이메일은 가입 정보에 미리 채우고, 1단계에서 저장한 이름은 계정별 앱 표시 이름으로 기억합니다. 카카오 계정 닉네임은 변경하지 않습니다. 가입 화면에서 로그아웃할 수 있습니다. 서버 미연결 상태에서는 사업자 확인·가입 신청을 완료한 것으로 처리하지 않습니다. 실제 관리자 승인 대기는 서버가 신청을 접수한 뒤에만 표시하며 실제 가입 신청·관리자 승인·배차에는 서버 연결이 필요합니다. 개발용 버튼을 통한 임시 체험을 제외하면 승인 전 업무 화면 진입을 허용하지 않습니다. 앱을 다시 시작하면 카카오 로그인을 다시 진행합니다.

@@ -1,0 +1,7 @@
+{
+  "JWT_SECRET": "<JWT signing key for this environment, Base64>",
+  "SPRING_DATASOURCE_URL": "jdbc:postgresql://postgres:5432/allcheck",
+  "SPRING_DATASOURCE_USERNAME": "<backend database login>",
+  "SPRING_DATASOURCE_PASSWORD": "<backend database login password>",
+  "POSTGRES_ADMIN_PASSWORD": "<separate PostgreSQL admin password>"
+}
