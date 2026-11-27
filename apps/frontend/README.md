@@ -25,13 +25,15 @@ debug 빌드에서는 기본으로 로그인 화면에 ‘개발용으로 입장
 
 서버를 연결하는 실행 예시:
 
-아래 `/api/frontend` 예시는 기존 관리자/업무 어댑터 기준입니다. 기사 가입은 `API_BASE_URL=http://127.0.0.1:8080/api/v1`과 새 `DriverOnboardingBackend`를 사용합니다. 사업자 검증·가입 정책은 [업무 명세](../backend/docs/business-specification.md#driver-registration-persistence), 구현된 경로와 입출력은 백엔드 Swagger에서 확인합니다. 국세청 키는 백엔드에만 설정합니다.
+두 앱은 같은 EC2 주소 `https://api.allcheck.cloud`를 사용합니다. `.env`가 없으면 `apps/frontend/.env.example`을 `.env`로 복사합니다. 기존 파일이 있으면 카카오 키 등은 유지하고 API 주소·개발용 진입 옵션만 변경합니다. `.env`는 Git에서 제외하며, 각 앱 디렉터리에서 아래 명령으로 실행합니다.
 
 ```powershell
-flutter run --dart-define=API_BASE_URL=https://YOUR_SERVER
+flutter run --dart-define-from-file=../.env
 ```
 
-현재 main의 상담 접수·녹음 API만 관리자앱의 `SpringFrontendBackend`로 연결합니다. 서버 origin만 지정하며, 관리자 로그인·JWT 요청 인증은 아직 main에서 연결되지 않아 실서버 업무 검수에는 인증 구현 반영이 필요합니다. 기사앱은 `API_BASE_URL`이 지정되면 main에 반영된 기사 가입·인증 REST 계약(`DriverOnboardingBackend`)으로 연결하고, 지정하지 않으면 기존 카카오 SDK 로그인을 유지합니다. [실제 API 연동 내역과 검수 방법](BACKEND-INTEGRATION.md)을 확인하세요.
+`API_BASE_URL`에는 서버 origin을 지정합니다. 관리자·기사·상담 접수 어댑터가 `/api/v1`을 한 번만 붙이며, 기존 `/api/v1` 포함 설정도 호환됩니다. 원격 서버는 HTTPS만 허용하고, 로컬 debug에서는 `http://127.0.0.1:8080` 또는 Android 에뮬레이터용 `http://10.0.2.2:8080`을 사용할 수 있습니다. 실기기의 `127.0.0.1`은 기기 자신이며 PC 백엔드에 연결하려면 별도로 `adb reverse`가 필요합니다.
+
+현재 기본 어댑터는 관리자 `AdminRestBackend`(로그인·기사 심사·관리자 계정), 기사 `DriverOnboardingBackend`(카카오 서비스 인증·가입·승인 상태 조회)입니다. 상담 접수 `SpringFrontendBackend`는 별도 어댑터로 유지하며 기본 관리자 로그인과의 결합, 배차·작업·채팅 연동은 후속 작업입니다. 주소 설정만으로 미연동 기능이 활성화되지는 않습니다. 실제 서버 검수용 `.env`에서는 `ALLCHECK_DEV_ACCESS=false`, `ALLCHECK_TEMP_REVIEW_ACCESS=false`로 두어 개발용 입장과 임시 승인 건너뛰기를 숨깁니다. [실제 API 연동 내역과 검수 방법](BACKEND-INTEGRATION.md)을 확인하세요.
 
 ## 연결 준비
 
@@ -64,7 +66,7 @@ iOS에서는 번들 ID 등록 및 `ios/Flutter/Kakao.local.xcconfig`의 키도 �
 
 알림은 분석 완료/실패, 배차 요청/상태 변경, 작업 상태, 채팅, 기사 승인 상태를 구분합니다. 앱 실행 중에는 인앱 배너를 표시하고, 백그라운드·종료 상태에서 알림을 누르면 인증 후 서버에서 최신 상태를 가져와 이동합니다. 알림 설정에서 권한을 요청하고 기기 토큰을 서버에 등록합니다.
 
-Android APK는 저장소 루트에서 `./apps/frontend/scripts/build-apks.ps1 -Flutter flutter`로 빌드합니다. Firebase 설정 파일과 로컬 카카오 키 설정은 커밋하지 않습니다. Flutter 템플릿 라이선스, 테스트, 네이티브 호스트와 각 플랫폼 빌드 파일은 앱 실행에 필요하므로 유지합니다.
+Android APK는 저장소 루트에서 `./apps/frontend/scripts/build-apks.ps1 -Flutter flutter`로 빌드합니다. 스크립트는 `apps/frontend/.env`를 두 앱에 공통으로 전달하며 파일이 없으면 빌드 전에 중단합니다. 다른 설정 파일은 `-DefinesFile <경로>`로 지정합니다. 주소를 변경하면 다시 빌드·설치해야 합니다. Firebase 설정 파일과 로컬 카카오 키 설정은 커밋하지 않습니다. Flutter 템플릿 라이선스, 테스트, 네이티브 호스트와 각 플랫폼 빌드 파일은 앱 실행에 필요하므로 유지합니다.
 
 ## 검증 상태
 

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'api_endpoint.dart';
 
 part 'driver_backend.dart';
 part 'admin_backend.dart';
@@ -24,8 +25,10 @@ abstract interface class FrontendBackend {
 }
 
 class HttpFrontendBackend implements FrontendBackend {
-  HttpFrontendBackend(this.baseUrl, {http.Client? client, this.restAuth=false}) : _client = client ?? http.Client() {
-    final uri = Uri.parse(baseUrl);
+  HttpFrontendBackend(String baseUrl, {http.Client? client, this.restAuth=false})
+      : baseUrl = restAuth ? ApiEndpoint(baseUrl).apiBaseUrl : baseUrl,
+        _client = client ?? http.Client() {
+    final uri = Uri.parse(this.baseUrl);
     if (uri.host.isEmpty || uri.userInfo.isNotEmpty || uri.hasQuery || uri.hasFragment ||
         (uri.scheme != 'https' && !(kDebugMode && uri.scheme == 'http' &&
           ['localhost', '127.0.0.1', '10.0.2.2'].contains(uri.host)))) {

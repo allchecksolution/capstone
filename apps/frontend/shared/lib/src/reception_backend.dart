@@ -1,36 +1,19 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import 'api_endpoint.dart';
 import 'backend.dart';
 
 /// Adapter for the Controllers actually merged into main. Other domains must
 /// supply their implemented contracts before their operations can be enabled.
 class SpringFrontendBackend implements FrontendBackend {
   SpringFrontendBackend(String baseUrl, {http.Client? client})
-    : _base = Uri.parse(baseUrl),
-      _client = client ?? http.Client() {
-    if (_base.host.isEmpty ||
-        _base.userInfo.isNotEmpty ||
-        _base.hasQuery ||
-        _base.hasFragment ||
-        (_base.scheme != 'https' &&
-            !(kDebugMode &&
-                _base.scheme == 'http' &&
-                ['localhost', '127.0.0.1', '10.0.2.2'].contains(_base.host)))) {
-      throw ArgumentError(
-        'API_BASE_URL must use HTTPS (debug loopback HTTP allowed).',
-      );
-    }
-    if (_base.path != '' && _base.path != '/') {
-      throw ArgumentError(
-        'API_BASE_URL must be the server origin, without an API path.',
-      );
-    }
-  }
+    : _base = ApiEndpoint(baseUrl).origin,
+      _client = client ?? http.Client();
 
   final Uri _base;
   final http.Client _client;
