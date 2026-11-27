@@ -1,7 +1,7 @@
 part of 'backend.dart';
 
 /// Administrator screens use the existing REST contracts, never local approvals.
-class AdminRestBackend implements FrontendBackend {
+class AdminRestBackend implements FrontendBackend, ChatConnection {
   AdminRestBackend(
     String baseUrl, {
     http.Client? client,
@@ -26,6 +26,9 @@ class AdminRestBackend implements FrontendBackend {
   int _totalPages = 0;
   String? _detailId;
   int _generation = 0;
+
+  @override
+  Future<WebSocket?> openChat(String threadId) => _session.openRoom(threadId);
 
   @override
   void clearSession() {
@@ -54,6 +57,17 @@ class AdminRestBackend implements FrontendBackend {
       return result;
     }
     switch (operation) {
+      case 'devices/register':
+      case 'devices/unregister':
+        return _session.device(operation, data);
+      case 'work/photo-access':
+        return _session.requestJson(operation,null,path:'works/${_resource(data['workId'])}/photos/${_resource(data['photoId'])}/access',method:'GET');
+      case 'work/report-detail':
+        return _session.requestJson(operation, null, path: 'reports/${_resource(data['threadId'])}', method: 'GET');
+      case 'work/revise':
+        return _session.requestJson(operation,data['body'] as ApiData,path:'reports/${_resource(data['reportId'])}/revisions',method:'POST',headers:{'Idempotency-Key':data['requestId'] as String});
+      case 'work/reports':
+        return _session.requestJson(operation, null, path: 'reports?page=${data['page'] ?? 1}', method: 'GET');
       case 'chat/rooms':
         return _session._request(
           operation, const {},
@@ -63,6 +77,16 @@ class AdminRestBackend implements FrontendBackend {
       case 'chat/send':
       case 'chat/read':
         return _session._chat(operation, 'chat-rooms/${_id(data['threadId'])}', data);
+      case 'dashboard/request':
+        return _session.requestJson(operation, null,
+          path: 'service-requests/${_resource(data['threadId'])}', method: 'GET');
+      case 'dashboard/cancellations':
+        return _session.requestJson(operation, null,
+          path: 'dispatch-cancellations?page=${data['page'] ?? 1}', method: 'GET');
+      case 'dashboard/follow-up':
+        return _session.requestJson(operation, data['body'] as ApiData,
+          path: 'service-requests/${_resource(data['threadId'])}/follow-up-decisions',
+          method: 'POST', headers: {'Idempotency-Key': data['requestId'] as String});
       case 'dashboard/requests':
         return _session._request(
           operation, const {},

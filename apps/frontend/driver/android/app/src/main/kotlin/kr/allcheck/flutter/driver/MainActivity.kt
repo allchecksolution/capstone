@@ -18,10 +18,23 @@ class MainActivity : FlutterActivity() {
     private var exportBytes: ByteArray? = null
     private var ocrResult: MethodChannel.Result? = null
     private val preferences get() = getSharedPreferences("allcheck_flutter_folder", MODE_PRIVATE)
+    override fun onResume() {
+        super.onResume()
+        kr.allcheck.flutter.push.WorkflowPushReceiver.appVisible = true
+    }
+    override fun onPause() {
+        kr.allcheck.flutter.push.WorkflowPushReceiver.appVisible = false
+        super.onPause()
+    }
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+    }
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "allcheck/platform").setMethodCallHandler { call, result ->
             when (call.method) {
+                "takePushEvent" -> result.success(kr.allcheck.flutter.push.WorkflowPushReceiver.takeEvent(intent))
                 "recognizeBusinessDocument" -> {
                     if (ocrResult != null) { result.error("BUSY", "문서 인식 중입니다.", null); return@setMethodCallHandler }
                     val path = call.argument<String>("path")

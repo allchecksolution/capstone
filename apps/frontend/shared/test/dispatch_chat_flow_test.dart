@@ -135,6 +135,193 @@ Future<void> signInAdmin(WidgetTester tester, FrontendBackend backend) async {
 }
 
 void main() {
+  testWidgets('offer detail acknowledges delivery and opens accepted work', (
+    tester,
+  ) async {
+    final events = <String>[];
+    final api = DriverOnboardingBackend(
+      'https://api.example.com',
+      client: MockClient((request) async {
+        final path = request.url.path;
+        switch (path) {
+          case '/api/v1/auth/sessions/kakao':
+            return kakaoTokens();
+          case '/api/v1/drivers/me/registration':
+            return jsonResponse(registration('ACTIVATED'));
+          case '/api/v1/drivers/me/availability':
+            return jsonResponse({'availability': 'UNAVAILABLE'});
+          case '/api/v1/drivers/me/dispatch-offers':
+            return jsonResponse({
+              'items': [
+                {
+                  'offerId': 'offer_1',
+                  'canRespond': true,
+                  'addressArea': '서울 강남구',
+                },
+              ],
+            });
+          case '/api/v1/dispatch-offers/offer_1':
+            return jsonResponse({
+              'offerId': 'offer_1',
+              'canRespond': true,
+              'addressArea': '서울 강남구',
+            });
+          case '/api/v1/dispatch-offers/offer_1/received':
+          case '/api/v1/dispatch-offers/offer_1/viewed':
+            expect(request.method, 'POST');
+            events.add(path.split('/').last);
+            return http.Response('', 204);
+          case '/api/v1/dispatch-offers/offer_1/response':
+            return jsonResponse({'resourceId': 'work_1'});
+          case '/api/v1/works/work_1':
+            return jsonResponse(work());
+          default:
+            throw StateError(path);
+        }
+      }),
+    );
+    addTearDown(api.close);
+    await signInDriver(tester, api);
+    await tapText(tester, '배차 요청 내역');
+    await tapText(tester, '제안 상세');
+    expect(events, ['received', 'viewed']);
+    await tapText(tester, '수락');
+    expect(find.text('010-1234-5678'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  test(
+    'work photos use only the signed headers and verified IDs in the report',
+    () async {
+      final calls = <String>[];
+      final backend = DriverOnboardingBackend(
+        'https://api.example.com',
+        client: MockClient((r) async {
+          calls.add('${r.method} ${r.url.path}');
+          switch (r.url.path) {
+            case '/api/v1/auth/sessions/kakao':
+              return kakaoTokens();
+            case '/api/v1/drivers/me/registration':
+              return jsonResponse(registration('ACTIVATED'));
+            case '/api/v1/drivers/me/availability':
+              return jsonResponse({'availability': 'UNAVAILABLE'});
+            case '/api/v1/works/work_1/photos/upload-requests':
+              expect(r.headers['Authorization'], 'Bearer driver-token');
+              final body = jsonDecode(r.body);
+              expect(body.keys.toSet(), {
+                'phase',
+                'originalFilename',
+                'sizeBytes',
+                'contentType',
+                'checksum',
+              });
+              expect(base64Decode(body['checksum']['value']).length, 32);
+              return jsonResponse({
+                'workId': 'work_1',
+                'phase': 'BEFORE',
+                'photoFileId': 'photo_1',
+                'uploadUrl': 'https://storage.example/image',
+                'method': 'PUT',
+                'requiredHeaders': {
+                  'Content-Type': ['image/jpeg'],
+                },
+              });
+            case '/image':
+              expect(r.headers.containsKey('Authorization'), false);
+              expect(r.bodyBytes, [255, 216, 255]);
+              return http.Response('', 200);
+            case '/api/v1/works/work_1/photos/photo_1/completion':
+              expect(r.body, isEmpty);
+              return jsonResponse({'resourceId': 'photo_1'});
+            case '/api/v1/works/work_1/reports':
+              expect(jsonDecode(r.body)['beforePhotoIds'], [
+                'photo_1',
+                'photo_2',
+                'photo_3',
+              ]);
+              expect(jsonDecode(r.body)['totalCost'], 1000);
+              expect(r.headers['Idempotency-Key'], 'submit');
+              return jsonResponse({'resourceId': 'report_1'});
+            default:
+              throw StateError(r.url.path);
+          }
+        }),
+      );
+      addTearDown(backend.close);
+      await backend.call('auth/kakao', {'accessToken': 'kakao'});
+      final photo = await backend.call('work/photo', {
+        'workId': 'work_1',
+        'requestId': 'reserve',
+        'bytes': [255, 216, 255],
+        'contentType': 'image/jpeg',
+        'phase': 'BEFORE',
+        'filename': 'before.jpg',
+      });
+      await backend.call('work/submit', {
+        'workId': 'work_1',
+        'requestId': 'submit',
+        'body': {
+          'expectedVersion': 4,
+          'diagnosis': '진단',
+          'workDescription': '작업',
+          'totalCost': 1000,
+          'beforePhotoIds': [photo['photoFileId'], 'photo_2', 'photo_3'],
+          'afterPhotoIds': ['photo_4', 'photo_5', 'photo_6'],
+        },
+      });
+      expect(calls.sublist(calls.length - 4), [
+        'POST /api/v1/works/work_1/photos/upload-requests',
+        'PUT /image',
+        'POST /api/v1/works/work_1/photos/photo_1/completion',
+        'POST /api/v1/works/work_1/reports',
+      ]);
+    },
+  );
+  test(
+    'push registration and logout share an installation, not a token in the URL',
+    () async {
+      final methods = <String>[];
+      final api = AdminRestBackend(
+        'https://api.example.com',
+        client: MockClient((r) async {
+          methods.add(r.method);
+          expect(r.url.path, '/api/v1/push-devices/test-install');
+          if (r.method == 'PUT')
+            expect(jsonDecode(r.body), {
+              'platform': 'ANDROID',
+              'pushToken': 'token',
+            });
+          else
+            expect(r.body, isEmpty);
+          return http.Response('', 204);
+        }),
+      );
+      addTearDown(api.close);
+      await api.call('devices/register', {
+        'installationId': 'test-install',
+        'platform': 'android',
+        'token': 'token',
+      });
+      await api.call('devices/unregister', {'installationId': 'test-install'});
+      expect(methods, ['PUT', 'DELETE']);
+      expect(
+        AppAlert.parse({
+          'eventType': 'DISPATCH_OFFER',
+          'offerId': 'offer_9',
+          'requestId': 'req_3',
+        })?.role,
+        'driver',
+      );
+      expect(
+        AppAlert.parse({
+          'eventType': 'DRIVER_APPROVED',
+          'eventId': '7',
+          'driverId': '9',
+        })?.type,
+        'driver_approval',
+      );
+    },
+  );
   group('approved driver becomes dispatchable', () {
     test('availability and location use the dispatch contracts', () async {
       var ready = false;
@@ -201,7 +388,8 @@ void main() {
         'https://api.example.com',
         client: MockClient((request) async {
           paths.add(request.url.path);
-          if (request.url.path.endsWith('/sessions/kakao')) return kakaoTokens();
+          if (request.url.path.endsWith('/sessions/kakao'))
+            return kakaoTokens();
           return jsonResponse(registration('PENDING_APPROVAL'));
         }),
       );
@@ -216,7 +404,8 @@ void main() {
       final backend = DriverOnboardingBackend(
         'https://api.example.com',
         client: MockClient((request) async {
-          if (request.url.path.endsWith('/sessions/kakao')) return kakaoTokens();
+          if (request.url.path.endsWith('/sessions/kakao'))
+            return kakaoTokens();
           if (request.url.path.endsWith('/me/availability')) {
             return jsonResponse({
               'availability': 'UNAVAILABLE',
@@ -264,6 +453,13 @@ void main() {
             });
           case '/api/v1/works/wrk_1':
             return jsonResponse(work());
+          case '/api/v1/works/wrk_1/transitions':
+            expect(jsonDecode(request.body), {
+              'expectedVersion': 1,
+              'targetStatus': 'EN_ROUTE',
+            });
+            expect(request.headers['Idempotency-Key'], isNotEmpty);
+            return jsonResponse({'status': 'EN_ROUTE'});
         }
         return jsonResponse(registration('ACTIVATED'));
       }),
@@ -278,6 +474,8 @@ void main() {
     expect(find.text('2026-11-28 10:00 ~ 12:00'), findsOneWidget);
     expect(find.text('방문 전 연락'), findsOneWidget);
     expect(find.byTooltip('연락처 복사'), findsOneWidget);
+    await tapText(tester, '이동 중');
+    expect(paths, contains('/api/v1/works/wrk_1/transitions'));
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
@@ -361,7 +559,12 @@ void main() {
           case '/api/v1/drivers':
             return jsonResponse({
               'items': [summary],
-              'page': {'page': 1, 'size': 20, 'totalElements': 1, 'totalPages': 1},
+              'page': {
+                'page': 1,
+                'size': 20,
+                'totalElements': 1,
+                'totalPages': 1,
+              },
             });
           case '/api/v1/drivers/101':
             return jsonResponse(registration('ACTIVATED'));

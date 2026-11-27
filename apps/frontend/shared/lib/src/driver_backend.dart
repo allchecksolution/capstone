@@ -2,7 +2,7 @@ part of 'backend.dart';
 
 /// Maps the driver's onboarding screens to the backend's /api/v1 contracts.
 /// External service keys stay on the backend; service tokens stay in memory.
-class DriverOnboardingBackend implements FrontendBackend {
+class DriverOnboardingBackend implements FrontendBackend, ChatConnection {
   DriverOnboardingBackend(String baseUrl, {http.Client? client})
     : _session = HttpFrontendBackend(baseUrl, client: client, restAuth: true);
   final HttpFrontendBackend _session;
@@ -12,6 +12,9 @@ class DriverOnboardingBackend implements FrontendBackend {
   // Dispatch needs READY plus a recent location; both are server-owned.
   String _availability = '휴식';
   String _location = '미확인';
+
+  @override
+  Future<WebSocket?> openChat(String threadId) => _session.openRoom(_registration?['driverId']?.toString() ?? '');
 
   @override
   void clearSession() {
@@ -32,6 +35,26 @@ class DriverOnboardingBackend implements FrontendBackend {
   Future<ApiData> call(String operation, [ApiData data = const {}]) async {
     final generation = _generation;
     switch (operation) {
+      case 'devices/register':
+      case 'devices/unregister':
+        return _session.device(operation, data);
+      case 'work/photo-access':
+        return _session.requestJson(operation,null,path:'works/${_resource(data['workId'])}/photos/${_resource(data['photoId'])}/access',method:'GET');
+      case 'work/report-detail':
+        return _session.requestJson(operation, null, path: 'reports/${_resource(data['threadId'])}', method: 'GET');
+      case 'driver/history':
+        return _session.requestJson(operation, null, path: 'drivers/me/works?scope=HISTORY&page=${data['page'] ?? 1}', method: 'GET');
+      case 'driver/statistics':
+        return _session.requestJson(operation, null, path: 'drivers/me/work-statistics?month=${Uri.encodeQueryComponent(data['threadId'] as String)}', method: 'GET');
+      case 'work/transition':
+      case 'work/cancel':
+      case 'work/submit':
+        final suffix = {'work/transition':'transitions','work/cancel':'cancellations','work/submit':'reports'}[operation];
+        return _session.requestJson(operation, data['body'] as ApiData,
+          path: 'works/${_resource(data['workId'])}/$suffix', method: 'POST',
+          headers: {'Idempotency-Key': data['requestId'] as String});
+      case 'work/photo':
+        return _session.uploadPhoto(data);
       case 'chat/messages':
       case 'chat/send':
       case 'chat/read':
@@ -48,6 +71,12 @@ class DriverOnboardingBackend implements FrontendBackend {
         final path = operation == 'driver/offers' ? 'dispatch-offers' : 'works';
         return _session._request(operation, const {},
           path: 'drivers/me/$path?page=${data['page'] as int? ?? 1}', method: 'GET');
+      case 'driver/offer':
+        return _session.requestJson(operation, null,
+          path: 'dispatch-offers/${_resource(data['threadId'])}', method: 'GET');
+      case 'offer/received':
+      case 'offer/viewed':
+        return _session.requestJson(operation,null,path:'dispatch-offers/${_resource(data['offerId'])}/${operation.split('/').last}',method:'POST');
       case 'driver/respond':
         final offer = data['offerId'].toString();
         if (!RegExp(r'^[a-zA-Z0-9_-]+$').hasMatch(offer)) {

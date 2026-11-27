@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 
 const pushEnabled = bool.fromEnvironment('ALLCHECK_PUSH_ENABLED', defaultValue: false);
 
@@ -12,6 +14,19 @@ class AppAlert {
   final String id, type, resourceId, role;
   final bool read;
   static AppAlert? parse(Map<String, dynamic> data) {
+    final event=data['eventType'];
+    if(event=='RECEPTION_ANALYSIS_SUCCEEDED'||event=='RECEPTION_ANALYSIS_FAILED'||event=='DRIVER_APPROVED'||event=='DRIVER_REJECTED'){
+      final reception=event.toString().startsWith('RECEPTION_');
+      final id=data['eventId'],resource=data[reception?'receptionId':'driverId'];
+      if(id is! String || resource is! String || !RegExp(r'^[A-Za-z0-9_-]{1,64}$').hasMatch(id) || !RegExp(r'^[A-Za-z0-9_-]{1,64}$').hasMatch(resource))return null;
+      return AppAlert(id:'$event/$id',type:reception?(event=='RECEPTION_ANALYSIS_SUCCEEDED'?'analysis_completed':'analysis_failed'):'driver_approval',resourceId:resource,role:reception?'admin':'driver');
+    }
+    if(event=='DISPATCH_OFFER' || event=='FOLLOW_UP_REQUIRED'){
+      final offer=event=='DISPATCH_OFFER';
+      final resource=data[offer?'offerId':'requestId'];
+      if(resource is! String || !(offer?RegExp(r'^offer_[1-9][0-9]*$'):RegExp(r'^req_[1-9][0-9]*$')).hasMatch(resource)) return null;
+      return AppAlert(id:'$event/$resource',type:offer?'dispatch_requested':'dispatch_updated',resourceId:resource,role:offer?'driver':'admin');
+    }
     final id = data['notificationId'], type = data['type'], resource = data['resourceId'], role = data['role'];
     if ([id, type, resource, role].any((v) => v is! String || v.isEmpty || v.length > 256)) return null;
     const types = {'analysis_completed', 'analysis_failed', 'dispatch_requested',
@@ -53,7 +68,7 @@ abstract interface class AppPush {
   Future<void> dispose();
 }
 
-class FirebaseAppPush implements AppPush {
+class FirebaseAppPush with WidgetsBindingObserver implements AppPush {
   final _received = StreamController<AppAlert>.broadcast();
   final _opened = StreamController<AppAlert>.broadcast();
   final _tokens = StreamController<String>.broadcast();
@@ -65,6 +80,16 @@ class FirebaseAppPush implements AppPush {
   void _emit(RemoteMessage m, StreamController<AppAlert> sink) {
     final alert = AppAlert.parse(m.data);
     if (alert != null && !sink.isClosed) sink.add(alert);
+  }
+  Future<AppAlert?> _takeEvent() async {
+    if(defaultTargetPlatform!=TargetPlatform.android)return null;
+    final data=await const MethodChannel('allcheck/platform').invokeMapMethod<String,dynamic>('takePushEvent');
+    return data==null?null:AppAlert.parse(data);
+  }
+  @override void didChangeAppLifecycleState(AppLifecycleState state) {
+    if(state==AppLifecycleState.resumed && _ready){
+      _takeEvent().then((alert){if(alert!=null&&!_opened.isClosed)_opened.add(alert);},onError:(Object _) {});
+    }
   }
   @override Future<AppAlert?> start() async {
     if (!pushEnabled || kIsWeb || ![TargetPlatform.android, TargetPlatform.iOS].contains(defaultTargetPlatform)) return null;
@@ -78,9 +103,10 @@ class FirebaseAppPush implements AppPush {
     _subscriptions.add(FirebaseMessaging.onMessage.listen((m) => _emit(m, _received)));
     _subscriptions.add(FirebaseMessaging.onMessageOpenedApp.listen((m) => _emit(m, _opened)));
     _subscriptions.add(FirebaseMessaging.instance.onTokenRefresh.listen(_tokens.add,onError:(Object _) {}));
+    WidgetsBinding.instance.addObserver(this);
     _ready = true;
     final initial = await FirebaseMessaging.instance.getInitialMessage();
-    return initial == null ? null : AppAlert.parse(initial.data);
+    return initial == null ? await _takeEvent() : AppAlert.parse(initial.data);
   }
   @override Future<String> requestPermission() async {
     if (!_ready) return 'unavailable';
@@ -96,6 +122,7 @@ class FirebaseAppPush implements AppPush {
   }
   @override Future<void> deleteToken() async { if (_ready) await FirebaseMessaging.instance.deleteToken(); }
   @override Future<void> dispose() async {
+    WidgetsBinding.instance.removeObserver(this);
     _disposed=true;
     for (final subscription in _subscriptions) { await subscription.cancel(); }
     await _received.close(); await _opened.close(); await _tokens.close();

@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show WebSocket;
+import 'package:crypto/crypto.dart' show sha256;
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
@@ -35,6 +37,7 @@ part 'src/integration.dart';
 part 'src/receptions.dart';
 part 'src/recording_settings.dart';
 part 'src/connected_workflow.dart';
+part 'src/work_actions.dart';
 part 'src/location.dart';
 part 'src/startup_logo.dart';
 

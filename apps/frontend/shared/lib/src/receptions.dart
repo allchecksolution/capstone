@@ -325,7 +325,11 @@ extension _ReceptionScreens on _WorkflowShellState {
             }, () {});
           }
         }, secondary: true),
-      if (c['jobId'] != null) kv('등록된 의뢰 번호', c['jobId']),
+      if (c['jobId'] != null) ...[
+        kv('등록된 의뢰 번호', c['jobId']),
+        if (widget.backend is AdminRestBackend)
+          link('등록된 의뢰 보기', 'server-request', item: text(c, 'jobId')),
+      ],
     ]);
   }
 

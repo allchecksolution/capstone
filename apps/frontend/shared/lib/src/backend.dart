@@ -1,11 +1,18 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show WebSocket;
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'api_endpoint.dart';
 
 part 'driver_backend.dart';
 part 'admin_backend.dart';
+part 'work_backend.dart';
+
+abstract interface class ChatConnection {
+  Future<WebSocket?> openChat(String threadId);
+}
 
 typedef ApiData = Map<String, dynamic>;
 

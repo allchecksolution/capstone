@@ -10,6 +10,7 @@ $definesPath=(Resolve-Path -LiteralPath $DefinesFile -ErrorAction Stop).Path
 foreach($role in @('admin','driver')){
  # .env values are the default; API_BASE_URL/KAKAO_NATIVE_APP_KEY env vars override them.
  $defines=@()
+ if($env:ALLCHECK_PUSH_ENABLED){$defines+="--dart-define=ALLCHECK_PUSH_ENABLED=$env:ALLCHECK_PUSH_ENABLED"}
  if($env:API_BASE_URL){$defines+="--dart-define=API_BASE_URL=$env:API_BASE_URL"}
  if($role -eq 'driver' -and $env:KAKAO_NATIVE_APP_KEY){
    $defines+="--dart-define=KAKAO_NATIVE_APP_KEY=$env:KAKAO_NATIVE_APP_KEY"

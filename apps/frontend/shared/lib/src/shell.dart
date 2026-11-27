@@ -13,7 +13,7 @@ class _WorkflowShellState extends State<WorkflowShell> with WidgetsBindingObserv
   AppPush? get appPush=>widget.push;
   final pushSubscriptions=<StreamSubscription<dynamic>>[];
   final publicDocuments=<String,Future<Json>>{};final alerts=<AppAlert>[];final seenAlerts=<String>{};final retryKeys=<String,String>{};
-  AppAlert? pendingAlert;String lastResourceId="",pushStatus="",locationError="";String? deviceToken;bool registeringToken=false,refreshingState=false,sendingLocation=false,afterAuthRunning=false;int stateVersion=0;
+  AppAlert? pendingAlert;String lastResourceId="",pushStatus="",locationError="";String? deviceToken;Future<void>? deviceRegistration;String? queuedDeviceToken;bool detachingDevice=false,loggingOut=false;bool refreshingState=false,sendingLocation=false,afterAuthRunning=false;int stateVersion=0;
   StreamSubscription<Position>? locationSubscription;Timer? locationHeartbeat;DateTime? lastLocationSentAt;
   @override void didChangeAppLifecycleState(AppLifecycleState state){if(state==AppLifecycleState.resumed){unawaited(refreshState());unawaited(afterAuthentication());unawaited(pollRecordings());}}
   AppStore get s=>widget.store; bool get admin=>widget.role==AppRole.admin;
@@ -111,7 +111,7 @@ class _WorkflowShellState extends State<WorkflowShell> with WidgetsBindingObserv
   Widget pill(String label)=>Chip(label:Text(label,style:const TextStyle(fontSize:11)),backgroundColor:const Color(0xffe8f7fd),side:BorderSide.none,elevation:0);
   Widget jobCard(Json j)=>box([Row(children:[pill(text(j,'type')),const Spacer(),small(text(j,'status'))]),heading(text(j,'title',text(j,'symptom','작업 의뢰'))),small(text(j,'area',text(j,'address'))),link('상세 보기',j['status']=='응답 대기'?'request':'detail',item:text(j,'id'))]);
   Widget tabs(List<String> options,String selected,void Function(String) change)=>Wrap(spacing:6,runSpacing:6,children:options.map((v)=>ChoiceChip(label:Text(v),selected:v==selected,onSelected:busy?null:(_)=>setState(()=>change(v)))).toList());
-  String get title=>({'server-statistics':'작업 통계','admin-accounts':'관리자 계정 관리','admin-create':'관리자 추가','admin-edit':'관리자 수정','admin-password':'내 비밀번호 변경','login':admin?'관리자앱':'기사앱','kakao-connected':'기사앱','home':admin?'작업 이력 및 통계':'홈','jobs':'작업목록','work':'작업 상세','chat':'관리자 문의','more':'더보기','register':'가입 정보 등록','detail':'작업 상세','report':'작업 보고서','receptions':'상담 접수','reception':'접수 상세','dispatch':'배차 요청','drivers':'기사 관리','driver':'기사 정보','reports':'작업 보고서','report-edit':'보고서 수정','report-history':'원본 및 수정 이력','cancellations':'배차 취소 요청','cancellation':'취소 요청 검토','stats':'나의 작업 통계','result':'처리 결과','settings':'설정','requests':'배차 요청 내역','request':'배차 요청','cancel':'취소 사유','revisit':'재방문 사유','withdraw':'회원 탈퇴','recordings':'Softphone 녹음 연결','export':'조회 결과 내보내기','notifications':'알림'})[page]??'올체크';
+  String get title=>({'server-request':'의뢰 상세','server-offer':'배차 요청','work-history':'지난 작업','server-report':'작업 보고서','server-statistics':'작업 통계','admin-accounts':'관리자 계정 관리','admin-create':'관리자 추가','admin-edit':'관리자 수정','admin-password':'내 비밀번호 변경','login':admin?'관리자앱':'기사앱','kakao-connected':'기사앱','home':admin?'작업 이력 및 통계':'홈','jobs':'작업목록','work':'작업 상세','chat':'관리자 문의','more':'더보기','register':'가입 정보 등록','detail':'작업 상세','report':'작업 보고서','receptions':'상담 접수','reception':'접수 상세','dispatch':'배차 요청','drivers':'기사 관리','driver':'기사 정보','reports':'작업 보고서','report-edit':'보고서 수정','report-history':'원본 및 수정 이력','cancellations':'배차 취소 요청','cancellation':'취소 요청 검토','stats':'나의 작업 통계','result':'처리 결과','settings':'설정','requests':'배차 요청 내역','request':'배차 요청','cancel':'취소 사유','revisit':'재방문 사유','withdraw':'회원 탈퇴','recordings':'Softphone 녹음 연결','export':'조회 결과 내보내기','notifications':'알림'})[page]??'올체크';
   Widget publicPage(){
     if(!admin&&page=='register')return this.driverRegistration();
     if(page=='terms'||page=='privacy')return widget.backend==null?notice('문서를 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.'):documentPage();
@@ -194,13 +194,16 @@ class _WorkflowShellState extends State<WorkflowShell> with WidgetsBindingObserv
   Future<void> logout()async{
     if(!await confirm('로그아웃할까요?'))return;
     await platformTask(()async{
-      try{await detachDevice();}catch(_){}
-      try{if(!admin&&!developmentSession)await driverAuth.signOut();}catch(_){}
-      try{if(widget.backend!=null&&!developmentSession)await api.call('auth/logout');}catch(_){}
-      await closeSession();
-      if(!mounted)return;
-      developmentSession=false;
-      for(final c in fields.values){c.dispose();}fields.clear();selections.clear();history.clear();go('login',replace:true);
+      loggingOut=true;
+      try{
+        try{await detachDevice();}catch(_){}
+        try{if(!admin&&!developmentSession)await driverAuth.signOut();}catch(_){}
+        try{if(widget.backend!=null&&!developmentSession)await api.call('auth/logout');}catch(_){}
+        await closeSession(deviceDetached:true);
+        if(!mounted)return;
+        developmentSession=false;
+        for(final c in fields.values){c.dispose();}fields.clear();selections.clear();history.clear();go('login',replace:true);
+      }finally{loggingOut=false;}
     });
   }
   Widget commonPage(){
