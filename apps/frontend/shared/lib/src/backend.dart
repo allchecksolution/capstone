@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'reception_backend.dart';
 
 part 'driver_backend.dart';
 part 'admin_backend.dart';
@@ -43,6 +44,19 @@ class HttpFrontendBackend implements FrontendBackend {
   // TOTP secret is written to SharedPreferences or to application logs.
   @override void clearSession() { _accessToken = null; _refreshToken = null; _generation++; }
   void close() { clearSession(); _client.close(); }
+
+  Future<ApiData> _chat(String operation, String room, ApiData data) {
+    if (_accessToken == null) {
+      throw const ServiceFailure(401, '서버 인증 연결이 필요합니다.');
+    }
+    if (operation == 'chat/send') {
+      return _request(operation, {'body': data['text']}, path: '$room/messages',
+        headers: {'Idempotency-Key': data['requestId'] as String});
+    }
+    final before = data['before'];
+    final query = before == null ? '' : '?before=${Uri.encodeQueryComponent(before.toString())}';
+    return _request(operation, const {}, path: '$room/messages$query', method: 'GET');
+  }
 
   @override Future<ApiData> call(String operation, [ApiData data = const {}]) => _request(operation,data);
   Future<ApiData> _request(String operation, ApiData data, {bool allowRefresh=true, String? path, String method='POST', Map<String,String> headers=const {}}) async {

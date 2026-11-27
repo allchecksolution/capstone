@@ -7,11 +7,16 @@ import 'package:http/http.dart' as http;
 
 import 'backend.dart';
 
+typedef ReceptionJsonTransport = Future<ApiData> Function(
+  String method, String path, ApiData? body, String? key,
+);
+
 /// Adapter for the Controllers actually merged into main. Other domains must
 /// supply their implemented contracts before their operations can be enabled.
 class SpringFrontendBackend implements FrontendBackend {
-  SpringFrontendBackend(String baseUrl, {http.Client? client})
+  SpringFrontendBackend(String baseUrl, {http.Client? client, ReceptionJsonTransport? transport})
     : _base = Uri.parse(baseUrl),
+      _transport = transport,
       _client = client ?? http.Client() {
     if (_base.host.isEmpty ||
         _base.userInfo.isNotEmpty ||
@@ -33,23 +38,32 @@ class SpringFrontendBackend implements FrontendBackend {
   }
 
   final Uri _base;
+  final ReceptionJsonTransport? _transport;
   final http.Client _client;
   String? _token;
+  String? _administratorId;
+  String? get recordingOwnerKey => _token != null && _administratorId != null
+      ? '${_base.origin}|$_administratorId'
+      : null;
   int _generation = 0;
   final _uploads = <String, _RecordingAttempt>{};
   bool get hasServiceSession => _token != null;
 
   /// Called by the service authentication adapter once that domain is merged.
   /// Never pass a Kakao provider token as the application's service token.
-  void setServiceSession(String accessToken) {
+  void setServiceSession(String accessToken, {String? administratorId}) {
     if (accessToken.trim().isEmpty) throw ArgumentError('Empty service token');
     clearSession();
     _token = accessToken;
+    _administratorId = administratorId?.trim().isNotEmpty == true
+        ? administratorId!.trim()
+        : null;
   }
 
   @override
   void clearSession() {
     _token = null;
+    _administratorId = null;
     _generation++;
     _uploads.clear();
   }
@@ -79,6 +93,17 @@ class SpringFrontendBackend implements FrontendBackend {
     final id = data['id'];
     String receptionPath() => '/api/v1/receptions/${_segment(id)}';
     switch (operation) {
+      case 'receptions/register' when _transport != null:
+        final result = await _json(
+          'POST',
+          '/api/v1/service-requests',
+          key: _key(data),
+          body: {'receptionId': _segment(id), 'expectedVersion': data['expectedVersion']},
+        );
+        return {
+          ...await _call('receptions/detail', data),
+          'resourceId': result['resourceId'],
+        };
       case 'receptions/list':
         final result = await _json(
           'GET',
@@ -145,7 +170,7 @@ class SpringFrontendBackend implements FrontendBackend {
               'contactPhone': fields['phone'],
               'desiredVisitFrom': from.toUtc().toIso8601String(),
               'desiredVisitTo': to.toUtc().toIso8601String(),
-            'notes': fields['notes'] ?? '',
+              'notes': fields['notes'] ?? '',
             },
           },
         );
@@ -200,6 +225,10 @@ class SpringFrontendBackend implements FrontendBackend {
     String? key,
     Map<String, String>? query,
   }) async {
+    if (_transport case final transport?) {
+      final target = Uri(path: path, queryParameters: query).toString();
+      return transport(method, target, body, key);
+    }
     final token = _token;
     if (token == null) throw const ServiceFailure(401, '서버 인증 연결이 필요합니다.');
     final generation = _generation;

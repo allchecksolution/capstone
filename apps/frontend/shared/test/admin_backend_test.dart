@@ -6,6 +6,71 @@ import 'package:http/testing.dart';
 
 void main() {
   test(
+    'consultation and dispatch use the authenticated administrator session',
+    () async {
+      final backend = AdminRestBackend(
+        'https://example.com/api/v1',
+        client: MockClient((request) async {
+          final path = request.url.path;
+          if (path.endsWith('/sessions/admin')) {
+            return http.Response(
+              jsonEncode({
+                'accessToken': 'admin-token',
+                'refreshToken': 'refresh',
+                'user': {'accountId': 42, 'userType': 'ADMIN'},
+              }),
+              200,
+            );
+          }
+          expect(request.headers['Authorization'], 'Bearer admin-token');
+          if (path == '/api/v1/service-requests') {
+            expect(request.headers['Idempotency-Key'], 'register-sample');
+            expect(jsonDecode(request.body), {
+              'receptionId': 'rcp_1',
+              'expectedVersion': 2,
+            });
+            return http.Response('{"resourceId":"req_1"}', 201);
+          }
+          expect(path, '/api/v1/receptions/rcp_1');
+          return http.Response(
+            jsonEncode({
+              'receptionId': 'rcp_1',
+              'requestId': 'req_1',
+              'reviewStatus': 'CONFIRMED',
+              'transcript': '상담 원문',
+              'aiOriginal': {'symptoms': '누수'},
+            }),
+            200,
+            headers: {'content-type': 'application/json; charset=utf-8'},
+          );
+        }),
+      );
+      addTearDown(backend.close);
+      await expectLater(
+        backend.call('receptions/detail', {'id': 'rcp_1'}),
+        throwsA(
+          isA<ServiceFailure>().having((error) => error.status, 'status', 401),
+        ),
+      );
+      await backend.call('auth/admin-login', {
+        'username': 'admin',
+        'password': 'test',
+      });
+      expect(backend.recordingOwnerKey, 'https://example.com|42');
+      final result = await backend.call('receptions/register', {
+        'id': 'rcp_1',
+        'expectedVersion': 2,
+        'requestId': 'register-sample',
+      });
+      expect(result['resourceId'], 'req_1');
+      expect(result['consultation']['stt'], '상담 원문');
+      expect(result['consultation']['analysis'], {'symptoms': '누수'});
+      backend.clearSession();
+      expect(backend.recordingOwnerKey, isNull);
+    },
+  );
+
+  test(
     'admin login uses the REST route and preserves credentials exactly',
     () async {
       final requests = <http.Request>[];

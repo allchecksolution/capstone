@@ -25,13 +25,13 @@ debug 빌드에서는 기본으로 로그인 화면에 ‘개발용으로 입장
 
 서버를 연결하는 실행 예시:
 
-아래 `/api/frontend` 예시는 기존 관리자/업무 어댑터 기준입니다. 기사 가입은 `API_BASE_URL=http://127.0.0.1:8080/api/v1`과 새 `DriverOnboardingBackend`를 사용합니다. 사업자 검증·가입 정책은 [업무 명세](../backend/docs/business-specification.md#driver-registration-persistence), 구현된 경로와 입출력은 백엔드 Swagger에서 확인합니다. 국세청 키는 백엔드에만 설정합니다.
+관리자앱과 기사앱은 실제 REST API를 사용합니다. 서버 origin이나 `/api/v1`까지 포함한 URL을 지정하세요. 국세청 키는 백엔드에만 설정합니다.
 
 ```powershell
 flutter run --dart-define=API_BASE_URL=https://YOUR_SERVER
 ```
 
-현재 main의 상담 접수·녹음 API만 관리자앱의 `SpringFrontendBackend`로 연결합니다. 서버 origin만 지정하며, 관리자 로그인·JWT 요청 인증은 아직 main에서 연결되지 않아 실서버 업무 검수에는 인증 구현 반영이 필요합니다. 기사앱은 `API_BASE_URL`이 지정되면 main에 반영된 기사 가입·인증 REST 계약(`DriverOnboardingBackend`)으로 연결하고, 지정하지 않으면 기존 카카오 SDK 로그인을 유지합니다. [실제 API 연동 내역과 검수 방법](BACKEND-INTEGRATION.md)을 확인하세요.
+관리자앱은 로그인 후 동일한 서비스 세션으로 계정 관리와 상담 접수·녹음·STT/AI 결과를 조회합니다. 기사앱은 서버 주소를 설정하면 카카오 인증과 기사 가입 API를 사용합니다. [연동 범위와 검수 방법](BACKEND-INTEGRATION.md)을 확인하세요.
 
 ## 연결 준비
 

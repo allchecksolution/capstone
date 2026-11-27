@@ -27,6 +27,22 @@ class DriverOnboardingBackend implements FrontendBackend {
   Future<ApiData> call(String operation, [ApiData data = const {}]) async {
     final generation = _generation;
     switch (operation) {
+      case 'chat/messages':
+      case 'chat/send':
+        return _session._chat(operation, 'drivers/me/chat', data);
+      case 'driver/offers':
+      case 'driver/works':
+        final path = operation == 'driver/offers' ? 'dispatch-offers' : 'works';
+        return _session._request(operation, const {},
+          path: 'drivers/me/$path?page=${data['page'] as int? ?? 1}', method: 'GET');
+      case 'driver/respond':
+        final offer = data['offerId'].toString();
+        if (!RegExp(r'^[a-zA-Z0-9_-]+$').hasMatch(offer)) {
+          throw const ServiceFailure(400, '배차 제안 번호를 확인해 주세요.');
+        }
+        return _session._request(operation, {'response': data['response']},
+          path: 'dispatch-offers/$offer/response',
+          headers: {'Idempotency-Key': data['requestId'] as String});
       case 'auth/kakao':
         final login = await _session.call(operation, {
           'kakaoAccessToken': data['accessToken'],
