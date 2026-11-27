@@ -61,6 +61,7 @@ class AdminRestBackend implements FrontendBackend {
         );
       case 'chat/messages':
       case 'chat/send':
+      case 'chat/read':
         return _session._chat(operation, 'chat-rooms/${_id(data['threadId'])}', data);
       case 'dashboard/requests':
         return _session._request(

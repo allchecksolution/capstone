@@ -73,6 +73,10 @@ class HttpFrontendBackend implements FrontendBackend {
       return _request(operation, {'body': data['text']}, path: '$room/messages',
         headers: {'Idempotency-Key': data['requestId'] as String});
     }
+    if (operation == 'chat/read') {
+      return _request(operation, {'lastReadMessageId': data['lastReadMessageId']},
+        path: '$room/read', method: 'PUT');
+    }
     final before = data['before'];
     final query = before == null ? '' : '?before=${Uri.encodeQueryComponent(before.toString())}';
     return _request(operation, const {}, path: '$room/messages$query', method: 'GET');

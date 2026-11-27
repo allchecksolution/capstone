@@ -9,12 +9,17 @@ class DriverOnboardingBackend implements FrontendBackend {
   ApiData? _registration;
   ApiData? _user;
   int _generation = 0;
+  // Dispatch needs READY plus a recent location; both are server-owned.
+  String _availability = '휴식';
+  String _location = '미확인';
 
   @override
   void clearSession() {
     _generation++;
     _registration = null;
     _user = null;
+    _availability = '휴식';
+    _location = '미확인';
     _session.clearSession();
   }
 
@@ -29,7 +34,15 @@ class DriverOnboardingBackend implements FrontendBackend {
     switch (operation) {
       case 'chat/messages':
       case 'chat/send':
+      case 'chat/read':
         return _session._chat(operation, 'drivers/me/chat', data);
+      case 'driver/work':
+        final work = data['threadId'].toString();
+        if (!RegExp(r'^[a-zA-Z0-9_-]+$').hasMatch(work)) {
+          throw const ServiceFailure(400, '작업 번호를 확인해 주세요.');
+        }
+        return _session._request(operation, const {},
+          path: 'works/$work', method: 'GET');
       case 'driver/offers':
       case 'driver/works':
         final path = operation == 'driver/offers' ? 'dispatch-offers' : 'works';
@@ -43,6 +56,40 @@ class DriverOnboardingBackend implements FrontendBackend {
         return _session._request(operation, {'response': data['response']},
           path: 'dispatch-offers/$offer/response',
           headers: {'Idempotency-Key': data['requestId'] as String});
+      case 'drivers/availability':
+        final availability = switch (data['availability']) {
+          '대기' => 'READY',
+          '휴식' => 'UNAVAILABLE',
+          _ => throw const ServiceFailure(400, '작업 가능 상태를 확인해 주세요.'),
+        };
+        final result = await _session._request(
+          operation,
+          {'availability': availability},
+          path: 'drivers/me/availability',
+          method: 'PATCH',
+        );
+        _checkGeneration(generation);
+        _availability = result['availability'] == 'READY' ? '대기' : '휴식';
+        return {'state': _state()};
+      case 'drivers/location':
+        final measuredAt = DateTime.parse(data['recordedAt'] as String).toUtc();
+        final result = await _session._request(
+          operation,
+          {
+            'latitude': data['latitude'],
+            'longitude': data['longitude'],
+            'accuracyMeters': data['accuracy'],
+            'measuredAt': measuredAt.toIso8601String(),
+          },
+          path: 'drivers/me/location',
+          method: 'PUT',
+        );
+        _checkGeneration(generation);
+        final local = measuredAt.toLocal().toString().substring(11, 19);
+        _location = result['locationUsability'] == 'VALID'
+            ? '갱신됨 · $local'
+            : '위치 확인 필요 · $local';
+        return result;
       case 'auth/kakao':
         final login = await _session.call(operation, {
           'kakaoAccessToken': data['accessToken'],
@@ -123,6 +170,23 @@ class DriverOnboardingBackend implements FrontendBackend {
       _checkGeneration(generation);
       if (error.status != 404 || error.code != 'DRIVER_NOT_FOUND') rethrow;
       _registration = null;
+    }
+    if (_registration?['accountStatus'] == 'ACTIVATED') {
+      try {
+        final state = await _session._request(
+          'drivers/availability',
+          const {},
+          method: 'GET',
+          path: 'drivers/me/availability',
+        );
+        _checkGeneration(generation);
+        _availability = state['availability'] == 'READY' ? '대기' : '휴식';
+      } on ServiceFailure catch (error) {
+        // Registration status still renders; availability is retried on refresh.
+        if (error.status == 401 || error.status == 499) rethrow;
+      }
+    } else {
+      _availability = '휴식';
     }
     return _state();
   }
@@ -250,9 +314,9 @@ class DriverOnboardingBackend implements FrontendBackend {
       'threads': <String, dynamic>{},
       'messages': <ApiData>[],
       'role': 'editor',
-      'availability': '휴식',
+      'availability': _availability,
       'notifications': [true, true, true, true],
-      'location': '미확인',
+      'location': _location,
     };
   }
 }

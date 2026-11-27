@@ -31,7 +31,7 @@ extension BackendScreens on _WorkflowShellState {
     if(!mounted)return;
     if(error is ServiceFailure&&error.status==499)return;
     if (error is ServiceFailure && error.status == 401) {
-      widget.backend?.clearSession();signedIn=false;kakaoIdentity=null;pendingAlert=null;stateVersion++;unawaited(locationSubscription?.cancel());locationSubscription=null;alerts.clear();
+      widget.backend?.clearSession();signedIn=false;kakaoIdentity=null;pendingAlert=null;stateVersion++;unawaited(stopLocationUpdates());alerts.clear();
       history.clear();go('login',replace:true);
     }
     message(error is ServiceFailure ? error.message : '처리하지 못했습니다. 다시 시도해 주세요.');
@@ -133,7 +133,7 @@ extension BackendScreens on _WorkflowShellState {
 
   Future<void> closeSession()async{
     stateVersion++;signedIn=false;kakaoIdentity=null;pendingAlert=null;
-    await locationSubscription?.cancel();locationSubscription=null;
+    await stopLocationUpdates();
     try{await detachDevice();}catch(_){}
     widget.backend?.clearSession();alerts.clear();seenAlerts.clear();retryKeys.clear();
     await s.change((){final names=Map<String,dynamic>.from(s.displayNames);s.data=AppStore.empty(widget.role);s.data['displayNames']=names;});
@@ -141,8 +141,15 @@ extension BackendScreens on _WorkflowShellState {
   }
 
   Future<void> changeAvailability(String availability)async{
+    // READY without a recent location never becomes a dispatch candidate, so
+    // ask for location access before telling the server the driver is ready.
+    if(availability=='대기'&&!developmentSession){
+      try{await locationPermission();}
+      catch(e){message(e is StateError?e.message:'위치 권한을 확인해 주세요.');return;}
+    }
     if(await command('drivers/availability',{'availability':availability},()=>s.data['availability']=availability)){
-      if(availability=='휴식'){await locationSubscription?.cancel();locationSubscription=null;}
+      if(availability=='휴식'){await stopLocationUpdates();}
+      else if(!developmentSession){await startLocationUpdates();}
     }
   }
 
@@ -165,6 +172,7 @@ extension BackendScreens on _WorkflowShellState {
     if (receptionOnlySession) return;
     afterAuthRunning=true;try{
     await loadInbox();
+    if(!admin)unawaited(resumeLocationUpdates());
     try{final token=await appPush?.token();if(token!=null)await registerDevice(token);}catch(_){if(mounted)refresh(()=>pushStatus='알림 연결을 다시 시도해 주세요.');}
     final pending=pendingAlert;
     if(pending!=null&&mounted){pendingAlert=null;await openAlert(pending);}

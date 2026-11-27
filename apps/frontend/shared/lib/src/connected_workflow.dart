@@ -7,12 +7,20 @@ class _ConnectedWorkflow extends StatefulWidget {
     required this.operation,
     this.threadId = '',
     this.onThread,
+    this.onOpen,
+    this.reload = 0,
   });
 
   final FrontendBackend api;
   final String operation;
   final String threadId;
   final void Function(String)? onThread;
+
+  /// Opens a row's detail page; currently a driver's work by `workId`.
+  final void Function(String)? onOpen;
+
+  /// Incremented by the shell's explicit refresh to reload the current query.
+  final int reload;
 
   @override
   State<_ConnectedWorkflow> createState() => _ConnectedWorkflowState();
@@ -34,24 +42,60 @@ class _ConnectedWorkflowState extends State<_ConnectedWorkflow> {
     _result = _load();
   }
 
+  /// The shell reuses this State when only the route's query changes, e.g.
+  /// statistics → work list, so reload whenever the query or refresh changes.
+  @override
+  void didUpdateWidget(covariant _ConnectedWorkflow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final queryChanged =
+        oldWidget.operation != widget.operation ||
+        oldWidget.threadId != widget.threadId;
+    if (!queryChanged && oldWidget.reload == widget.reload) return;
+    if (queryChanged) {
+      _page = 1;
+      _sendError = '';
+    }
+    _before = null;
+    _result = _load();
+  }
+
   @override
   void dispose() {
     _message.dispose();
     super.dispose();
   }
 
-  Future<Json> _load() {
+  Future<Json> _load() async {
     final today = DateTime.now().toUtc().add(const Duration(hours: 9));
     String date(DateTime value) => value.toIso8601String().substring(0, 10);
-    return widget.api.call(widget.operation, {
+    final operation = widget.operation;
+    final latest = _before == null;
+    final result = await widget.api.call(operation, {
       'page': _page,
       'threadId': widget.threadId,
       if (_before != null) 'before': _before,
-      if (widget.operation == 'dashboard/statistics') ...{
+      if (operation == 'dashboard/statistics') ...{
         'from': date(today.subtract(const Duration(days: 29))),
         'to': date(today),
       },
     });
+    if (operation == 'chat/messages' && latest) unawaited(_markRead(result));
+    return result;
+  }
+
+  /// Opening the newest page reads everything shown; the server keeps the
+  /// position monotonic, so a repeated or older marker is harmless.
+  Future<void> _markRead(Json page) async {
+    final newest = records(page['items']).firstOrNull;
+    if (page['readOnly'] == true || newest == null) return;
+    try {
+      await widget.api.call('chat/read', {
+        'threadId': widget.threadId,
+        'lastReadMessageId': text(newest, 'messageId'),
+      });
+    } catch (_) {
+      // Unread counts recover on the next successful open.
+    }
   }
 
   Future<void> _send() async {
@@ -137,6 +181,7 @@ class _ConnectedWorkflowState extends State<_ConnectedWorkflow> {
         );
       }
       final data = snapshot.data ?? {};
+      if (widget.operation == 'driver/work') return _workDetail(data);
       final items = records(data['items']);
       final messages = widget.operation == 'chat/messages';
       final rooms = widget.operation == 'chat/rooms';
@@ -170,6 +215,8 @@ class _ConnectedWorkflowState extends State<_ConnectedWorkflow> {
             else
               const Text('조회 기간에 의뢰가 없습니다.'),
           ] else ...[
+            if (rooms)
+              const Text('새 대화는 기사 관리에서 기사를 선택해 시작할 수 있습니다.'),
             if (items.isEmpty) const Text('조회 결과가 없습니다.'),
             for (final row in items)
               if (rooms)
@@ -220,6 +267,18 @@ class _ConnectedWorkflowState extends State<_ConnectedWorkflow> {
                       ],
                     ),
                   ),
+                )
+              else if (widget.operation == 'driver/works')
+                ListTile(
+                  title: Text(text(row, 'address')),
+                  subtitle: Text(
+                    '${text(row, 'symptoms')}\n방문 ${_visitWindow(row)}',
+                  ),
+                  isThreeLine: true,
+                  trailing: Text(_workStatus(text(row, 'workStatus'))),
+                  onTap: widget.onOpen == null
+                      ? null
+                      : () => widget.onOpen!(text(row, 'workId')),
                 )
               else
                 ListTile(
@@ -284,4 +343,90 @@ class _ConnectedWorkflowState extends State<_ConnectedWorkflow> {
       );
     },
   );
+
+  static const _workStatuses = {
+    'NOT_STARTED': '출발 전',
+    'EN_ROUTE': '이동 중',
+    'ARRIVED': '현장 도착',
+    'IN_PROGRESS': '작업 중',
+    'REVISIT_REQUIRED': '재방문 필요',
+    'WORK_DONE': '작업 완료',
+    'CANCELLED': '작업 취소',
+  };
+  static const _workTypes = {
+    'BLOCKAGE': '막힘',
+    'EXTERIOR_LEAK': '외벽 누수',
+    'INTERIOR_LEAK': '내벽 누수',
+    'BOILER': '보일러',
+    'WATERPROOFING': '방수',
+  };
+
+  static String _workStatus(String value) => _workStatuses[value] ?? value;
+
+  static String _dateTime(Object? value) {
+    final parsed = DateTime.tryParse('${value ?? ''}')?.toLocal();
+    if (parsed == null) return '-';
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${parsed.year}-${two(parsed.month)}-${two(parsed.day)} '
+        '${two(parsed.hour)}:${two(parsed.minute)}';
+  }
+
+  static String _visitWindow(Json row) {
+    final from = _dateTime(row['desiredVisitFrom']);
+    final to = _dateTime(row['desiredVisitTo']);
+    // Same-day windows only repeat the time on the right-hand side.
+    return from.length == 16 && to.length == 16 && from.substring(0, 10) == to.substring(0, 10)
+        ? '$from ~ ${to.substring(11)}'
+        : '$from ~ $to';
+  }
+
+  Widget _row(String label, String value) => ListTile(
+    contentPadding: EdgeInsets.zero,
+    title: Text(label),
+    subtitle: SelectableText(value.isEmpty ? '-' : value),
+  );
+
+  Widget _workDetail(Json work) {
+    final phone = work['contactPhone'] as String?;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        OutlinedButton(
+          onPressed: () => setState(() => _result = _load()),
+          child: const Text('새로고침'),
+        ),
+        _row('진행 상태', _workStatus(text(work, 'workStatus'))),
+        _row(
+          '작업 유형',
+          _workTypes[text(work, 'workType')] ?? text(work, 'workType'),
+        ),
+        _row('현장 주소', text(work, 'address')),
+        _row('방문 일정', _visitWindow(work)),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('고객 연락처'),
+          subtitle: SelectableText(
+            phone ?? '완료·취소된 작업은 연락처를 표시하지 않습니다.',
+          ),
+          trailing: phone == null
+              ? null
+              : IconButton(
+                  tooltip: '연락처 복사',
+                  icon: const Icon(Icons.copy),
+                  onPressed: () async {
+                    await Clipboard.setData(ClipboardData(text: phone));
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('연락처를 복사했습니다.')),
+                      );
+                    }
+                  },
+                ),
+        ),
+        _row('증상', text(work, 'symptoms')),
+        _row('특이사항', text(work, 'notes')),
+        _row('배정 시각', _dateTime(work['assignedAt'])),
+      ],
+    );
+  }
 }

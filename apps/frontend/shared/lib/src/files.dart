@@ -29,7 +29,7 @@ extension PlatformScreens on _WorkflowShellState {
   Widget notificationSettings()=>stack([button('알림 권한 및 수신 설정',enablePush,secondary:true),if(pushStatus.isNotEmpty)notice(pushStatus),for(var i=0;i<4;i++)SwitchListTile(contentPadding:EdgeInsets.zero,title:Text((admin?['새 상담 접수','배차 상태 변경','기사 문의','기타 알림']:['배차 요청','배차 확정·취소','작업 상태 변경','관리자 문의'])[i]),value:(s.data['notifications'] as List)[i] as bool,onChanged:busy?null:(v)=>command('notifications/preferences',{'index':i,'enabled':v},()=>(s.data['notifications'] as List)[i]=v)),]);
   Widget chatScreen(){
     if (!developmentSession && (widget.backend is AdminRestBackend || widget.backend is DriverOnboardingBackend)) {
-      return _ConnectedWorkflow(key: ValueKey(id), api: api, operation: admin && id.isEmpty ? 'chat/rooms' : 'chat/messages', threadId: id, onThread: (driverId) => go('chat', item: driverId));
+      return _ConnectedWorkflow(key: ValueKey(id), api: api, operation: admin && id.isEmpty ? 'chat/rooms' : 'chat/messages', threadId: id, reload: connectedReload, onThread: (driverId) => go('chat', item: driverId));
     }
     if(admin&&id.isEmpty)return stack([TextField(decoration:const InputDecoration(labelText:'기사명 검색'),onChanged:(v)=>refresh(()=>search=v)),for(final d in s.drivers.where((d)=>text(d,'name').contains(search)))menu('${text(d,'name')} · ${text(d,'status')}','chat',item:text(d,'id')),if(s.drivers.isEmpty)empty('대화할 기사가 없습니다.')]);
     final readOnly=admin&&s.find(s.drivers,id)['status']!='활성';final list=admin?records((s.data['threads'] as Json)[id]):s.messages;
