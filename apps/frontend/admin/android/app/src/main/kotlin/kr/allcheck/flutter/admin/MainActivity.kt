@@ -9,6 +9,7 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
+    private val recordingExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
     private var folderResult: MethodChannel.Result? = null
     private var exportResult: MethodChannel.Result? = null
     private var exportBytes: ByteArray? = null
@@ -17,6 +18,23 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "allcheck/platform").setMethodCallHandler { call, result ->
             when (call.method) {
+                "recordingCollectionStatus", "scanRecordings", "setRecordingCollection", "readCollectedRecording", "completeCollectedRecording" -> {
+                    recordingExecutor.execute {
+                        try {
+                            val collector = RecordingCollector(applicationContext)
+                            val response: Any? = when (call.method) {
+                                "setRecordingCollection" -> { collector.configure(call.argument<Boolean>("enabled") == true, call.argument<Boolean>("includeExisting") == true); collector.scan(); collector.status() }
+                                "scanRecordings" -> { collector.scan(); collector.status() }
+                                "readCollectedRecording" -> collector.read(call.argument<String>("sourceId") ?: error("Missing source"))
+                                "completeCollectedRecording" -> { collector.complete(call.argument<String>("sourceId") ?: error("Missing source")); null }
+                                else -> collector.status()
+                            }
+                            runOnUiThread { if (!isDestroyed) result.success(response) }
+                        } catch (_: Exception) {
+                            runOnUiThread { if (!isDestroyed) result.error("COLLECTION", "녹음 파일을 처리하지 못했습니다. 폴더 권한·원본 변경 여부와 64MB 이하 크기를 확인해 주세요.", null) }
+                        }
+                    }
+                }
                 "recordingStatus" -> result.success(readable())
                 "connectRecordings" -> {
                     if (folderResult != null) { result.error("BUSY", "폴더 선택 중입니다.", null); return@setMethodCallHandler }
@@ -26,6 +44,7 @@ class MainActivity : FlutterActivity() {
                     catch (_: Exception) { folderResult = null; result.error("PICKER", "폴더 선택창을 열지 못했습니다.", null) }
                 }
                 "disconnectRecordings" -> {
+                    RecordingCollector(applicationContext).configure(false, false)
                     val value = preferences.getString("folder", null)
                     if (value != null) try { contentResolver.releasePersistableUriPermission(Uri.parse(value), Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Exception) {}
                     preferences.edit().remove("folder").apply(); result.success(null)
@@ -78,6 +97,7 @@ class MainActivity : FlutterActivity() {
         }
     }
     override fun onDestroy() {
+        recordingExecutor.shutdown()
         folderResult?.error("CLOSED", "폴더 연결 화면이 종료되었습니다.", null)
         exportResult?.error("CLOSED", "파일 저장 화면이 종료되었습니다.", null)
         folderResult = null; exportResult = null; exportBytes = null
