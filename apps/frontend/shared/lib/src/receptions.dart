@@ -1,15 +1,64 @@
 part of '../allcheck_ui.dart';
 
 extension _ReceptionScreens on _WorkflowShellState {
+  static const _inputKeys = [
+    'type',
+    'phone',
+    'address',
+    'symptom',
+    'desiredVisitFrom',
+    'desiredVisitTo',
+    'notes',
+  ];
+
+  void synchronizeReceptionForm(Json row) {
+    final receptionId = text(row, 'id');
+    final initial = receptionEditValues[receptionId];
+    if (initial == null || receptionEditVersions[receptionId] == row['version']) {
+      return;
+    }
+    final prefix = 'reception/$receptionId/';
+    final edited = _inputKeys.where((key) {
+      final input = fields['$prefix$key'];
+      return input != null && input.text != initial[key];
+    }).toSet();
+    if (edited.isEmpty) {
+      resetReceptionForm(receptionId);
+      return;
+    }
+    // Fresh AI/server values fill untouched fields. Actual edits retain their
+    // original version, so they still require an explicit review after changes.
+    for (final key in _inputKeys.where((key) => !edited.contains(key))) {
+      final value = text(row, key);
+      final input = fields['$prefix$key'];
+      if (input != null && input.text != value) input.text = value;
+      initial[key] = value;
+    }
+  }
+
+  void resetReceptionForm(String receptionId) {
+    final prefix = 'reception/$receptionId/';
+    for (final key
+        in fields.keys.where((key) => key.startsWith(prefix)).toList()) {
+      fields.remove(key)?.dispose();
+    }
+    receptionEditVersions.remove(receptionId);
+    receptionEditValues.remove(receptionId);
+  }
+
   bool get receptionOnlySession =>
       widget.backend is SpringFrontendBackend && !developmentSession;
 
-  bool get springReceptions => !developmentSession &&
+  bool get springReceptions =>
+      !developmentSession &&
       (widget.backend is SpringFrontendBackend ||
-       widget.backend is AdminRestBackend &&
-       (widget.backend as AdminRestBackend).supportsReceptions);
+          widget.backend is AdminRestBackend &&
+              (widget.backend as AdminRestBackend).supportsReceptions);
 
-  Future<void> loadReceptions({int? pageNumber}) async {
+  Future<void> loadReceptions({
+    int? pageNumber,
+    bool replaceDraft = false,
+  }) async {
     if (!springReceptions || busy || !signedIn) return;
     final route = page;
     final resource = id;
@@ -26,6 +75,7 @@ extension _ReceptionScreens on _WorkflowShellState {
           route == page &&
           resource == id &&
           generation == stateVersion) {
+        if (replaceDraft && route == 'reception') resetReceptionForm(resource);
         await applyServerState(result);
       }
     } catch (e) {
@@ -134,6 +184,16 @@ extension _ReceptionScreens on _WorkflowShellState {
       ]);
     }
     final editable = c['reviewEditable'] == true;
+    if (editable) {
+      receptionEditValues.putIfAbsent(
+        id,
+        () => {for (final key in _inputKeys) key: text(c, key)},
+      );
+    }
+    final editVersion = editable
+        ? receptionEditVersions.putIfAbsent(id, () => c['version'] as int)
+        : null;
+    final staleDraft = editable && editVersion != c['version'];
     return form([
       box([
         pill(receptionStatus(c)),
@@ -149,6 +209,17 @@ extension _ReceptionScreens on _WorkflowShellState {
         if (!editable) small('현재 접수 상태에서는 검토 정보를 수정할 수 없습니다.'),
       ]),
       button('상세 새로고침', () => loadReceptions(), secondary: true),
+      if (staleDraft) ...[
+        notice(
+          '서버의 접수 내용이 변경되었습니다. 입력 중인 내용은 유지했습니다. 최신 내용을 불러온 뒤 다시 검토해 주세요.',
+          error: true,
+        ),
+        button(
+          '입력값을 최신 내용으로 바꾸기',
+          () => loadReceptions(replaceDraft: true),
+          secondary: true,
+        ),
+      ],
       if (c['recordingStatus'] == 'SUCCEEDED' && c['recordingFileId'] != null)
         button('녹음 원본 재생', () => playReceptionRecording(c), secondary: true),
       if (c['recordingFileId'] == null || c['recordingStatus'] == 'PENDING')
@@ -185,23 +256,25 @@ extension _ReceptionScreens on _WorkflowShellState {
           required: false,
           lines: true,
         ),
-        button('검토 완료 · 최종 정보 저장', () async {
-          if (!(formKey.currentState?.validate() ?? false)) return;
-          if (await command('receptions/review', {
-            'id': id,
-            'fields': values([
-              'type',
-              'phone',
-              'address',
-              'symptom',
-              'desiredVisitFrom',
-              'desiredVisitTo',
-              'notes',
-            ]),
-          }, () {})) {
-            message('검토 정보를 저장했습니다.');
-          }
-        }),
+        if (!staleDraft)
+          button('검토 완료 · 최종 정보 저장', () async {
+            if (!(formKey.currentState?.validate() ?? false)) return;
+            if (await command('receptions/review', {
+              'id': id,
+              'expectedVersion': editVersion,
+              'fields': values([
+                'type',
+                'phone',
+                'address',
+                'symptom',
+                'desiredVisitFrom',
+                'desiredVisitTo',
+                'notes',
+              ]),
+            }, () {})) {
+              message('검토 정보를 저장했습니다.');
+            }
+          }),
       ] else
         box([
           for (final key in [

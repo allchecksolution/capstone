@@ -22,6 +22,8 @@ class _WorkflowShellState extends State<WorkflowShell> with WidgetsBindingObserv
   Future<Json>? adminAccountRequest; int adminAccountPage=1; Json? editingAdministrator;
   String adminName='';Json? reportDraft;String draftReportId='';KakaoIdentity? kakaoIdentity;
   Json receptionPage = {};
+  final receptionEditVersions = <String, int>{};
+  final receptionEditValues = <String, Map<String, String>>{};
   bool get sdkOnlySession=>!admin&&signedIn&&widget.backend==null&&widget.onKakaoAuthenticated==null&&!developmentSession;
   late final DriverAuth driverAuth=widget.driverAuth??KakaoDriverAuth();
   final formKey=GlobalKey<FormState>();final fields=<String,TextEditingController>{};final selections=<String,Set<String>>{};final history=<Json>[];Timer? clock;Timer? syncClock;
@@ -145,6 +147,7 @@ class _WorkflowShellState extends State<WorkflowShell> with WidgetsBindingObserv
         small('입력한 정보로 임시 홈에 진입합니다. 실제 승인 상태는 변경되지 않으며, 로그아웃하면 임시 이용이 종료됩니다.'),
       ],
       if(rejected)button('다시 신청하기',()async{if(await act(()=>s.data['draft']=jsonDecode(jsonEncode(s.profile)) as Json)){registrationStep=1;go('register');}}),
+      if(widget.backend is DriverOnboardingBackend)button('가입 상태 새로고침',refreshState,secondary:true),
       button('로그아웃',logout,secondary:true),
     ]);
   }

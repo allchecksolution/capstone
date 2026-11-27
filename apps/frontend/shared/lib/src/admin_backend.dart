@@ -2,7 +2,8 @@ part of 'backend.dart';
 
 /// Administrator screens use the existing REST contracts, never local approvals.
 class AdminRestBackend implements FrontendBackend {
-  AdminRestBackend(String baseUrl, {
+  AdminRestBackend(
+    String baseUrl, {
     http.Client? client,
     FrontendBackend Function(HttpFrontendBackend)? receptionsFactory,
   }) : _session = HttpFrontendBackend(baseUrl, client: client, restAuth: true) {
@@ -60,7 +61,11 @@ class AdminRestBackend implements FrontendBackend {
           clearSession();
           throw const ServiceFailure(403, '관리자 계정으로 로그인해 주세요.');
         }
-        return {'state': _state(), 'name': data['username'], 'resetState': true};
+        return {
+          'state': _state(),
+          'name': data['username'],
+          'resetState': true,
+        };
       case 'auth/logout':
         try {
           if (_session._refreshToken != null) {
@@ -196,6 +201,9 @@ class AdminRestBackend implements FrontendBackend {
   ApiData _driver(ApiData value) {
     final profile = Map<String, dynamic>.from(value['profile'] as Map? ?? {});
     final business = Map<String, dynamic>.from(value['business'] as Map? ?? {});
+    final rejections = (value['rejectionHistory'] as List? ?? [])
+        .map((row) => Map<String, dynamic>.from(row as Map))
+        .toList();
     return {
       'id': value['driverId'].toString(),
       'version': value['version'],
@@ -213,12 +221,24 @@ class AdminRestBackend implements FrontendBackend {
       'owner': business['representativeName'],
       'businessNumber': business['businessRegistrationNumber'],
       'companyAddress': business['companyAddress'],
-      'specialties': profile['specialties'],
+      'specialties': (profile['specialties'] as List? ?? [])
+          .map(
+            (code) =>
+                DriverOnboardingBackend._workTypes.entries
+                    .where((entry) => entry.value == code)
+                    .firstOrNull
+                    ?.key ??
+                code.toString(),
+          )
+          .toList(),
       'regions': profile['activityRegions'],
       'equipment': profile['equipment'],
       'businessVerified':
           (value['businessVerification'] as Map?)?['status'] == 'VERIFIED',
       'rejectionHistory': value['rejectionHistory'],
+      'reason': value['accountStatus'] == 'REJECTED' && rejections.isNotEmpty
+          ? rejections.last['reason']
+          : null,
     };
   }
 

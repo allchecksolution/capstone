@@ -45,6 +45,7 @@ extension BackendScreens on _WorkflowShellState {
           receptionPage = result['receptionPage'] as Json? ?? {};
         } else {
           final row = result['consultation'] as Json;
+          synchronizeReceptionForm(row);
           final rows = s.consultations;
           final index = rows.indexWhere((c) => c['id'] == row['id']);
           if (index < 0) { rows.insert(0, row); } else { rows[index] = row; }
@@ -55,7 +56,12 @@ extension BackendScreens on _WorkflowShellState {
     final state=result['state'];
     if(state is! Json)throw const ServiceFailure(0,'서버 응답 형식을 확인해 주세요.');
     await s.change((){
-      if (result['resetState'] == true) receptionPage = {};
+      if (result['resetState'] == true) {
+        receptionPage = {};
+        for (final receptionId in receptionEditVersions.keys.toList()) {
+          resetReceptionForm(receptionId);
+        }
+      }
       final merged = widget.backend is AdminRestBackend && result['resetState'] != true
           ? {...state, 'consultations': s.consultations}
           : state;
@@ -78,8 +84,11 @@ extension BackendScreens on _WorkflowShellState {
     var conflict=false;
     try{
       final response=await api.call(operation,{...payload,'requestId':requestId,
-        if(entity?['version']!=null)'expectedVersion':entity!['version']});
+        if(entity?['version']!=null)'expectedVersion':payload['expectedVersion']??entity!['version']});
       if(!mounted)return false;
+      if (['receptions/review', 'receptions/reopen'].contains(operation) && entityId is String) {
+        resetReceptionForm(entityId);
+      }
       await applyServerState(response);lastResourceId=text(response,'resourceId');retryKeys.remove(key);return true;
     }catch(e){conflict=e is ServiceFailure&&[409,410].contains(e.status);if(conflict)retryKeys.remove(key);failure(e);return false;}
     finally{if(mounted){refresh(()=>busy=false);if(conflict)await refreshState();drainPending();}}
