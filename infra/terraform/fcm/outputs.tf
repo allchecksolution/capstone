@@ -14,3 +14,8 @@ output "backend_environment" {
     FCM_PROJECT_ID = var.project_id
   }
 }
+
+output "staging_wif_provider_name" {
+  description = "Full provider name for gcloud create-cred-config; null when WIF is disabled."
+  value       = try(google_iam_workload_identity_pool_provider.aws["staging"].name, null)
+}

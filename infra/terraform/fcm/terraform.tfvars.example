@@ -10,3 +10,10 @@ project_id = "replace-with-firebase-project"
 # sender_account_id = "allcheck-dev-fcm"
 
 # Do not put service-account private keys, OAuth tokens or device tokens here.
+
+# Optional keyless AWS staging authentication through the same sender.
+# staging_wif = {
+#   project_number = "123456789012"
+#   aws_account_id = "123456789012"
+#   aws_role_name  = "allcheck-staging-ec2"
+# }
