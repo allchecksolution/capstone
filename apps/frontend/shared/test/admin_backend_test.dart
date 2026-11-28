@@ -10,6 +10,7 @@ void main() {
     () async {
       final backend = AdminRestBackend(
         'https://example.com/api/v1',
+        receptionsFactory: SpringFrontendBackend.withSession,
         client: MockClient((request) async {
           final path = request.url.path;
           if (path.endsWith('/sessions/admin')) {

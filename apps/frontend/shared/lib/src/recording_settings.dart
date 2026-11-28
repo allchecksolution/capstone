@@ -1,7 +1,7 @@
 part of '../allcheck_ui.dart';
 
 extension _RecordingCollectionScreens on _WorkflowShellState {
-  Future<void> pollRecordings() async {
+  Future<void> pollRecordings({bool retryFailed = false}) async {
     if (!admin || !recordingQueue.supported || recordingPolling || !mounted) {
       return;
     }
@@ -33,9 +33,19 @@ extension _RecordingCollectionScreens on _WorkflowShellState {
               ? recordingOwnerKey
               : null,
         );
-        final count = await recordingSynchronizer!.sync(snapshot);
+        final synchronizer = recordingSynchronizer!;
+        final count = await synchronizer.sync(
+          snapshot,
+          retryFailed: retryFailed,
+        );
         if (!mounted) return;
-        refresh(() => recordingUploadError = '');
+        final failed = synchronizer.failures;
+        refresh(
+          () => recordingUploadError = failed.isEmpty
+              ? ''
+              : '녹음 ${failed.length}개를 전송하지 못했습니다. 다른 녹음은 계속 전송하며, '
+                    '실패한 녹음은 잠시 후 자동으로 다시 시도합니다.',
+        );
         if (count > 0) {
           final current = await recordingQueue.status();
           if (mounted) refresh(() => recordingCollection = current);
@@ -61,6 +71,17 @@ extension _RecordingCollectionScreens on _WorkflowShellState {
     } finally {
       recordingPolling = false;
     }
+  }
+
+  String recordingItemStatus(Json item) {
+    if (item['uploaded'] == true) return '전송 완료';
+    final failure = recordingSynchronizer?.failures[text(item, 'sourceId')];
+    if (failure == null) return '전송 대기';
+    final retryAt = DateTime.tryParse(text(failure, 'retryAt'))?.toLocal();
+    final at = retryAt == null
+        ? ''
+        : ' · ${retryAt.hour.toString().padLeft(2, '0')}:${retryAt.minute.toString().padLeft(2, '0')} 이후 재시도';
+    return '전송 실패 ${failure['failures']}회$at';
   }
 
   Widget recordingSettings() {
@@ -135,7 +156,11 @@ extension _RecordingCollectionScreens on _WorkflowShellState {
         if (recordingUploadError.isNotEmpty)
           notice(recordingUploadError, error: true),
         kv('수집된 녹음', '${items.length}개 · 전송 대기 $waiting개'),
-        button('지금 확인 · 전송 재시도', () => pollRecordings(), secondary: true),
+        button(
+          '지금 확인 · 전송 재시도',
+          () => pollRecordings(retryFailed: true),
+          secondary: true,
+        ),
         for (final item in items.take(30))
           box([
             Text(
@@ -143,8 +168,12 @@ extension _RecordingCollectionScreens on _WorkflowShellState {
               style: _bodyTextStyle,
             ),
             small(
-              '${((item['sizeBytes'] as num? ?? 0) / 1024).toStringAsFixed(1)} KB · ${item['uploaded'] == true ? '전송 완료' : '전송 대기'}',
+              '${((item['sizeBytes'] as num? ?? 0) / 1024).toStringAsFixed(1)} KB · ${recordingItemStatus(item)}',
             ),
+            if (recordingSynchronizer?.failures[text(item, 'sourceId')]
+                case final Json failure
+                when item['uploaded'] != true)
+              small('실패 사유: ${text(failure, 'message')}'),
           ]),
         if (items.length > 30) small('최근 수집 30개를 표시합니다. 나머지 파일도 순서대로 전송합니다.'),
         button(

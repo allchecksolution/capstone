@@ -1,32 +1,23 @@
 part of 'backend.dart';
 
 /// Administrator screens use the existing REST contracts, never local approvals.
-class AdminRestBackend implements FrontendBackend {
-  AdminRestBackend(String baseUrl, {http.Client? client})
-    : _session = HttpFrontendBackend(baseUrl, client: client, restAuth: true),
-      _origin = Uri.parse(baseUrl).origin;
+class AdminRestBackend implements FrontendBackend, ChatConnection {
+  AdminRestBackend(
+    String baseUrl, {
+    http.Client? client,
+    FrontendBackend Function(HttpFrontendBackend)? receptionsFactory,
+  }) : _session = HttpFrontendBackend(baseUrl, client: client, restAuth: true) {
+    _receptions = receptionsFactory?.call(_session);
+  }
   final HttpFrontendBackend _session;
-  final String _origin;
-  late final SpringFrontendBackend _receptions = SpringFrontendBackend(
-    _origin,
-    client: _session._client,
-    transport: (method, path, body, key) {
-      if (_user == null || _session._accessToken == null) {
-        throw const ServiceFailure(401, '서버 인증 연결이 필요합니다.');
-      }
-      return _session._request(
-        'receptions/request',
-        body ?? const {},
-        path: path.substring('/api/v1/'.length),
-        method: method,
-        headers: {if (key != null) 'Idempotency-Key': key},
-      );
-    },
-  );
+  late final FrontendBackend? _receptions;
+  bool get supportsReceptions => _receptions != null;
+
+  /// Separates queued recordings by server and administrator account.
   String? get recordingOwnerKey {
     final accountId = _user?['accountId'];
     return _session._accessToken != null && accountId != null
-        ? '$_origin|$accountId'
+        ? '${Uri.parse(_session.baseUrl).origin}|$accountId'
         : null;
   }
   ApiData? _user;
@@ -37,6 +28,9 @@ class AdminRestBackend implements FrontendBackend {
   int _generation = 0;
 
   @override
+  Future<WebSocket?> openChat(String threadId) => _session.openRoom(threadId);
+
+  @override
   void clearSession() {
     _generation++;
     _user = null;
@@ -45,7 +39,7 @@ class AdminRestBackend implements FrontendBackend {
     _totalPages = 0;
     _detailId = null;
     _session.clearSession();
-    _receptions.clearSession();
+    _receptions?.clearSession();
   }
 
   void close() {
@@ -55,11 +49,25 @@ class AdminRestBackend implements FrontendBackend {
 
   @override
   Future<ApiData> call(String operation, [ApiData data = const {}]) async {
-    if (operation.startsWith('receptions/')) {
-      return _receptions.call(operation, data);
-    }
+    if (operation == 'auth/admin-login') clearSession();
     final generation = _generation;
+    if (operation.startsWith('receptions/') && _receptions != null) {
+      final result = await _receptions.call(operation, data);
+      _check(generation);
+      return result;
+    }
     switch (operation) {
+      case 'devices/register':
+      case 'devices/unregister':
+        return _session.device(operation, data);
+      case 'work/photo-access':
+        return _session.requestJson(operation,null,path:'works/${_resource(data['workId'])}/photos/${_resource(data['photoId'])}/access',method:'GET');
+      case 'work/report-detail':
+        return _session.requestJson(operation, null, path: 'reports/${_resource(data['threadId'])}', method: 'GET');
+      case 'work/revise':
+        return _session.requestJson(operation,data['body'] as ApiData,path:'reports/${_resource(data['reportId'])}/revisions',method:'POST',headers:{'Idempotency-Key':data['requestId'] as String});
+      case 'work/reports':
+        return _session.requestJson(operation, null, path: 'reports?page=${data['page'] ?? 1}', method: 'GET');
       case 'chat/rooms':
         return _session._request(
           operation, const {},
@@ -67,7 +75,18 @@ class AdminRestBackend implements FrontendBackend {
         );
       case 'chat/messages':
       case 'chat/send':
+      case 'chat/read':
         return _session._chat(operation, 'chat-rooms/${_id(data['threadId'])}', data);
+      case 'dashboard/request':
+        return _session.requestJson(operation, null,
+          path: 'service-requests/${_resource(data['threadId'])}', method: 'GET');
+      case 'dashboard/cancellations':
+        return _session.requestJson(operation, null,
+          path: 'dispatch-cancellations?page=${data['page'] ?? 1}', method: 'GET');
+      case 'dashboard/follow-up':
+        return _session.requestJson(operation, data['body'] as ApiData,
+          path: 'service-requests/${_resource(data['threadId'])}/follow-up-decisions',
+          method: 'POST', headers: {'Idempotency-Key': data['requestId'] as String});
       case 'dashboard/requests':
         return _session._request(
           operation, const {},
@@ -93,7 +112,11 @@ class AdminRestBackend implements FrontendBackend {
           clearSession();
           throw const ServiceFailure(403, '관리자 계정으로 로그인해 주세요.');
         }
-        return {'state': _state(), 'name': data['username']};
+        return {
+          'state': _state(),
+          'name': data['username'],
+          'resetState': true,
+        };
       case 'auth/logout':
         try {
           if (_session._refreshToken != null) {
@@ -229,6 +252,9 @@ class AdminRestBackend implements FrontendBackend {
   ApiData _driver(ApiData value) {
     final profile = Map<String, dynamic>.from(value['profile'] as Map? ?? {});
     final business = Map<String, dynamic>.from(value['business'] as Map? ?? {});
+    final rejections = (value['rejectionHistory'] as List? ?? [])
+        .map((row) => Map<String, dynamic>.from(row as Map))
+        .toList();
     return {
       'id': value['driverId'].toString(),
       'version': value['version'],
@@ -246,12 +272,24 @@ class AdminRestBackend implements FrontendBackend {
       'owner': business['representativeName'],
       'businessNumber': business['businessRegistrationNumber'],
       'companyAddress': business['companyAddress'],
-      'specialties': profile['specialties'],
+      'specialties': (profile['specialties'] as List? ?? [])
+          .map(
+            (code) =>
+                DriverOnboardingBackend._workTypes.entries
+                    .where((entry) => entry.value == code)
+                    .firstOrNull
+                    ?.key ??
+                code.toString(),
+          )
+          .toList(),
       'regions': profile['activityRegions'],
       'equipment': profile['equipment'],
       'businessVerified':
           (value['businessVerification'] as Map?)?['status'] == 'VERIFIED',
       'rejectionHistory': value['rejectionHistory'],
+      'reason': value['accountStatus'] == 'REJECTED' && rejections.isNotEmpty
+          ? rejections.last['reason']
+          : null,
     };
   }
 

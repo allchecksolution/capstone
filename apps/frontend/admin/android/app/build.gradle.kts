@@ -1,6 +1,7 @@
 @file:Suppress("DEPRECATION")
 plugins { id("com.android.application"); id("org.jetbrains.kotlin.android"); id("dev.flutter.flutter-gradle-plugin") }
 android {
+ sourceSets.getByName("main").java.srcDir("../../../shared/android/workflow-push")
  namespace="kr.allcheck.flutter.admin"
  compileSdk=flutter.compileSdkVersion
  ndkVersion=flutter.ndkVersion

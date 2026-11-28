@@ -1,76 +1,54 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'backend.dart';
 
-typedef ReceptionJsonTransport = Future<ApiData> Function(
-  String method, String path, ApiData? body, String? key,
-);
-
 /// Adapter for the Controllers actually merged into main. Other domains must
 /// supply their implemented contracts before their operations can be enabled.
 class SpringFrontendBackend implements FrontendBackend {
-  SpringFrontendBackend(String baseUrl, {http.Client? client, ReceptionJsonTransport? transport})
-    : _base = Uri.parse(baseUrl),
-      _transport = transport,
-      _client = client ?? http.Client() {
-    if (_base.host.isEmpty ||
-        _base.userInfo.isNotEmpty ||
-        _base.hasQuery ||
-        _base.hasFragment ||
-        (_base.scheme != 'https' &&
-            !(kDebugMode &&
-                _base.scheme == 'http' &&
-                ['localhost', '127.0.0.1', '10.0.2.2'].contains(_base.host)))) {
-      throw ArgumentError(
-        'API_BASE_URL must use HTTPS (debug loopback HTTP allowed).',
-      );
-    }
-    if (_base.path != '' && _base.path != '/') {
-      throw ArgumentError(
-        'API_BASE_URL must be the server origin, without an API path.',
-      );
-    }
-  }
+  SpringFrontendBackend(String baseUrl, {http.Client? client})
+    : _session = HttpFrontendBackend(baseUrl, client: client, restAuth: true),
+      _ownsSession = true;
 
-  final Uri _base;
-  final ReceptionJsonTransport? _transport;
-  final http.Client _client;
-  String? _token;
+  /// Shares the administrator's authentication, refresh and cancellation state.
+  SpringFrontendBackend.withSession(this._session) : _ownsSession = false;
+
+  final HttpFrontendBackend _session;
+  final bool _ownsSession;
+  int get _generation => _session.sessionGeneration;
   String? _administratorId;
-  String? get recordingOwnerKey => _token != null && _administratorId != null
-      ? '${_base.origin}|$_administratorId'
+
+  /// Reception-only sessions identify the stable administrator explicitly.
+  String? get recordingOwnerKey =>
+      hasServiceSession && _administratorId != null
+      ? '${Uri.parse(_session.baseUrl).origin}|$_administratorId'
       : null;
-  int _generation = 0;
   final _uploads = <String, _RecordingAttempt>{};
-  bool get hasServiceSession => _token != null;
+  bool get hasServiceSession => _session.hasServiceSession;
 
   /// Called by the service authentication adapter once that domain is merged.
   /// Never pass a Kakao provider token as the application's service token.
   void setServiceSession(String accessToken, {String? administratorId}) {
-    if (accessToken.trim().isEmpty) throw ArgumentError('Empty service token');
-    clearSession();
-    _token = accessToken;
-    _administratorId = administratorId?.trim().isNotEmpty == true
-        ? administratorId!.trim()
-        : null;
+    _session.setServiceSession(accessToken);
+    _uploads.clear();
+    final id = administratorId?.trim();
+    _administratorId = id == null || id.isEmpty ? null : id;
   }
 
   @override
   void clearSession() {
-    _token = null;
+    _session.clearSession();
     _administratorId = null;
-    _generation++;
     _uploads.clear();
   }
 
   void close() {
-    clearSession();
-    _client.close();
+    _uploads.clear();
+    if (_ownsSession) _session.close();
   }
 
   static const workTypes = <String, String>{
@@ -93,7 +71,7 @@ class SpringFrontendBackend implements FrontendBackend {
     final id = data['id'];
     String receptionPath() => '/api/v1/receptions/${_segment(id)}';
     switch (operation) {
-      case 'receptions/register' when _transport != null:
+      case 'receptions/register' when !_ownsSession:
         final result = await _json(
           'POST',
           '/api/v1/service-requests',
@@ -225,39 +203,25 @@ class SpringFrontendBackend implements FrontendBackend {
     String? key,
     Map<String, String>? query,
   }) async {
-    if (_transport case final transport?) {
-      final target = Uri(path: path, queryParameters: query).toString();
-      return transport(method, target, body, key);
-    }
-    final token = _token;
-    if (token == null) throw const ServiceFailure(401, '서버 인증 연결이 필요합니다.');
+    if (!hasServiceSession) throw const ServiceFailure(401, '서버 인증 연결이 필요합니다.');
     final generation = _generation;
     try {
-      final request =
-          http.Request(
-              method,
-              _base.replace(path: path, queryParameters: query),
-            )
-            ..followRedirects = false
-            ..headers.addAll({
-              'Accept': 'application/json',
-              'Authorization': 'Bearer $token',
-              if (body != null) 'Content-Type': 'application/json',
-              'Idempotency-Key': ?key,
-            });
-      if (body != null) request.body = jsonEncode(body);
-      final response = await http.Response.fromStream(
-        await _client.send(request).timeout(const Duration(seconds: 30)),
-      ).timeout(const Duration(seconds: 30));
+      final target = Uri.parse(
+        path.substring('/api/v1/'.length),
+      ).replace(queryParameters: query);
+      final result = await _session.requestJson(
+        'receptions/resource',
+        body,
+        path: target.toString(),
+        method: method,
+        headers: {'Accept': 'application/json', 'Idempotency-Key': ?key},
+      );
       _checkSession(generation);
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        if (response.statusCode == 401) clearSession();
-        throw _failure(response.statusCode);
+      return result;
+    } on ServiceFailure catch (error) {
+      if (error.status > 0 && error.status != 499) {
+        throw _failure(error.status, error.code);
       }
-      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
-      if (decoded is! ApiData) throw const FormatException();
-      return decoded;
-    } on ServiceFailure {
       rethrow;
     } on TimeoutException {
       throw const ServiceFailure(0, '응답 시간이 초과되었습니다. 같은 작업을 다시 시도해 주세요.');
@@ -272,17 +236,19 @@ class SpringFrontendBackend implements FrontendBackend {
     }
   }
 
-  static ServiceFailure _failure(int status) =>
-      ServiceFailure(status, switch (status) {
-        400 => '입력 형식과 필수 항목을 확인해 주세요.',
-        401 => '인증이 만료되었습니다. 다시 로그인해 주세요.',
-        403 => '이 작업에 접근할 권한이 없습니다.',
-        404 => '접수를 찾을 수 없거나 접근할 수 없습니다.',
-        409 => '접수 상태가 변경되었습니다. 새로고침 후 확인해 주세요.',
-        415 => 'WAV 녹음 파일만 업로드할 수 있습니다.',
-        503 => '서버 인증 또는 저장소 연결이 준비되지 않았습니다.',
+  static ServiceFailure _failure(int status, String? code) =>
+      ServiceFailure(status, switch ((status, code)) {
+        (503, 'GEOCODER_UNAVAILABLE') =>
+          '현장 주소의 좌표를 확인할 수 없습니다. 잠시 후 의뢰 등록을 다시 시도해 주세요.',
+        (400, _) => '입력 형식과 필수 항목을 확인해 주세요.',
+        (401, _) => '인증이 만료되었습니다. 다시 로그인해 주세요.',
+        (403, _) => '이 작업에 접근할 권한이 없습니다.',
+        (404, _) => '접수를 찾을 수 없거나 접근할 수 없습니다.',
+        (409, _) => '접수 상태가 변경되었습니다. 새로고침 후 확인해 주세요.',
+        (415, _) => 'WAV 녹음 파일만 업로드할 수 있습니다.',
+        (503, _) => '서버 인증 또는 저장소 연결이 준비되지 않았습니다.',
         _ => '요청을 처리하지 못했습니다. 다시 시도해 주세요.',
-      });
+      }, code: code);
 
   Future<ApiData> _upload(ApiData data) async {
     final id = _segment(data['id']);
@@ -357,8 +323,8 @@ class SpringFrontendBackend implements FrontendBackend {
             ..bodyBytes = bytes;
           request.headers.addAll(headers);
           // No application bearer on the S3 request; preserve signed headers.
-          final response = await _client
-              .send(request)
+          final response = await _session
+              .sendUpload(request)
               .timeout(const Duration(minutes: 2));
           await response.stream.drain<void>().timeout(
             const Duration(seconds: 30),

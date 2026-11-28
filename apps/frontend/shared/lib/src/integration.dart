@@ -31,7 +31,7 @@ extension BackendScreens on _WorkflowShellState {
     if(!mounted)return;
     if(error is ServiceFailure&&error.status==499)return;
     if (error is ServiceFailure && error.status == 401) {
-      widget.backend?.clearSession();signedIn=false;kakaoIdentity=null;pendingAlert=null;stateVersion++;unawaited(locationSubscription?.cancel());locationSubscription=null;alerts.clear();
+      widget.backend?.clearSession();signedIn=false;kakaoIdentity=null;pendingAlert=null;stateVersion++;unawaited(stopLocationUpdates());alerts.clear();
       history.clear();go('login',replace:true);
     }
     message(error is ServiceFailure ? error.message : '처리하지 못했습니다. 다시 시도해 주세요.');
@@ -45,6 +45,7 @@ extension BackendScreens on _WorkflowShellState {
           receptionPage = result['receptionPage'] as Json? ?? {};
         } else {
           final row = result['consultation'] as Json;
+          synchronizeReceptionForm(row);
           final rows = s.consultations;
           final index = rows.indexWhere((c) => c['id'] == row['id']);
           if (index < 0) { rows.insert(0, row); } else { rows[index] = row; }
@@ -55,7 +56,16 @@ extension BackendScreens on _WorkflowShellState {
     final state=result['state'];
     if(state is! Json)throw const ServiceFailure(0,'서버 응답 형식을 확인해 주세요.');
     await s.change((){
-      s.restore(jsonEncode(state));
+      if (result['resetState'] == true) {
+        receptionPage = {};
+        for (final receptionId in receptionEditVersions.keys.toList()) {
+          resetReceptionForm(receptionId);
+        }
+      }
+      final merged = widget.backend is AdminRestBackend && result['resetState'] != true
+          ? {...state, 'consultations': s.consultations}
+          : state;
+      s.restore(jsonEncode(restWorkflow && result['resetState']!=true ? {...merged,'notifications':s.data['notifications']} : merged));
       final collection=switch(page){'detail'||'request'||'report'||'report-edit'||'report-history'||'dispatch'||'cancel'||'revisit'=>s.jobs,'reception'=>s.consultations,'driver'=>s.drivers,'cancellation'=>s.cancellations,_=>null};
       if(collection!=null&&!collection.any((row)=>row['id']==id)){page='home';id='';history.clear();}
     });
@@ -74,8 +84,11 @@ extension BackendScreens on _WorkflowShellState {
     var conflict=false;
     try{
       final response=await api.call(operation,{...payload,'requestId':requestId,
-        if(entity?['version']!=null)'expectedVersion':entity!['version']});
+        if(entity?['version']!=null)'expectedVersion':payload['expectedVersion']??entity!['version']});
       if(!mounted)return false;
+      if (['receptions/review', 'receptions/reopen'].contains(operation) && entityId is String) {
+        resetReceptionForm(entityId);
+      }
       await applyServerState(response);lastResourceId=text(response,'resourceId');retryKeys.remove(key);return true;
     }catch(e){conflict=e is ServiceFailure&&[409,410].contains(e.status);if(conflict)retryKeys.remove(key);failure(e);return false;}
     finally{if(mounted){refresh(()=>busy=false);if(conflict)await refreshState();drainPending();}}
@@ -104,7 +117,7 @@ extension BackendScreens on _WorkflowShellState {
       await loadReceptions();
       return;
     }
-    if (receptionOnly) return;
+    if (receptionOnlySession) return;
     refreshingState=true;final version=stateVersion;
     try{final response=await api.call('workflow/state',{'role':widget.role.name,if(admin&&page=='driver')'driverId':id});if(mounted&&signedIn&&!busy&&version==stateVersion)await applyServerState(response);}
     catch(e){failure(e);}
@@ -118,18 +131,25 @@ extension BackendScreens on _WorkflowShellState {
     catch(e){failure(e);}finally{if(mounted){refresh(()=>busy=false);drainPending();}}
   }
 
-  Future<void> closeSession()async{
+  Future<void> closeSession({bool deviceDetached=false})async{
     stateVersion++;signedIn=false;kakaoIdentity=null;pendingAlert=null;
-    await locationSubscription?.cancel();locationSubscription=null;
-    try{await detachDevice();}catch(_){}
+    await stopLocationUpdates();
+    if(!deviceDetached){try{await detachDevice();}catch(_){}}
     widget.backend?.clearSession();alerts.clear();seenAlerts.clear();retryKeys.clear();
     await s.change((){final names=Map<String,dynamic>.from(s.displayNames);s.data=AppStore.empty(widget.role);s.data['displayNames']=names;});
     s.transientSession=false;
   }
 
   Future<void> changeAvailability(String availability)async{
+    // READY without a recent location never becomes a dispatch candidate, so
+    // ask for location access before telling the server the driver is ready.
+    if(availability=='대기'&&!developmentSession){
+      try{await locationPermission();}
+      catch(e){message(e is StateError?e.message:'위치 권한을 확인해 주세요.');return;}
+    }
     if(await command('drivers/availability',{'availability':availability},()=>s.data['availability']=availability)){
-      if(availability=='휴식'){await locationSubscription?.cancel();locationSubscription=null;}
+      if(availability=='휴식'){await stopLocationUpdates();}
+      else if(!developmentSession){await startLocationUpdates();}
     }
   }
 
@@ -148,10 +168,11 @@ extension BackendScreens on _WorkflowShellState {
   }
 
   Future<void> afterAuthentication()async{
-    if(!mounted||!signedIn||developmentSession||sdkOnlySession||afterAuthRunning)return;
-    if (receptionOnly) return;
+    if(!mounted||!signedIn||developmentSession||sdkOnlySession||afterAuthRunning||loggingOut)return;
+    if (receptionOnlySession) return;
     afterAuthRunning=true;try{
     await loadInbox();
+    if(!admin)unawaited(resumeLocationUpdates());
     try{final token=await appPush?.token();if(token!=null)await registerDevice(token);}catch(_){if(mounted)refresh(()=>pushStatus='알림 연결을 다시 시도해 주세요.');}
     final pending=pendingAlert;
     if(pending!=null&&mounted){pendingAlert=null;await openAlert(pending);}
@@ -170,20 +191,60 @@ extension BackendScreens on _WorkflowShellState {
     }catch(_){message('알림 설정에 실패했습니다. 다시 시도해 주세요.');}
   }
 
+  bool get restWorkflow => widget.backend is AdminRestBackend || widget.backend is DriverOnboardingBackend;
+  Future<String> installationId() async {
+    final prefs=await SharedPreferences.getInstance();
+    final key='push-installation-${widget.role.name}';
+    final existing=prefs.getString(key);
+    if(existing!=null)return existing;
+    final value=uid();
+    if(!await prefs.setString(key,value))throw StateError('기기 식별자를 저장하지 못했습니다.');
+    return value;
+  }
   Future<void> registerDevice(String token)async{
-    if(!signedIn||developmentSession||widget.backend==null||registeringToken)return;
-    registeringToken=true;
-    try{await api.call('devices/register',{'token':token,'role':widget.role.name,'platform':defaultTargetPlatform.name});deviceToken=token;if(mounted)refresh(()=>pushStatus='알림 수신이 연결되었습니다.');}
-    catch(_){if(mounted)refresh(()=>pushStatus='알림 연결을 다시 시도해 주세요.');}
-    finally{registeringToken=false;}
+    if(!mounted||!signedIn||developmentSession||widget.backend==null||detachingDevice||loggingOut)return;
+    queuedDeviceToken=token;
+    final pending=deviceRegistration??=_registerQueuedDevices();
+    try { await pending; }
+    finally { if(identical(deviceRegistration,pending))deviceRegistration=null; }
+  }
+
+  Future<void> _registerQueuedDevices() async {
+    while(mounted && signedIn && !detachingDevice && queuedDeviceToken!=null){
+      final token=queuedDeviceToken!;
+      queuedDeviceToken=null;
+      if(token==deviceToken)continue;
+      try{
+        final install=restWorkflow?await installationId():null;
+        if(!mounted||!signedIn||detachingDevice)return;
+        await api.call('devices/register',{
+          if(install!=null)'installationId':install,
+          'token':token,'role':widget.role.name,'platform':defaultTargetPlatform.name,
+        });
+        deviceToken=token;
+        if(mounted&&!detachingDevice)refresh(()=>pushStatus='알림 수신이 연결되었습니다.');
+      }catch(_){
+        if(mounted&&!detachingDevice)refresh(()=>pushStatus='알림 연결을 다시 시도해 주세요.');
+      }
+    }
   }
 
   Future<void> detachDevice()async{
-    try{if(!developmentSession&&deviceToken!=null&&widget.backend!=null)await api.call('devices/unregister',{'token':deviceToken});}
-    finally{deviceToken=null;await appPush?.deleteToken();}
+    detachingDevice=true;
+    queuedDeviceToken=null;
+    try{
+      await deviceRegistration;
+      if(!developmentSession&&(deviceToken!=null || (restWorkflow && appPush!=null && signedIn))&&widget.backend!=null){
+        await api.call('devices/unregister',{if(restWorkflow)'installationId':await installationId(),'token':deviceToken});
+      }
+    } finally {
+      deviceToken=null;
+      try{await appPush?.deleteToken();}finally{detachingDevice=false;}
+    }
   }
 
   Future<void> loadInbox()async{
+    if(restWorkflow)return;
     if(!signedIn||developmentSession||widget.backend==null)return;
     try{
       final response=await api.call('notifications/list',{'role':widget.role.name});
@@ -195,8 +256,10 @@ extension BackendScreens on _WorkflowShellState {
   void receiveAlert(AppAlert alert){
     if(!mounted||!signedIn||developmentSession||alert.role!=widget.role.name)return;
     if(seenAlerts.contains(alert.id))return;
+    if(restWorkflow && alert.type=='dispatch_requested') unawaited(api.call('offer/received',{'offerId':alert.resourceId}).then<void>((_) {},onError:(Object _) {}));
     seenAlerts.add(alert.id);if(seenAlerts.length>200)seenAlerts.remove(seenAlerts.first);
     refresh((){if(!alerts.any((a)=>a.id==alert.id))alerts.insert(0,alert);});
+    if(restWorkflow && alert.type=='driver_approval')unawaited(refreshState());
     final category=switch(alert.type){'analysis_completed'||'analysis_failed'||'dispatch_requested'=>0,'dispatch_updated'||'dispatch_cancelled'=>1,'work_updated'=>2,'chat_received'=>admin?2:3,_=>3};
     if((s.data['notifications'] as List)[category]!=true)return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(alert.title),action:SnackBarAction(label:'확인',onPressed:()=>openAlert(alert))));
@@ -210,6 +273,18 @@ extension BackendScreens on _WorkflowShellState {
     // authorized projection and re-check expired/assigned requests on server.
     refresh(()=>busy=true);
     try{
+      if(restWorkflow){
+        final target=switch(alert.type){'chat_received'=>'chat','dispatch_requested'=>'server-offer','dispatch_updated'=>'server-request','analysis_completed'||'analysis_failed'=>'reception',_=>'home'};
+        if(target=='reception'){
+          final detail=await api.call('receptions/detail',{'id':alert.resourceId});
+          if(!mounted||!signedIn)return;
+          await applyServerState(detail);
+        }
+        if(!mounted || !signedIn)return;
+        refresh(()=>alerts.removeWhere((a)=>a.id==alert.id));
+        go(target,item:['reception','server-request','server-offer'].contains(target)||target=='chat' && admin?alert.resourceId:'');
+        return;
+      }
       final response=await api.call('notifications/open',{'notificationId':alert.id});
       if(!mounted)return;
       await applyServerState(response);

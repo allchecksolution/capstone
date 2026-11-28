@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show WebSocket;
+import 'package:crypto/crypto.dart' show sha256;
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
@@ -37,6 +39,7 @@ part 'src/integration.dart';
 part 'src/receptions.dart';
 part 'src/recording_settings.dart';
 part 'src/connected_workflow.dart';
+part 'src/work_actions.dart';
 part 'src/location.dart';
 part 'src/startup_logo.dart';
 
@@ -65,13 +68,7 @@ Future<void> launchAllcheck(AppRole role, {
 }) async {
   WidgetsFlutterBinding.ensureInitialized();
   const baseUrl=String.fromEnvironment('API_BASE_URL');
-  if (backend == null && baseUrl.isNotEmpty) {
-    final url = baseUrl.replaceFirst(RegExp(r'/+$'), '');
-    final apiUrl = Uri.parse(url).path.isEmpty ? '$url/api/v1' : url;
-    backend = role == AppRole.driver
-        ? DriverOnboardingBackend(apiUrl)
-        : AdminRestBackend(apiUrl);
-  }
+  backend??=baseUrl.isEmpty?null:role==AppRole.driver?DriverOnboardingBackend(baseUrl):AdminRestBackend(baseUrl,receptionsFactory:SpringFrontendBackend.withSession);
   push??=pushEnabled?FirebaseAppPush():null;
   if (role == AppRole.driver) KakaoDriverAuth.initialize();
   if(backend!=null){runApp(AllcheckApp(role:role,store:AppStore(role),backend:backend,push:push,driverAuth:driverAuth,onKakaoAuthenticated:onKakaoAuthenticated,showStartupLogo:true));return;}

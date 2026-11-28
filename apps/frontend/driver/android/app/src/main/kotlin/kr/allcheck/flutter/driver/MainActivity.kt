@@ -27,10 +27,23 @@ class MainActivity : FlutterActivity() {
     private var ocrResult: MethodChannel.Result? = null
     private var addressSearch: Dialog? = null
     private val preferences get() = getSharedPreferences("allcheck_flutter_folder", MODE_PRIVATE)
+    override fun onResume() {
+        super.onResume()
+        kr.allcheck.flutter.push.WorkflowPushReceiver.appVisible = true
+    }
+    override fun onPause() {
+        kr.allcheck.flutter.push.WorkflowPushReceiver.appVisible = false
+        super.onPause()
+    }
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+    }
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "allcheck/platform").setMethodCallHandler { call, result ->
             when (call.method) {
+                "takePushEvent" -> result.success(kr.allcheck.flutter.push.WorkflowPushReceiver.takeEvent(intent))
                 "searchRegistrationAddress" -> {
                     val html = call.argument<String>("html")
                     if (html == null || addressSearch != null) {
