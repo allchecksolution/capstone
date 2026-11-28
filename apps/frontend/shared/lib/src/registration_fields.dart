@@ -58,8 +58,9 @@ String _registrationInitialValue(String key, String value) =>
 
 List<TextInputFormatter> _registrationFormatters(String key) {
   final limit = _registrationLengths[key];
+  final numeric = _registrationNumericFields.contains(key);
   return [
-    if (_registrationNumericFields.contains(key))
+    if (numeric)
       FilteringTextInputFormatter.digitsOnly,
     if (_registrationEmail(key))
       FilteringTextInputFormatter.allow(
@@ -70,7 +71,8 @@ List<TextInputFormatter> _registrationFormatters(String key) {
         (previous, next) =>
             '@'.allMatches(next.text).length > 1 ? previous : next,
       ),
-    if (limit != null) LengthLimitingTextInputFormatter(limit),
+    // Validate the full value so a pasted number cannot change silently.
+    if (limit != null && !numeric) LengthLimitingTextInputFormatter(limit),
   ];
 }
 

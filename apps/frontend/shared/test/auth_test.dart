@@ -131,7 +131,16 @@ void main() {
     await tapText(tester, '@naver.com');
     expect(value('taxEmail'), 'tax@naver.com');
     await tapText(tester, '입력 정보 확인 및 가입 신청에 동의합니다.');
+    const overlongAccount = '1234567890123456789012345678901';
+    await fillRegistration(tester, {'bankAccount': overlongAccount});
+    expect(value('bankAccount'), overlongAccount);
     await tapText(tester, '가입 신청');
+    expect(find.text('30자 이하로 입력해 주세요.'), findsOneWidget);
+    expect(backend.operations, isNot(contains('drivers/register')));
+
+    await fillRegistration(tester, {'bankAccount': '123456'});
+    await tapText(tester, '가입 신청');
+    expect(backend.state['account']['profile']['bankAccount'], '123456');
     expect(backend.state['account']['profile']['address'], '서울특별시 테스트로 1 101동 202호');
     expect(backend.state['account']['profile']['companyAddress'], '서울특별시 테스트로 2 3층 302호');
     await tester.pumpWidget(const SizedBox());
