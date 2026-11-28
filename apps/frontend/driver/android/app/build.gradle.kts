@@ -10,6 +10,7 @@ require(kakaoNativeAppKey.isEmpty() || kakaoNativeAppKey.matches(Regex("[a-fA-F0
  "KAKAO_NATIVE_APP_KEY must be the 32-character native app key"
 }
 android {
+ sourceSets.getByName("main").java.srcDir("../../../shared/android/workflow-push")
  namespace="kr.allcheck.flutter.driver"
  compileSdk=flutter.compileSdkVersion
  ndkVersion=flutter.ndkVersion
