@@ -219,7 +219,9 @@ class SpringFrontendBackend implements FrontendBackend {
       _checkSession(generation);
       return result;
     } on ServiceFailure catch (error) {
-      if (error.status > 0 && error.status != 499) throw _failure(error.status);
+      if (error.status > 0 && error.status != 499) {
+        throw _failure(error.status, error.code);
+      }
       rethrow;
     } on TimeoutException {
       throw const ServiceFailure(0, '응답 시간이 초과되었습니다. 같은 작업을 다시 시도해 주세요.');
@@ -234,17 +236,19 @@ class SpringFrontendBackend implements FrontendBackend {
     }
   }
 
-  static ServiceFailure _failure(int status) =>
-      ServiceFailure(status, switch (status) {
-        400 => '입력 형식과 필수 항목을 확인해 주세요.',
-        401 => '인증이 만료되었습니다. 다시 로그인해 주세요.',
-        403 => '이 작업에 접근할 권한이 없습니다.',
-        404 => '접수를 찾을 수 없거나 접근할 수 없습니다.',
-        409 => '접수 상태가 변경되었습니다. 새로고침 후 확인해 주세요.',
-        415 => 'WAV 녹음 파일만 업로드할 수 있습니다.',
-        503 => '서버 인증 또는 저장소 연결이 준비되지 않았습니다.',
+  static ServiceFailure _failure(int status, String? code) =>
+      ServiceFailure(status, switch ((status, code)) {
+        (503, 'GEOCODER_UNAVAILABLE') =>
+          '현장 주소의 좌표를 확인할 수 없습니다. 잠시 후 의뢰 등록을 다시 시도해 주세요.',
+        (400, _) => '입력 형식과 필수 항목을 확인해 주세요.',
+        (401, _) => '인증이 만료되었습니다. 다시 로그인해 주세요.',
+        (403, _) => '이 작업에 접근할 권한이 없습니다.',
+        (404, _) => '접수를 찾을 수 없거나 접근할 수 없습니다.',
+        (409, _) => '접수 상태가 변경되었습니다. 새로고침 후 확인해 주세요.',
+        (415, _) => 'WAV 녹음 파일만 업로드할 수 있습니다.',
+        (503, _) => '서버 인증 또는 저장소 연결이 준비되지 않았습니다.',
         _ => '요청을 처리하지 못했습니다. 다시 시도해 주세요.',
-      });
+      }, code: code);
 
   Future<ApiData> _upload(ApiData data) async {
     final id = _segment(data['id']);

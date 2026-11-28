@@ -85,8 +85,13 @@ class HttpFrontendBackend implements FrontendBackend {
         path: '$room/read', method: 'PUT');
     }
     final before = data['before'];
-    final query = before == null ? '' : '?before=${Uri.encodeQueryComponent(before.toString())}';
-    return _request(operation, const {}, path: '$room/messages$query', method: 'GET');
+    final after = data['after'];
+    final query = Uri(queryParameters: {
+      if (before != null) 'before': before.toString(),
+      if (after != null) 'after': after.toString(),
+    }).query;
+    final path = query.isEmpty ? '$room/messages' : '$room/messages?$query';
+    return _request(operation, const {}, path: path, method: 'GET');
   }
 
   @override Future<ApiData> call(String operation, [ApiData data = const {}]) => _request(operation,data);

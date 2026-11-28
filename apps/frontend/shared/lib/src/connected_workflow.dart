@@ -108,12 +108,17 @@ class _ConnectedWorkflowState extends State<_ConnectedWorkflow>
   }
 
   Future<void> _poll() async {
-    if (_polling || _sending || _before != null) return;
+    if (_polling || _sending) return;
     final previous = _result;
+    final viewingHistory = _before != null;
     _polling = true;
     try {
-      final fresh = await _load();
-      if (mounted && _active && identical(previous, _result) && !_sending) {
+      final fresh = viewingHistory ? await _syncChat() : await _load();
+      if (!viewingHistory &&
+          mounted &&
+          _active &&
+          identical(previous, _result) &&
+          !_sending) {
         setState(() => _result = Future.value(fresh));
       }
     } catch (_) {
@@ -129,6 +134,9 @@ class _ConnectedWorkflowState extends State<_ConnectedWorkflow>
   String? _before;
   bool _sending = false;
   String? _readMarker;
+  Json? _latestChat;
+  Future<Json>? _chatSync;
+  int _chatRoomVersion = 0;
   String? _draftKey, _draftText;
   String _sendError = '';
   final Map<String, String> _offerKeys = {};
@@ -154,6 +162,9 @@ class _ConnectedWorkflowState extends State<_ConnectedWorkflow>
     if (queryChanged) {
       _disconnect();
       _readMarker = null;
+      _latestChat = null;
+      _chatSync = null;
+      _chatRoomVersion++;
       _page = 1;
       _sendError = '';
     }
@@ -170,21 +181,79 @@ class _ConnectedWorkflowState extends State<_ConnectedWorkflow>
     super.dispose();
   }
 
+  Future<Json> _syncChat() {
+    final running = _chatSync;
+    if (running != null) return running;
+    late final Future<Json> pending;
+    pending = _fetchLatestChat().whenComplete(() {
+      if (identical(_chatSync, pending)) _chatSync = null;
+    });
+    return _chatSync = pending;
+  }
+
+  Future<Json> _fetchLatestChat() async {
+    final api = widget.api;
+    final threadId = widget.threadId;
+    final roomVersion = _chatRoomVersion;
+    final previous = _latestChat;
+    final existing = records(previous?['items']);
+    final newest = existing.firstOrNull?['messageId'] as String?;
+    if (newest == null) {
+      final first = await api.call('chat/messages', {'threadId': threadId});
+      if (mounted && roomVersion == _chatRoomVersion) _latestChat = first;
+      return first;
+    }
+
+    final seen = {for (final message in existing) message['messageId']};
+    final added = <Json>[];
+    final cursors = {newest};
+    var cursor = newest;
+    var readOnly = previous!['readOnly'];
+    while (mounted && roomVersion == _chatRoomVersion) {
+      final page = await api.call('chat/messages', {
+        'threadId': threadId,
+        'after': cursor,
+      });
+      readOnly = page['readOnly'];
+      for (final message in records(page['items'])) {
+        if (seen.add(message['messageId'])) added.add(message);
+      }
+      final next = page['nextCursor'] as String?;
+      if (next == null) {
+        final updated = {
+          ...previous,
+          'items': [...added.reversed, ...existing],
+          'readOnly': readOnly,
+        };
+        if (mounted && roomVersion == _chatRoomVersion) _latestChat = updated;
+        return updated;
+      }
+      if (!cursors.add(next)) {
+        throw const ServiceFailure(0, '대화 목록을 다시 불러와 주세요.');
+      }
+      cursor = next;
+    }
+    return previous;
+  }
+
   Future<Json> _load() async {
     final today = DateTime.now().toUtc().add(const Duration(hours: 9));
     String date(DateTime value) => value.toIso8601String().substring(0, 10);
     final operation = widget.operation;
     final thread = widget.threadId;
     final latest = _before == null;
-    final result = await widget.api.call(operation, {
-      'page': _page,
-      'threadId': widget.threadId,
-      if (_before != null) 'before': _before,
-      if (operation == 'dashboard/statistics') ...{
-        'from': date(today.subtract(const Duration(days: 29))),
-        'to': date(today),
-      },
-    });
+    final roomVersion = _chatRoomVersion;
+    final result = operation == 'chat/messages' && latest
+        ? await _syncChat()
+        : await widget.api.call(operation, {
+            'page': _page,
+            'threadId': thread,
+            if (_before != null) 'before': _before,
+            if (operation == 'dashboard/statistics') ...{
+              'from': date(today.subtract(const Duration(days: 29))),
+              'to': date(today),
+            },
+          });
     if (operation == 'driver/offer' &&
         mounted &&
         widget.threadId == thread &&
@@ -197,7 +266,7 @@ class _ConnectedWorkflowState extends State<_ConnectedWorkflow>
         latest &&
         mounted &&
         widget.operation == operation &&
-        widget.threadId == thread &&
+        roomVersion == _chatRoomVersion &&
         _before == null)
       unawaited(_markRead(result));
     return result;
@@ -208,7 +277,7 @@ class _ConnectedWorkflowState extends State<_ConnectedWorkflow>
   Future<void> _markRead(Json page) async {
     final newest = records(page['items']).firstOrNull;
     if (page['readOnly'] == true || newest == null) return;
-    final thread = widget.threadId;
+    final roomVersion = _chatRoomVersion;
     final marker = text(newest, 'messageId');
     if (marker == _readMarker) return;
     try {
@@ -216,7 +285,7 @@ class _ConnectedWorkflowState extends State<_ConnectedWorkflow>
         'threadId': widget.threadId,
         'lastReadMessageId': marker,
       });
-      if (mounted && widget.threadId == thread) _readMarker = marker;
+      if (mounted && roomVersion == _chatRoomVersion) _readMarker = marker;
     } catch (_) {
       // Unread counts recover on the next successful open.
     }
@@ -234,18 +303,24 @@ class _ConnectedWorkflowState extends State<_ConnectedWorkflow>
       _sending = true;
       _sendError = '';
     });
+    final roomVersion = _chatRoomVersion;
     try {
       await widget.api.call('chat/send', {
         'threadId': widget.threadId,
         'text': body,
         'requestId': _draftKey,
       });
-      if (!mounted) return;
+      try {
+        await _chatSync;
+      } catch (_) {
+        // The send succeeded. Loading again will retry the history request.
+      }
+      if (!mounted || roomVersion != _chatRoomVersion) return;
       _message.clear();
       _draftKey = _draftText = _before = null;
       setState(() => _result = _load());
     } catch (error) {
-      if (mounted) {
+      if (mounted && roomVersion == _chatRoomVersion) {
         setState(
           () => _sendError = error is ServiceFailure
               ? error.message

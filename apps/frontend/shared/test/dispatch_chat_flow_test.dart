@@ -542,10 +542,21 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('admin starts a chat from driver detail and marks it read', (
-    tester,
-  ) async {
+  testWidgets('chat catches up while viewing older messages', (tester) async {
     final reads = <Object?>[];
+    final afterCursors = <String>[];
+    var newMessages = false;
+
+    ApiData message(int id, String body) => {
+      'messageId': 'msg_$id',
+      'driverId': 101,
+      'sender': 'DRIVER',
+      'body': body,
+      'sentAt': '2026-11-27T01:01:00Z',
+      'readAt': null,
+    };
+    http.Response messages(List<ApiData> items, {String? next}) =>
+        jsonResponse({'items': items, 'nextCursor': next, 'readOnly': false});
     final summary = {...registration('ACTIVATED'), 'workerName': '테스트 기사'}
       ..remove('profile')
       ..remove('business');
@@ -569,28 +580,24 @@ void main() {
           case '/api/v1/drivers/101':
             return jsonResponse(registration('ACTIVATED'));
           case '/api/v1/chat-rooms/101/messages':
-            return jsonResponse({
-              'items': [
-                {
-                  'messageId': 'msg_2',
-                  'driverId': 101,
-                  'sender': 'DRIVER',
-                  'body': '도착 예정입니다',
-                  'sentAt': '2026-11-27T01:01:00Z',
-                  'readAt': null,
-                },
-                {
-                  'messageId': 'msg_1',
-                  'driverId': 101,
-                  'sender': 'ADMIN',
-                  'body': '확인 부탁드립니다',
-                  'sentAt': '2026-11-27T01:00:00Z',
-                  'readAt': null,
-                },
-              ],
-              'nextCursor': null,
-              'readOnly': false,
-            });
+            final query = request.url.queryParameters;
+            if (query['before'] == 'msg_2') {
+              return messages([message(1, '이전 대화 내용')]);
+            }
+            if (query['after'] case final String cursor) {
+              afterCursors.add(cursor);
+              if (!newMessages) return messages([]);
+              return switch (cursor) {
+                'msg_2' => messages([message(3, '첫 누락 메시지')], next: 'msg_3'),
+                'msg_3' => messages([
+                  message(3, '첫 누락 메시지'),
+                  message(4, '최신 메시지'),
+                ]),
+                'msg_4' => messages([]),
+                _ => throw StateError('Unexpected cursor $cursor'),
+              };
+            }
+            return messages([message(2, '도착 예정입니다')], next: 'msg_2');
           case '/api/v1/chat-rooms/101/read':
             expect(request.method, 'PUT');
             reads.add(jsonDecode(request.body));
@@ -614,6 +621,27 @@ void main() {
     expect(reads, [
       {'lastReadMessageId': 'msg_2'},
     ]);
+    await tapText(tester, '이전 대화');
+    expect(find.text('이전 대화 내용'), findsOneWidget);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    newMessages = true;
+    afterCursors.clear();
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+    expect(afterCursors, ['msg_2', 'msg_3']);
+    expect(find.text('이전 대화 내용'), findsOneWidget);
+    expect(find.text('최신 메시지'), findsNothing);
+    expect(reads, [
+      {'lastReadMessageId': 'msg_2'},
+    ]);
+
+    await tapText(tester, '새로고침');
+    expect(afterCursors.last, 'msg_4');
+    expect(find.text('최신 메시지'), findsOneWidget);
+    expect(find.text('첫 누락 메시지'), findsOneWidget);
+    expect(find.text('도착 예정입니다'), findsOneWidget);
+    expect(reads.last, {'lastReadMessageId': 'msg_4'});
     await tester.pumpWidget(const SizedBox.shrink());
   });
 }

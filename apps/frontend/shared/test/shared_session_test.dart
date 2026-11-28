@@ -46,6 +46,37 @@ AdminRestBackend administrator(http.Client client) => AdminRestBackend(
 );
 
 void main() {
+  test('request registration preserves the geocoder failure code', () async {
+    final backend = administrator(
+      MockClient((request) async {
+        if (request.url.path == '/api/v1/auth/sessions/admin') return login();
+        expect(request.url.path, '/api/v1/service-requests');
+        expect(request.method, 'POST');
+        expect(request.headers['Idempotency-Key'], 'register-reception');
+        return jsonResponse({'code': 'GEOCODER_UNAVAILABLE'}, 503);
+      }),
+    );
+    addTearDown(backend.close);
+    await backend.call('auth/admin-login', {
+      'username': 'admin',
+      'password': 'test',
+    });
+
+    await expectLater(
+      backend.call('receptions/register', {
+        'id': 'rec_1',
+        'expectedVersion': 2,
+        'requestId': 'register-reception',
+      }),
+      throwsA(
+        isA<ServiceFailure>()
+            .having((error) => error.status, 'status', 503)
+            .having((error) => error.code, 'code', 'GEOCODER_UNAVAILABLE')
+            .having((error) => error.message, 'message', contains('현장 주소의 좌표')),
+      ),
+    );
+  });
+
   test(
     'admin login, receptions and account reads share the renewed session',
     () async {
