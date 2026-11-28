@@ -1,9 +1,17 @@
 package kr.allcheck.flutter.driver
 
 import android.app.Activity
+import android.app.Dialog
 import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
+import android.view.ViewGroup
+import android.view.WindowManager
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.widget.Button
+import android.widget.LinearLayout
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -17,6 +25,7 @@ class MainActivity : FlutterActivity() {
     private var exportResult: MethodChannel.Result? = null
     private var exportBytes: ByteArray? = null
     private var ocrResult: MethodChannel.Result? = null
+    private var addressSearch: Dialog? = null
     private val preferences get() = getSharedPreferences("allcheck_flutter_folder", MODE_PRIVATE)
     override fun onResume() {
         super.onResume()
@@ -35,6 +44,14 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "allcheck/platform").setMethodCallHandler { call, result ->
             when (call.method) {
                 "takePushEvent" -> result.success(kr.allcheck.flutter.push.WorkflowPushReceiver.takeEvent(intent))
+                "searchRegistrationAddress" -> {
+                    val html = call.argument<String>("html")
+                    if (html == null || addressSearch != null) {
+                        result.error("ADDRESS_SEARCH", "주소 검색창을 열 수 없습니다.", null)
+                    } else {
+                        showAddressSearch(html, result)
+                    }
+                }
                 "recognizeBusinessDocument" -> {
                     if (ocrResult != null) { result.error("BUSY", "문서 인식 중입니다.", null); return@setMethodCallHandler }
                     val path = call.argument<String>("path")
@@ -76,6 +93,53 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+    }
+
+    private fun showAddressSearch(html: String, result: MethodChannel.Result) {
+        val dialog = Dialog(this, android.R.style.Theme_Material_Light_NoActionBar)
+        val browser = WebView(this)
+        var address: String? = null
+        browser.settings.apply {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+            allowFileAccess = false
+            allowContentAccess = false
+        }
+        browser.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                val url = request.url
+                if (!request.isForMainFrame) return url.scheme != "https" && url.toString() != "about:blank"
+                if (url.scheme == "allcheck-address" && url.host == "selection") {
+                    val selected = url.getQueryParameter("address")
+                    if (!selected.isNullOrBlank() && selected.length <= 200) {
+                        address = selected
+                        dialog.dismiss()
+                    }
+                }
+                return true
+            }
+        }
+        val close = Button(this).apply {
+            text = "주소 검색 닫기"
+            setOnClickListener { dialog.dismiss() }
+        }
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(close)
+            addView(browser, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        }
+        dialog.setContentView(layout)
+        dialog.setOnDismissListener {
+            addressSearch = null
+            browser.stopLoading()
+            layout.removeView(browser)
+            browser.destroy()
+            result.success(address)
+        }
+        addressSearch = dialog
+        dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        dialog.show()
+        browser.loadDataWithBaseURL("https://appassets.androidplatform.net/", html, "text/html", "UTF-8", null)
     }
     private fun readable(): Boolean {
         val value = preferences.getString("folder", null) ?: return false

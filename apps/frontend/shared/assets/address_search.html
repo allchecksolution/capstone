@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>주소 검색</title>
+<style>
+  html, body, #search { width: 100%; height: 100%; margin: 0; }
+  #status { position: absolute; inset: 0; margin: 0; padding: 16px; font: 16px sans-serif; pointer-events: none; }
+</style>
+<p id="status" role="status">주소 검색을 불러오는 중입니다.</p>
+<div id="search"></div>
+<script>
+  function unavailable() {
+    document.querySelector('#status').textContent =
+      '주소 검색을 불러오지 못했습니다. 인터넷 연결을 확인하거나 창을 닫고 주소를 직접 입력해 주세요.';
+  }
+  function loadSearch() {
+    const container = document.querySelector('#search');
+    new kakao.Postcode({
+      width: '100%',
+      height: '100%',
+      oncomplete(data) {
+        const address = data.roadAddress || data.jibunAddress || data.address;
+        if (address) location.href = 'allcheck-address://selection?address=' + encodeURIComponent(address);
+      }
+    }).embed(container, { autoClose: false });
+    container.querySelector('iframe')?.addEventListener('load', () => {
+      document.querySelector('#status').hidden = true;
+    }, { once: true });
+  }
+</script>
+<script src="https://t1.kakaocdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"
+        onload="loadSearch()" onerror="unavailable()"></script>

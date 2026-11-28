@@ -5,6 +5,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'api_endpoint.dart';
+import 'registration_date.dart';
 
 part 'driver_backend.dart';
 part 'admin_backend.dart';

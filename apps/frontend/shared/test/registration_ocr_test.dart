@@ -86,6 +86,7 @@ void main() {
       await tester.tap(find.text('사진에서 사업자등록증 선택'));
       await tester.pump(const Duration(milliseconds: 400));
       expect(find.text('인식한 사업자 정보 확인'), findsOneWidget);
+      expect(find.text('1234567890'), findsOneWidget);
       await tap(tester, '선택 항목 반영');
       expect(
         tester
@@ -103,7 +104,7 @@ void main() {
             )
             .controller!
             .text,
-        '123-45-67890',
+        '1234567890',
       );
       expect(store.draft['businessChecked'], isNull);
       await tester.pumpWidget(const SizedBox.shrink());

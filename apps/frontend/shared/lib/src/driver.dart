@@ -3,28 +3,29 @@ extension DriverScreens on _WorkflowShellState {
   static const specialties=['막힘','내벽 누수','외벽 누수','방수','보일러'];
   static const regions=['서울 강남구','서울 서초구','서울 송파구','서울 강동구','경기 성남시','경기 용인시'];
   static const equipment=['고압세척기','내시경 카메라','누수 탐지기','사다리'];
-  Widget driverRegistration(){final d=s.draft;final keys=registrationStep==1?['name','phone','email','address','vehicle']:registrationStep==2?['businessNumber','openedOn','company','owner','companyPhone','businessType','businessItem','companyAddress']:registrationStep==3?<String>[]:['bank','bankAccount','bankOwner','taxEmail'];
-    final labels={'name':'근로자명','phone':'휴대폰 번호','email':'이메일','address':'거주지 주소','vehicle':'차량번호','businessNumber':'사업자등록번호','openedOn':'개업일자 (YYYY-MM-DD)','company':'사업체명','owner':'대표자명','companyPhone':'회사 대표번호','businessType':'업태','businessItem':'종목','companyAddress':'회사 주소','otherRegion':'기타 활동 지역','otherEquipment':'기타 장비','bank':'은행','bankAccount':'계좌번호','bankOwner':'예금주','taxEmail':'세금계산서 이메일'};
+  Widget driverRegistration(){final d=s.draft;final keys=registrationStep==1?['name','phone','email','address','addressDetail','vehicle']:registrationStep==2?['businessNumber','openedOn','company','owner','companyPhone','businessType','businessItem','companyAddress','companyAddressDetail']:registrationStep==3?<String>[]:['bank','bankAccount','bankOwner','taxEmail'];
+    final labels={'name':'근로자명','phone':'휴대폰 번호','email':'이메일','address':'거주지 주소','addressDetail':'상세주소 (동·호수 등)','vehicle':'차량번호','businessNumber':'사업자등록번호','openedOn':'개업일자 (YYYYMMDD)','company':'사업체명','owner':'대표자명','companyPhone':'회사 대표번호','businessType':'업태','businessItem':'종목','companyAddress':'회사 주소','companyAddressDetail':'상세주소 (층·호수 등)','otherRegion':'기타 활동 지역','otherEquipment':'기타 장비','bank':'은행','bankAccount':'계좌번호','bankOwner':'예금주','taxEmail':'세금계산서 이메일'};
     const hints={
-      'businessNumber':'숫자 10자리입니다. -는 입력해도 자동으로 제거합니다.',
-      'openedOn':'등록증의 개업연월일을 입력하세요. 예: 2020-01-15',
+      'phone':'(-) 없이 숫자만 입력해 주세요. 예시 01012345678',
+      'businessNumber':'(-) 없이 숫자 10자리를 입력해 주세요.',
+      'openedOn':'(-) 없이 날짜를 숫자 8자리로 입력해 주세요. 예시 20200115',
       'owner':'등록증에 적힌 대표자명을 그대로 입력하세요.',
       'company':'등록증의 상호를 그대로 입력하세요. (주)·주식회사 표기도 유지하세요.',
-      'companyPhone':'숫자와 -를 사용하세요. 예: 02-1234-5678',
+      'companyPhone':'(-) 없이 숫자만 입력해 주세요. 예시 0212345678',
+      'bankAccount':'(-) 없이 숫자만 입력해 주세요.',
     };
-    return form([heading('가입 정보 등록 · $registrationStep / 4'),LinearProgressIndicator(value:registrationStep/4),if(registrationStep==2)businessOcrActions(),for(final key in keys)field(key,labels[key]!,initial:text(d,key),helperText:hints[key]??'',required:!key.startsWith('other'),email:key=='email'||key=='taxEmail'),if(registrationStep==2)...<Widget>[button('사업자 정보 확인',()=>checkBusiness(keys),secondary:true)],if(registrationStep==3)...<Widget>[choices('specialties','전문 분야 * (1~3개)',specialties,initial:strings(d['specialties'])),choices('regions','활동 지역 *',regions,initial:strings(d['regions'])),choices('equipment','보유 장비',equipment,initial:strings(d['equipment']))],if(registrationStep==4)...<Widget>[CheckboxListTile(contentPadding:EdgeInsets.zero,title:const Text('입력 정보 확인 및 가입 신청에 동의합니다.'),value:choiceValue('consent').contains('yes'),onChanged:(v)=>refresh(()=>v==true?choiceValue('consent').add('yes'):choiceValue('consent').remove('yes')))],button(registrationStep==4?'가입 신청':'다음',()async{
+    return form([heading('가입 정보 등록 · $registrationStep / 4'),LinearProgressIndicator(value:registrationStep/4),if(registrationStep==2)businessOcrActions(),for(final key in keys)registrationField(key,labels[key]!,text(d,key),hints[key]??''),if(registrationStep==2)...<Widget>[button('사업자 정보 확인',()=>checkBusiness(keys),secondary:true)],if(registrationStep==3)...<Widget>[choices('specialties','전문 분야 * (1~3개)',specialties,initial:strings(d['specialties'])),choices('regions','활동 지역 *',regions,initial:strings(d['regions'])),choices('equipment','보유 장비',equipment,initial:strings(d['equipment']))],if(registrationStep==4)...<Widget>[CheckboxListTile(contentPadding:EdgeInsets.zero,title:const Text('입력 정보 확인 및 가입 신청에 동의합니다.'),value:choiceValue('consent').contains('yes'),onChanged:(v)=>refresh(()=>v==true?choiceValue('consent').add('yes'):choiceValue('consent').remove('yes')))],button(registrationStep==4?'가입 신청':'다음',()async{
       if(!(formKey.currentState?.validate()??false))return;
-      if(registrationStep==1&&!RegExp(r'^0[0-9-]{8,14}$').hasMatch(value('phone'))){message('전화번호 형식을 확인해 주세요.');return;}
       if(registrationStep==2&&(s.draft['businessChecked']!=true||s.draft['checkedIdentity']!=jsonEncode(businessIdentityInput()))){message('사업자등록번호·개업일자·대표자명을 다시 확인해 주세요.');return;}
       if(registrationStep==3&&(choiceValue('specialties').isEmpty||choiceValue('regions').isEmpty)){message('전문 분야와 활동 지역을 선택해 주세요.');return;}
       if(registrationStep==3&&choiceValue('specialties').length>3){message('전문 분야는 1~3개만 선택해 주세요.');return;}
       if(registrationStep==4&&!choiceValue('consent').contains('yes')){message('가입 신청 동의를 확인해 주세요.');return;}
       if(registrationStep==4&&!developmentSession){
         if(widget.backend==null){message('서버 연결 후 가입 신청을 제출할 수 있습니다.');return;}
-        final profile={...s.draft,...values(keys)};
+        final profile=_registrationProfile({...s.draft,...values(keys)});
         if(await command('drivers/register',{'profile':profile,'consent':true},(){})){signedIn=true;go('home');unawaited(afterAuthentication());}return;
       }
-      if(await act((){s.draft.addAll(values(keys));if(registrationStep==1&&sdkOnlySession){s.profile['name']=value('name');s.displayNames[text(s.account!,'userId')]=value('name');}if(registrationStep==3){s.draft.remove('otherRegion');s.draft.remove('otherEquipment');for(final key in ['specialties','regions','equipment'])s.draft[key]=choiceValue(key).toList();}if(registrationStep==4){s.data['account']=<String,dynamic>{'status':'승인 대기','profile':jsonDecode(jsonEncode(s.draft)) as Json};s.data['draft']=<String,dynamic>{};}},operation:'register')){if(registrationStep<4)refresh(()=>registrationStep++);else{signedIn=true;go('home');}}
+      if(await act((){s.draft.addAll(values(keys));if(registrationStep==1&&sdkOnlySession){s.profile['name']=value('name');s.displayNames[text(s.account!,'userId')]=value('name');}if(registrationStep==3){s.draft.remove('otherRegion');s.draft.remove('otherEquipment');for(final key in ['specialties','regions','equipment'])s.draft[key]=choiceValue(key).toList();}if(registrationStep==4){s.data['account']=<String,dynamic>{'status':'승인 대기','profile':_registrationProfile(s.draft)};s.data['draft']=<String,dynamic>{};}},operation:'register')){if(registrationStep<4)refresh(()=>registrationStep++);else{signedIn=true;go('home');}}
     }),if(registrationStep>1)button('이전',()async{if(await act(()=>s.draft.addAll(values(keys))))refresh(()=>registrationStep--);},secondary:true),button('로그아웃',logout,secondary:true)]);
   }
   Widget availabilityBox()=>box([Row(children:[heading('작업 가능 상태'),const Spacer(),pill(text(s.data,'availability'))]),tabs(['대기','휴식'],text(s.data,'availability'),(v){if(v!=s.data['availability'])unawaited(changeAvailability(v));}),notice(s.data['availability']=='대기'?(developmentSession?'배차 조건을 만족하면 후보로 반영됩니다.':'대기 상태에서 최근 5분 안의 위치가 서버에 있어야 배차 후보가 됩니다. 앱을 켜 두면 위치를 자동으로 갱신합니다.'):'휴식 중에는 신규 배차를 받지 않습니다.')]);

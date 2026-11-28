@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:allcheck_ui/allcheck_ui.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 class FakeAuth implements DriverAuth {
@@ -63,6 +64,88 @@ class RegistrationBackend implements FrontendBackend {
 }
 
 void main() {
+  testWidgets('registration searches addresses, filters numeric input and completes email domains', (tester) async {
+    final auth = FakeAuth();
+    final backend = RegistrationBackend();
+    const channel = MethodChannel('allcheck/platform');
+    var searches = 0;
+    final messenger = tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      expect(call.method, 'searchRegistrationAddress');
+      expect(call.arguments['html'], contains('new kakao.Postcode'));
+      return '서울특별시 테스트로 ${++searches}';
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+
+    await tester.pumpWidget(AllcheckApp(
+      role: AppRole.driver, store: AppStore(AppRole.driver), driverAuth: auth,
+      backend: backend, onKakaoAuthenticated: (_) async => null,
+    ));
+    await tapLogin(tester);
+    auth.result.complete(identity);
+    await tester.pumpAndSettle();
+    await tapText(tester, '계속');
+
+    String value(String key) => tester.widget<TextFormField>(
+      find.byKey(ValueKey('register//$key')),
+    ).controller!.text;
+    Future<void> selectAddress() async {
+      final search = find.byTooltip('주소 검색');
+      await tester.ensureVisible(search);
+      await tester.tap(search);
+      await tester.pumpAndSettle();
+    }
+
+    await fillRegistration(tester, {
+      'name': '기사', 'phone': '010-1234a가-5678',
+      'email': 'driver@gm', 'addressDetail': '101동 202호', 'vehicle': '12가3456',
+    });
+    expect(value('phone'), '01012345678');
+    await tapText(tester, '@gmail.com');
+    expect(value('email'), 'driver@gmail.com');
+    await selectAddress();
+    expect(value('address'), '서울특별시 테스트로 1');
+    expect(value('addressDetail'), '101동 202호');
+    await tapText(tester, '다음');
+    await fillRegistration(tester, {
+      'businessNumber': '123-45-67890', 'openedOn': '2020-01-15',
+      'company': '설비', 'owner': '대표자', 'companyPhone': '02-1234-5678',
+      'businessType': '서비스', 'businessItem': '수리', 'companyAddressDetail': '3층 302호',
+    });
+    expect(value('businessNumber'), '1234567890');
+    expect(value('openedOn'), '20200115');
+    expect(value('companyPhone'), '0212345678');
+    await selectAddress();
+    expect(value('companyAddress'), '서울특별시 테스트로 2');
+    expect(value('companyAddressDetail'), '3층 302호');
+    await tapText(tester, '사업자 정보 확인');
+    expect(backend.businessChecks.single['openedOn'], '2020-01-15');
+    await tapText(tester, '다음');
+    await tapChoice(tester, '막힘');
+    await tapChoice(tester, '서울 강남구');
+    await tapText(tester, '다음');
+    await fillRegistration(tester, {
+      'bank': '은행', 'bankOwner': '기사', 'bankAccount': '123-456가', 'taxEmail': 'tax@nav',
+    });
+    expect(value('bankAccount'), '123456');
+    await tapText(tester, '@naver.com');
+    expect(value('taxEmail'), 'tax@naver.com');
+    await tapText(tester, '입력 정보 확인 및 가입 신청에 동의합니다.');
+    const overlongAccount = '1234567890123456789012345678901';
+    await fillRegistration(tester, {'bankAccount': overlongAccount});
+    expect(value('bankAccount'), overlongAccount);
+    await tapText(tester, '가입 신청');
+    expect(find.text('30자 이하로 입력해 주세요.'), findsOneWidget);
+    expect(backend.operations, isNot(contains('drivers/register')));
+
+    await fillRegistration(tester, {'bankAccount': '123456'});
+    await tapText(tester, '가입 신청');
+    expect(backend.state['account']['profile']['bankAccount'], '123456');
+    expect(backend.state['account']['profile']['address'], '서울특별시 테스트로 1 101동 202호');
+    expect(backend.state['account']['profile']['companyAddress'], '서울특별시 테스트로 2 3층 302호');
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('backend login failure preserves the safe error and allows retry', (tester) async {
     final auth = FakeAuth();
     const safeMessage = '서버에서 카카오 인증을 확인할 수 없습니다. 잠시 후 다시 시도해 주세요.';
